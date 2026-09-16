@@ -2,10 +2,10 @@
 <#
 Install an Omnigent Windows artifact bundle produced by the fork release workflow.
 
-The installer uses the exact wheels shipped beside this script and creates an
-isolated Python 3.12 environment. The wheel's upstream-compatible console-script
-metadata creates both omni.exe and omnigent.exe in the environment's Scripts
-directory; that directory can be added directly to the current user's PATH.
+This follows current upstream's canonical wheel-install model: `uv tool install`.
+The exact core/client/UI wheels shipped beside this script are installed into an
+isolated uv tool environment, and the wheel's console-script metadata creates
+both omni.exe and omnigent.exe in the tool bin directory.
 #>
 
 param(
@@ -110,34 +110,36 @@ function Add-UserPathEntry([string]$Dir) {
 if (-not (Test-Path $script:WheelDir)) {
     throw "Bundle wheel directory not found: $script:WheelDir"
 }
-$wheels = @(Get-ChildItem $script:WheelDir -Filter "*.whl" -File)
-if ($wheels.Count -lt 3) {
-    throw "Expected the core, client SDK, and UI SDK wheels in $script:WheelDir; found $($wheels.Count)."
+
+$allWheels = @(Get-ChildItem $script:WheelDir -Filter "*.whl" -File)
+$coreWheels = @($allWheels | Where-Object { $_.Name -match '^omnigent-[0-9].*\.whl$' })
+$clientWheels = @($allWheels | Where-Object { $_.Name -match '^omnigent_client-[0-9].*\.whl$' })
+$uiWheels = @($allWheels | Where-Object { $_.Name -match '^omnigent_ui_sdk-[0-9].*\.whl$' })
+if ($coreWheels.Count -ne 1 -or $clientWheels.Count -ne 1 -or $uiWheels.Count -ne 1) {
+    throw "Expected exactly one core, client SDK, and UI SDK wheel. Found core=$($coreWheels.Count), client=$($clientWheels.Count), ui=$($uiWheels.Count)."
 }
+$coreWheel = $coreWheels[0].FullName
+$clientWheel = $clientWheels[0].FullName
+$uiWheel = $uiWheels[0].FullName
 
 $uv = Resolve-Uv
-$venvDir = Join-Path $InstallDir ".venv"
-$scriptsDir = Join-Path $venvDir "Scripts"
-$python = Join-Path $scriptsDir "python.exe"
-$omniExe = Join-Path $scriptsDir "omni.exe"
-$omnigentExe = Join-Path $scriptsDir "omnigent.exe"
-
-Write-Step "Installing Omnigent from this artifact into $InstallDir"
+$toolDir = Join-Path $InstallDir "tools"
+$binDir = Join-Path $InstallDir "bin"
 New-Item -ItemType Directory -Force $InstallDir | Out-Null
-if (Test-Path $venvDir) {
-    Remove-Item -Recurse -Force $venvDir
+
+# Keep this artifact installation isolated from any other uv-managed tools while
+# still using the same `uv tool install` mechanism documented by upstream.
+$env:UV_TOOL_DIR = $toolDir
+$env:UV_TOOL_BIN_DIR = $binDir
+
+Write-Step "Installing Omnigent from the bundled wheels with uv tool"
+& $uv tool install --force --python $script:PythonVersion --with $clientWheel --with $uiWheel $coreWheel
+if ($LASTEXITCODE -ne 0) {
+    throw "uv tool install could not install the artifact wheels."
 }
 
-& $uv venv --python $script:PythonVersion $venvDir
-if ($LASTEXITCODE -ne 0) {
-    throw "Could not create the Python $script:PythonVersion environment."
-}
-
-$wheelPaths = @($wheels | ForEach-Object { $_.FullName })
-& $uv pip install --python $python @wheelPaths
-if ($LASTEXITCODE -ne 0) {
-    throw "Could not install the artifact wheels."
-}
+$omniExe = Join-Path $binDir "omni.exe"
+$omnigentExe = Join-Path $binDir "omnigent.exe"
 if (-not (Test-Path $omniExe)) {
     throw "Installation completed without creating the upstream-compatible omni.exe entry point: $omniExe"
 }
@@ -146,7 +148,7 @@ if (-not (Test-Path $omnigentExe)) {
 }
 
 if (-not $NoPath) {
-    Add-UserPathEntry $scriptsDir
+    Add-UserPathEntry $binDir
 }
 Ensure-Psmux
 
