@@ -185,7 +185,6 @@ class PsmuxTerminalMuxBackend:
             tmux_allow_passthrough=spec.tmux_allow_passthrough,
             tmux_start_on_attach=spec.tmux_start_on_attach,
             keep_alive_after_exit=spec.keep_alive_after_exit,
-            terminal_transport=spec.terminal_transport,
         )
         return instance, cwd
 
