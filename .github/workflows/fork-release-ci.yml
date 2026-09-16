@@ -3,10 +3,16 @@ name: Fork release validation
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
   push:
     branches:
       - main
       - windows-parity/v0.14-integration
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
   workflow_dispatch:
 
 permissions:
@@ -133,7 +139,7 @@ jobs:
   build-windows-artifact:
     name: Build and install Windows artifact (omni.exe)
     needs: [focused-linux, windows-native]
-    if: ${{ !cancelled() && needs.focused-linux.result == 'success' && needs.windows-native.result == 'success' }}
+    if: ${{ !cancelled() && needs.focused-linux.result == 'success' && needs.windows-native.result == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
