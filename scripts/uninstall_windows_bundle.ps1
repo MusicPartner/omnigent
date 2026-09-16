@@ -4,7 +4,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$binDir = Join-Path $InstallDir "bin"
+$scriptsDir = Join-Path $InstallDir ".venv\Scripts"
 
 function Remove-UserPathEntry([string]$Dir) {
     $current = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -19,7 +19,7 @@ function Remove-UserPathEntry([string]$Dir) {
     [Environment]::SetEnvironmentVariable("Path", ($kept -join ";"), "User")
 }
 
-Remove-UserPathEntry $binDir
+Remove-UserPathEntry $scriptsDir
 if (Test-Path $InstallDir) {
     Remove-Item -Recurse -Force $InstallDir
     Write-Host "Removed Omnigent from $InstallDir"
