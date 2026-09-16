@@ -4,7 +4,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$scriptsDir = Join-Path $InstallDir ".venv\Scripts"
+$toolDir = Join-Path $InstallDir "tools"
+$binDir = Join-Path $InstallDir "bin"
 
 function Remove-UserPathEntry([string]$Dir) {
     $current = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -19,7 +20,18 @@ function Remove-UserPathEntry([string]$Dir) {
     [Environment]::SetEnvironmentVariable("Path", ($kept -join ";"), "User")
 }
 
-Remove-UserPathEntry $scriptsDir
+Remove-UserPathEntry $binDir
+
+$uv = Get-Command uv -ErrorAction SilentlyContinue
+if ($null -ne $uv -and (Test-Path $InstallDir)) {
+    $env:UV_TOOL_DIR = $toolDir
+    $env:UV_TOOL_BIN_DIR = $binDir
+    & $uv.Source tool uninstall omnigent 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "uv tool uninstall returned exit code $LASTEXITCODE; removing the isolated artifact directory directly."
+    }
+}
+
 if (Test-Path $InstallDir) {
     Remove-Item -Recurse -Force $InstallDir
     Write-Host "Removed Omnigent from $InstallDir"
