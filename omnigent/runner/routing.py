@@ -9,7 +9,6 @@ tunnel.
 
 from __future__ import annotations
 
-import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -17,8 +16,10 @@ import httpx
 
 from omnigent.errors import ErrorCode, OmnigentError
 from omnigent.harness_aliases import canonicalize_harness
-from omnigent.runner.transports.ws_tunnel.transport import WSTunnelTransport
-from omnigent.runtime import telemetry
+from omnigent.runner.transport_locator import (
+    RunnerTransportLocator,
+    WSTunnelRunnerTransportLocator,
+)
 from omnigent.runtime.harnesses import _HARNESS_MODULES
 from omnigent.spec import AgentSpec
 
@@ -97,13 +98,15 @@ class RunnerRouter:
         conversation_store: ConversationStore,
         host_registry: HostRegistry | None = None,
         host_store: HostStore | None = None,
+        transport_locator: RunnerTransportLocator | None = None,
     ) -> None:
         self._registry = registry
         self._conversation_store = conversation_store
         self._host_registry = host_registry
         self._host_store = host_store
-        self._clients: dict[str, httpx.AsyncClient] = {}
-        self._lock = threading.RLock()
+        self._transport_locator = (
+            transport_locator or WSTunnelRunnerTransportLocator(registry)
+        )
 
     def client_for_conversation(self, *, conversation_id: str, harness: str) -> RoutedRunner:
         """
@@ -240,16 +243,8 @@ class RunnerRouter:
         return self._registry.runner_owner(runner_id)
 
     async def aclose(self) -> None:
-        """
-        Close cached runner clients.
-
-        :returns: None.
-        """
-        with self._lock:
-            clients = list(self._clients.values())
-            self._clients.clear()
-        for client in clients:
-            await client.aclose()
+        """Close clients owned by the configured runner transport locator."""
+        await self._transport_locator.aclose()
 
     def _routed_pinned_runner(
         self, runner_id: str, *, harness: str, host_id: str | None = None
@@ -328,29 +323,8 @@ class RunnerRouter:
         return self._runner_absent_code(host_id) == ErrorCode.WRONG_REPLICA
 
     def _client_for_runner(self, runner_id: str) -> httpx.AsyncClient:
-        """
-        Return a cached tunnel-backed client for *runner_id*.
-
-        :param runner_id: Runner UUID, e.g.
-            ``"runner_0123456789abcdef"``.
-        :returns: ``httpx.AsyncClient`` using
-            :class:`WSTunnelTransport`.
-        """
-        with self._lock:
-            client = self._clients.get(runner_id)
-            if client is None:
-                client = httpx.AsyncClient(
-                    transport=WSTunnelTransport(self._registry, runner_id),
-                    base_url="http://runner",
-                    timeout=httpx.Timeout(5.0, read=None),
-                )
-                # The global httpx instrumentation can't see this client's
-                # custom WSTunnelTransport, so instrument the instance
-                # directly — otherwise server→runner forwards carry no
-                # traceparent and the runner roots a disconnected trace.
-                telemetry.instrument_httpx_client(client)
-                self._clients[runner_id] = client
-            return client
+        """Return the transport-selected client for *runner_id*."""
+        return self._transport_locator.client_for_runner(runner_id)
 
 
 def _runner_supports_harness(session: RunnerSession, harness: str) -> bool:

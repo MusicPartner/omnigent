@@ -86,6 +86,7 @@ from omnigent.server.auth import LEVEL_OWNER, LEVEL_READ, AuthProvider
 from omnigent.server.routes._auth_helpers import require_access
 from omnigent.stores import ConversationStore
 from omnigent.stores.permission_store import PermissionStore
+from omnigent.terminals.capture_bridge import bridge_capture_to_websocket
 from omnigent.terminals.control_bridge import bridge_tmux_control_to_websocket
 from omnigent.terminals.ws_common import (
     WS_CLOSE_INTERNAL_ERROR,
@@ -255,6 +256,12 @@ def create_terminal_attach_router(
             return
 
         from omnigent.runtime import telemetry
+
+        if getattr(entry.instance, "backend_name", "tmux") == "psmux":
+            await bridge_capture_to_websocket(
+                websocket, instance=entry.instance, read_only=read_only
+            )
+            return
 
         with telemetry.span(
             "terminal.attach",

@@ -5,6 +5,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from omnigent.inner.sandbox_capabilities import (
+    sandbox_egress_policy_error,
+    sandbox_network_deny_error,
+)
 from omnigent.spec.types import AgentSpec, ToolRuntime
 from omnigent.util.reasoning_effort import EFFORT_VALUES, validate_effort
 
@@ -492,13 +496,6 @@ def _validate_compaction(spec: AgentSpec, result: ValidationResult) -> None:
         )
 
 
-# Set of sandbox backends that hard-enforce network isolation
-# (and therefore can host an L7 egress proxy). Mirrors the loader's
-# allow-list in ``omnigent/inner/loader.py``. ``none`` is excluded
-# — it doesn't install a namespace or SBPL, so egress rules would be
-# inert decoration on the policy.
-_EGRESS_CAPABLE_BACKENDS = frozenset({"linux_bwrap", "darwin_seatbelt"})
-
 
 def _validate_os_env(spec: AgentSpec, result: ValidationResult) -> None:
     """
@@ -540,6 +537,9 @@ def _validate_os_env(spec: AgentSpec, result: ValidationResult) -> None:
     egress_rules = (
         list(getattr(sandbox, "egress_rules", None) or []) if sandbox is not None else []
     )
+    allow_network = (
+        bool(getattr(sandbox, "allow_network", True)) if sandbox is not None else True
+    )
 
     if start_in_scratch and fork:
         result.add(
@@ -555,19 +555,15 @@ def _validate_os_env(spec: AgentSpec, result: ValidationResult) -> None:
             "sandbox.type=none does not create a scratch tmpdir",
         )
 
-    if egress_rules and sandbox_type not in _EGRESS_CAPABLE_BACKENDS:
-        result.add(
-            "os_env.sandbox.egress_rules",
-            "os_env.sandbox.egress_rules requires sandbox.type=linux_bwrap "
-            "(Linux) or sandbox.type=darwin_seatbelt (macOS) for hard "
-            "enforcement of the network allow-list. "
-            f"Got sandbox.type={sandbox_type!r}; the rules would be "
-            "inert decoration on the policy and the agent would have "
-            "unrestricted network access despite the YAML declaring otherwise. "
-            "Fix: set os_env.sandbox.type to linux_bwrap on Linux or "
-            "darwin_seatbelt on macOS; do not use sandbox.type=none with "
-            "egress_rules.",
-        )
+    if not allow_network:
+        network_error = sandbox_network_deny_error(sandbox_type)
+        if network_error is not None:
+            result.add("os_env.sandbox.allow_network", network_error)
+
+    if egress_rules:
+        egress_error = sandbox_egress_policy_error(sandbox_type)
+        if egress_error is not None:
+            result.add("os_env.sandbox.egress_rules", egress_error)
 
 
 def _validate_agent_names(
