@@ -1,0 +1,122 @@
+name: Fork housekeeping
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/fork-housekeeping.yml
+  schedule:
+    - cron: "41 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      run_retention_days:
+        description: "Keep completed runs for merged transient branches for this many days"
+        required: true
+        default: "7"
+        type: string
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: fork-housekeeping
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Clean merged transient branches and runs
+    if: ${{ github.repository == 'MusicPartner/omnigent' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Remove merged maintenance branches and stale runs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo="${GITHUB_REPOSITORY}"
+          retention_days="${{ github.event.inputs.run_retention_days }}"
+          if [[ -z "${retention_days}" ]]; then
+            # The first push of this workflow performs an immediate cleanup.
+            # Scheduled runs keep one week of transient-branch CI history.
+            if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+              retention_days="0"
+            else
+              retention_days="7"
+            fi
+          fi
+          if ! [[ "${retention_days}" =~ ^[0-9]+$ ]]; then
+            echo "run_retention_days must be a non-negative integer" >&2
+            exit 2
+          fi
+
+          cutoff="$(date -u -d "${retention_days} days ago" +%Y-%m-%dT%H:%M:%SZ)"
+          echo "Transient run cutoff: ${cutoff} (${retention_days} days)" >> "${GITHUB_STEP_SUMMARY}"
+
+          mapfile -t branches < <(
+            gh api --paginate "repos/${repo}/pulls?state=closed&per_page=100" |
+              jq -r --arg repo "${repo}" '
+                .[]
+                | select(.merged_at != null)
+                | select((.head.repo.full_name // "") == $repo)
+                | .head.ref
+              ' |
+              grep -E '^(maintenance/|upstream-sync/)' |
+              sort -u
+          )
+
+          deleted_branches=0
+          deleted_runs=0
+          skipped_active=0
+
+          for branch in "${branches[@]}"; do
+            active_count="$(
+              gh api --method GET "repos/${repo}/actions/runs" \
+                -f branch="${branch}" \
+                -f per_page=100 \
+                --jq '[.workflow_runs[] | select(.status != "completed")] | length'
+            )"
+
+            if [[ "${active_count}" != "0" ]]; then
+              echo "Skipping ${branch}: ${active_count} Actions run(s) still active." >> "${GITHUB_STEP_SUMMARY}"
+              skipped_active=$((skipped_active + 1))
+              continue
+            fi
+
+            # Remove completed workflow runs for this merged transient branch
+            # once they are outside the configured short debugging window.
+            while IFS=$'\t' read -r run_id created_at; do
+              [[ -z "${run_id}" ]] && continue
+              if [[ "${created_at}" < "${cutoff}" || "${created_at}" == "${cutoff}" ]]; then
+                gh api --method DELETE "repos/${repo}/actions/runs/${run_id}" >/dev/null
+                deleted_runs=$((deleted_runs + 1))
+              fi
+            done < <(
+              gh api --paginate --method GET "repos/${repo}/actions/runs" \
+                -f branch="${branch}" \
+                -f per_page=100 \
+                --jq '.workflow_runs[] | select(.status == "completed") | [.id, .created_at] | @tsv'
+            )
+
+            # GitHub may already have removed the head branch (for example when
+            # automatic branch deletion is enabled). Treat that as success.
+            if gh api "repos/${repo}/git/ref/heads/${branch}" >/dev/null 2>&1; then
+              gh api --method DELETE "repos/${repo}/git/refs/heads/${branch}" >/dev/null
+              deleted_branches=$((deleted_branches + 1))
+              echo "Deleted merged branch ${branch}." >> "${GITHUB_STEP_SUMMARY}"
+            fi
+          done
+
+          {
+            echo
+            echo "### Housekeeping result"
+            echo "- Deleted merged transient branches: ${deleted_branches}"
+            echo "- Deleted completed transient-branch workflow runs: ${deleted_runs}"
+            echo "- Branches skipped because Actions are still active: ${skipped_active}"
+            echo "- Protected by policy: main and windows-parity/v0.14-integration"
+          } >> "${GITHUB_STEP_SUMMARY}"
