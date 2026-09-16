@@ -17,86 +17,12 @@ jobs:
         with:
           fetch-depth: 0
           ref: windows-parity/v0.14-integration
-
-      - name: Drop obsolete npm fixture resolver
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re
-          p = Path('.github/scripts/windows_parity_resolve.py')
-          text = p.read_text()
-          text, n = re.subn(
-              r"# npm executable name differs under native Windows CreateProcess\..*?(?=# Add parser regressions)",
-              "",
-              text,
-              count=1,
-              flags=re.S,
-          )
-          if n != 1:
-              raise SystemExit(f'expected one obsolete npm resolver block, got {n}')
-          p.write_text(text)
-          PY
-
       - name: Apply semantic conflict resolutions
-        run: python .github/scripts/windows_parity_resolve.py
-
-      - name: Port Windows executable handling to v0.14 pnpm flow
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('tests/e2e_ui/conftest.py')
-          text = p.read_text()
-          old = '''        env = {**os.environ, "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0"}
-        subprocess.run(
-            ["pnpm", "install", "--frozen-lockfile", "--filter", "web"],
-            cwd=_REPO_ROOT,
-            check=True,
-            stdin=subprocess.DEVNULL,
-            env=env,
-        )
-        subprocess.run(
-            ["pnpm", "--filter", "web", "run", "build"],
-            cwd=_REPO_ROOT,
-            check=True,
-            stdin=subprocess.DEVNULL,
-            env=env,
-        )
-'''
-          new = '''        env = {**os.environ, "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0"}
-        pnpm = "pnpm.cmd" if sys.platform == "win32" else "pnpm"
-        subprocess.run(
-            [pnpm, "install", "--frozen-lockfile", "--filter", "web"],
-            cwd=_REPO_ROOT,
-            check=True,
-            stdin=subprocess.DEVNULL,
-            env=env,
-        )
-        subprocess.run(
-            [pnpm, "--filter", "web", "run", "build"],
-            cwd=_REPO_ROOT,
-            check=True,
-            stdin=subprocess.DEVNULL,
-            env=env,
-        )
-'''
-          if old not in text:
-              raise SystemExit('v0.14 pnpm build fixture changed unexpectedly')
-          p.write_text(text.replace(old, new, 1))
-          PY
-
+        run: python .github/scripts/windows_parity_resolve_v2.py
       - name: Verify syntax and whitespace
         run: |
-          python -m compileall -q \
-            omnigent/terminals/capture_bridge.py \
-            omnigent/runner/routing.py \
-            omnigent/server/app.py \
-            omnigent/server/routes/terminal_attach.py \
-            omnigent/spec/parser.py \
-            omnigent/spec/validator.py
+          python -m compileall -q omnigent/terminals/capture_bridge.py omnigent/runner/routing.py omnigent/server/app.py omnigent/server/routes/terminal_attach.py omnigent/spec/parser.py omnigent/spec/validator.py
           git diff --check
-
       - name: Commit resolved integration
         run: |
           git config user.name "MusicPartner Windows Integration"
