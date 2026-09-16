@@ -413,6 +413,9 @@ def test_pi_main_terminal_survives_pi_exit_without_tmux_unavailable(
         pi_pid, pi_create_time = observed_identity
         _kill_observed_pi(pi_pid, pi_create_time)
 
+        # Keep scanning after the terminal resource disappears: the buggy
+        # watcher emits its generic tmux-unavailable signature a few probe
+        # intervals later, so exiting the loop early would create a false pass.
         signature_line: str | None = None
         terminal_gone = False
         scan_deadline = time.monotonic() + 25.0
@@ -423,7 +426,6 @@ def test_pi_main_terminal_survives_pi_exit_without_tmux_unavailable(
                 break
             if not _terminal_resource_present(http_client, session_id):
                 terminal_gone = True
-                break
             time.sleep(0.5)
 
         if signature_line is None and not terminal_gone:
