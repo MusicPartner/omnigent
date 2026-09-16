@@ -19,8 +19,8 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - name: Install focused test dependencies
-        run: uv sync --locked --group test --extra tracing
+      - name: Install focused test and lint dependencies
+        run: uv sync --locked --group test --group lint --extra tracing
       - name: Ruff changed integration surfaces
         run: >-
           uv run ruff check
