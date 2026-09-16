@@ -140,7 +140,8 @@ def sandbox_egress_policy_error(backend: str | None) -> str | None:
         f"Got sandbox.type={caps.backend!r}; the rules would be inert "
         "decoration on the policy and the agent would have unrestricted "
         "network access despite the YAML declaring otherwise. "
-        "Fix: use sandbox.type=linux_bwrap on Linux or "
+        "Fix: do not use sandbox.type=none with egress_rules; use "
+        "sandbox.type=linux_bwrap on Linux or "
         "sandbox.type=darwin_seatbelt on macOS."
     )
 
