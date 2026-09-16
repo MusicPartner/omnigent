@@ -18,6 +18,28 @@ jobs:
           fetch-depth: 0
           ref: windows-parity/v0.14-integration
 
+      - name: Adapt source fixture intent to v0.14 pnpm
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('.github/scripts/windows_parity_resolve.py')
+          text = p.read_text()
+          replacement = '''# pnpm executable name differs under native Windows CreateProcess.\nreplace(\n    "tests/e2e_ui/conftest.py",\n    "        env = {**os.environ, \\\"COREPACK_ENABLE_DOWNLOAD_PROMPT\\\": \\\"0\\\"}\\n"\n    "        subprocess.run(\\n"\n    "            [\\\"pnpm\\\", \\\"install\\\", \\\"--frozen-lockfile\\\", \\\"--filter\\\", \\\"web\\\"],\\n"\n    "            cwd=_REPO_ROOT,\\n"\n    "            check=True,\\n"\n    "            stdin=subprocess.DEVNULL,\\n"\n    "            env=env,\\n"\n    "        )\\n"\n    "        subprocess.run(\\n"\n    "            [\\\"pnpm\\\", \\\"--filter\\\", \\\"web\\\", \\\"run\\\", \\\"build\\\"],\\n"\n    "            cwd=_REPO_ROOT,\\n"\n    "            check=True,\\n"\n    "            stdin=subprocess.DEVNULL,\\n"\n    "            env=env,\\n"\n    "        )\\n",\n    "        env = {**os.environ, \\\"COREPACK_ENABLE_DOWNLOAD_PROMPT\\\": \\\"0\\\"}\\n"\n    "        pnpm = \\\"pnpm.cmd\\\" if sys.platform == \\\"win32\\\" else \\\"pnpm\\\"\\n"\n    "        subprocess.run(\\n"\n    "            [pnpm, \\\"install\\\", \\\"--frozen-lockfile\\\", \\\"--filter\\\", \\\"web\\\"],\\n"\n    "            cwd=_REPO_ROOT,\\n"\n    "            check=True,\\n"\n    "            stdin=subprocess.DEVNULL,\\n"\n    "            env=env,\\n"\n    "        )\\n"\n    "        subprocess.run(\\n"\n    "            [pnpm, \\\"--filter\\\", \\\"web\\\", \\\"run\\\", \\\"build\\\"],\\n"\n    "            cwd=_REPO_ROOT,\\n"\n    "            check=True,\\n"\n    "            stdin=subprocess.DEVNULL,\\n"\n    "            env=env,\\n"\n    "        )\\n",\n)\n\n'''
+          text, n = re.subn(
+              r"# npm executable name differs under native Windows CreateProcess\..*?(?=# Add parser regressions)",
+              replacement,
+              text,
+              count=1,
+              flags=re.S,
+          )
+          if n != 1:
+              raise SystemExit(f'expected one obsolete npm resolver block, got {n}')
+          p.write_text(text)
+          PY
+
       - name: Apply semantic conflict resolutions
         run: python .github/scripts/windows_parity_resolve.py
 
