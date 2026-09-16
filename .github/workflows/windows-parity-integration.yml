@@ -18,19 +18,17 @@ jobs:
           fetch-depth: 0
           ref: windows-parity/v0.14-integration
 
-      - name: Adapt source fixture intent to v0.14 pnpm
+      - name: Drop obsolete npm fixture resolver
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
           import re
-
           p = Path('.github/scripts/windows_parity_resolve.py')
           text = p.read_text()
-          replacement = '''# pnpm executable name differs under native Windows CreateProcess.\nreplace(\n    "tests/e2e_ui/conftest.py",\n    "        env = {**os.environ, \\\"COREPACK_ENABLE_DOWNLOAD_PROMPT\\\": \\\"0\\\"}\\n"\n    "        subprocess.run(\\n"\n    "            [\\\"pnpm\\\", \\\"install\\\", \\\"--frozen-lockfile\\\", \\\"--filter\\\", \\\"web\\\"],\\n"\n    "            cwd=_REPO_ROOT,\\n"\n    "            check=True,\\n"\n    "            stdin=subprocess.DEVNULL,\\n"\n    "            env=env,\\n"\n    "        )\\n"\n    "        subprocess.run(\\n"\n    "            [\\\"pnpm\\\", \\\"--filter\\\", \\\"web\\\", \\\"run\\\", \\\"build\\\"],\\n"\n    "            cwd=_REPO_ROOT,\\n"\n    "            check=True,\\n"\n    "            stdin=subprocess.DEVNULL,\\n"\n    "            env=env,\\n"\n    "        )\\n",\n    "        env = {**os.environ, \\\"COREPACK_ENABLE_DOWNLOAD_PROMPT\\\": \\\"0\\\"}\\n"\n    "        pnpm = \\\"pnpm.cmd\\\" if sys.platform == \\\"win32\\\" else \\\"pnpm\\\"\\n"\n    "        subprocess.run(\\n"\n    "            [pnpm, \\\"install\\\", \\\"--frozen-lockfile\\\", \\\"--filter\\\", \\\"web\\\"],\\n"\n    "            cwd=_REPO_ROOT,\\n"\n    "            check=True,\\n"\n    "            stdin=subprocess.DEVNULL,\\n"\n    "            env=env,\\n"\n    "        )\\n"\n    "        subprocess.run(\\n"\n    "            [pnpm, \\\"--filter\\\", \\\"web\\\", \\\"run\\\", \\\"build\\\"],\\n"\n    "            cwd=_REPO_ROOT,\\n"\n    "            check=True,\\n"\n    "            stdin=subprocess.DEVNULL,\\n"\n    "            env=env,\\n"\n    "        )\\n",\n)\n\n'''
           text, n = re.subn(
               r"# npm executable name differs under native Windows CreateProcess\..*?(?=# Add parser regressions)",
-              replacement,
+              "",
               text,
               count=1,
               flags=re.S,
@@ -42,6 +40,51 @@ jobs:
 
       - name: Apply semantic conflict resolutions
         run: python .github/scripts/windows_parity_resolve.py
+
+      - name: Port Windows executable handling to v0.14 pnpm flow
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('tests/e2e_ui/conftest.py')
+          text = p.read_text()
+          old = '''        env = {**os.environ, "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0"}
+        subprocess.run(
+            ["pnpm", "install", "--frozen-lockfile", "--filter", "web"],
+            cwd=_REPO_ROOT,
+            check=True,
+            stdin=subprocess.DEVNULL,
+            env=env,
+        )
+        subprocess.run(
+            ["pnpm", "--filter", "web", "run", "build"],
+            cwd=_REPO_ROOT,
+            check=True,
+            stdin=subprocess.DEVNULL,
+            env=env,
+        )
+'''
+          new = '''        env = {**os.environ, "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0"}
+        pnpm = "pnpm.cmd" if sys.platform == "win32" else "pnpm"
+        subprocess.run(
+            [pnpm, "install", "--frozen-lockfile", "--filter", "web"],
+            cwd=_REPO_ROOT,
+            check=True,
+            stdin=subprocess.DEVNULL,
+            env=env,
+        )
+        subprocess.run(
+            [pnpm, "--filter", "web", "run", "build"],
+            cwd=_REPO_ROOT,
+            check=True,
+            stdin=subprocess.DEVNULL,
+            env=env,
+        )
+'''
+          if old not in text:
+              raise SystemExit('v0.14 pnpm build fixture changed unexpectedly')
+          p.write_text(text.replace(old, new, 1))
+          PY
 
       - name: Verify syntax and whitespace
         run: |
