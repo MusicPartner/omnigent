@@ -11,7 +11,10 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
-import databricks.sdk.config as _sdk_config_mod
+try:
+    import databricks.sdk.config as _sdk_config_mod
+except ImportError:
+    _sdk_config_mod = None
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -718,6 +721,10 @@ from omnigent.inner.databricks_executor import (  # noqa: E402
     databrickscfg_workspace_id_for_profile,
 )
 
+_requires_databricks_sdk = pytest.mark.skipif(
+    _sdk_config_mod is None, reason="databricks-sdk not installed"
+)
+
 _AUTH_ENV_VARS: tuple[str, ...] = (
     "DATABRICKS_HOST",
     "DATABRICKS_TOKEN",
@@ -768,11 +775,12 @@ def pat_only_cfg(
     fast — ``_resolve_host_metadata`` logs and falls back to the explicit
     config, which is exactly the offline behavior these tests need.
     """
-    monkeypatch.setattr(
-        "databricks.sdk.config.get_host_metadata",
-        _raise_offline_host_metadata,
-        raising=False,
-    )
+    if _sdk_config_mod is not None:
+        monkeypatch.setattr(
+            "databricks.sdk.config.get_host_metadata",
+            _raise_offline_host_metadata,
+            raising=False,
+        )
     contents = textwrap.dedent(
         """
         [pat-profile]
@@ -1029,6 +1037,7 @@ def test_file_fallback_reads_token_field_directly(
     assert creds.token == "legacy-pat-value"
 
 
+@_requires_databricks_sdk
 def test_read_databrickscfg_falls_back_when_sdk_raises(
     tmp_path: _Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1073,6 +1082,7 @@ def test_read_databrickscfg_falls_back_when_sdk_raises(
     assert creds.token == "fallback-pat-value"
 
 
+@_requires_databricks_sdk
 def test_read_databrickscfg_missing_profile_uses_ambient_credentials(
     tmp_path: _Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1126,6 +1136,7 @@ def test_read_databrickscfg_missing_profile_uses_ambient_credentials(
     )
 
 
+@_requires_databricks_sdk
 def test_read_databrickscfg_missing_profile_ambient_also_fails_uses_file_fallback(
     tmp_path: _Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1179,6 +1190,7 @@ def test_read_databrickscfg_missing_profile_ambient_also_fails_uses_file_fallbac
     )
 
 
+@_requires_databricks_sdk
 def test_read_databrickscfg_missing_profile_service_principal_via_ambient(
     monkeypatch: pytest.MonkeyPatch,
     clean_databricks_env: None,
@@ -1228,6 +1240,7 @@ def test_read_databrickscfg_missing_profile_service_principal_via_ambient(
     assert creds.token == "sp-m2m-access-token", f"Expected M2M bearer token; got {creds.token!r}."
 
 
+@_requires_databricks_sdk
 def test_read_databrickscfg_oauth_profile_returns_fresh_bearer(
     tmp_path: _Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1288,6 +1301,7 @@ def test_read_databrickscfg_oauth_profile_returns_fresh_bearer(
     )
 
 
+@_requires_databricks_sdk
 def test_resolve_databricks_auth_returns_bearer_auth_and_host(
     monkeypatch,
 ):
@@ -1318,6 +1332,7 @@ def test_resolve_databricks_auth_returns_bearer_auth_and_host(
     assert host == "https://example.cloud.databricks.com"
 
 
+@_requires_databricks_sdk
 def test_resolve_databricks_auth_invalid_profile_raises_clear_error(
     monkeypatch,
 ):
@@ -1345,6 +1360,7 @@ def test_resolve_databricks_auth_invalid_profile_raises_clear_error(
         _resolve_databricks_auth("dogfood")
 
 
+@_requires_databricks_sdk
 def test_resolve_databricks_auth_env_profile_falls_back_to_ambient_with_warning(
     monkeypatch,
     caplog,
@@ -1407,6 +1423,7 @@ def test_resolve_databricks_auth_env_profile_falls_back_to_ambient_with_warning(
     )
 
 
+@_requires_databricks_sdk
 def test_resolve_databricks_auth_explicit_profile_not_found_raises(
     monkeypatch,
 ):
