@@ -926,6 +926,7 @@ def test_databricks_gateway_host_ignores_env_override_for_explicit_profile(
     assert _databricks_gateway_host("oss") == "https://profile-workspace.cloud.databricks.com"
 
 
+@_requires_databricks_sdk
 def test_databricks_gateway_host_missing_profile_falls_back_to_ambient(
     tmp_path: _Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1757,6 +1758,7 @@ class _StubSdkConfig:
         return {"Authorization": f"Bearer {self._token}"}
 
 
+@_requires_databricks_sdk
 def test_resolve_auth_for_host_prefers_matching_profile(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1802,6 +1804,7 @@ def test_resolve_auth_for_host_prefers_matching_profile(
     assert constructed == [{"profile": "my-ws"}]
 
 
+@_requires_databricks_sdk
 def test_resolve_auth_for_host_uses_profile_cli_when_sdk_is_ambiguous(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1937,6 +1940,7 @@ def test_profile_cli_token_error_does_not_include_stdout_token(
     assert str(exc.value) == "databricks auth token --profile fresh failed"
 
 
+@_requires_databricks_sdk
 def test_resolve_auth_for_host_falls_back_to_cli_when_no_profile_matches(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
