@@ -1,0 +1,44 @@
+name: Apply packaging metadata patch
+
+on:
+  push:
+    branches:
+      - windows-parity/v0.14-integration
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: contains(github.event.head_commit.message, '[patch-license]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: windows-parity/v0.14-integration
+      - name: Patch PEP 639 metadata
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('pyproject.toml')
+          text = path.read_text()
+          old = 'requires = ["setuptools>=68.0"]'
+          assert old in text
+          text = text.replace(old, 'requires = ["setuptools>=77.0"]', 1)
+          old = 'readme = "README.md"\nrequires-python = ">=3.12"'
+          assert old in text
+          text = text.replace(
+              old,
+              'readme = "README.md"\nlicense = "Apache-2.0"\nlicense-files = ["LICENSE"]\nrequires-python = ">=3.12"',
+              1,
+          )
+          path.write_text(text)
+      - name: Commit metadata fix
+        shell: bash
+        run: |
+          git config user.name "MusicPartner Windows Integration"
+          git config user.email "keivan@musicpartner.se"
+          git add pyproject.toml
+          git diff --cached --check
+          git commit -m "fix(packaging): declare Apache-2.0 metadata"
+          git push origin HEAD:windows-parity/v0.14-integration
