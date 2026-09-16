@@ -92,7 +92,15 @@ jobs:
       - name: Import and CLI smoke
         run: |
           uv run python -c "import omnigent; print('import omnigent OK')"
+          uv run omni --help
           uv run omnigent --help
+
+      - name: Upstream Windows hard tests
+        run: >-
+          uv run pytest
+          tests/inner/test_proc_and_platform.py
+          tests/runtime/test_process_manager.py
+          -p no:cacheprovider -q
 
       - name: Windows stable subset
         shell: pwsh
@@ -121,7 +129,7 @@ jobs:
           -p no:cacheprovider -q
 
   build-windows-artifact:
-    name: Build and smoke-install Windows artifact
+    name: Build and install Windows artifact (omni.exe)
     needs: [focused-linux, windows-native]
     if: ${{ !cancelled() && needs.focused-linux.result == 'success' && needs.windows-native.result == 'success' }}
     runs-on: windows-latest
@@ -143,6 +151,8 @@ jobs:
       - name: Set up pnpm
         uses: ./.github/actions/setup-pnpm
 
+      # Match upstream release-omnigent.yml: build the production web bundle
+      # before building the wheel so the UI is packaged into omnigent.
       - name: Build web UI
         shell: pwsh
         env:
@@ -152,6 +162,7 @@ jobs:
           pnpm install --frozen-lockfile --filter web
           pnpm --filter web run build
 
+      # Match upstream release semantics: core + the two lockstep SDK packages.
       - name: Build core and lockstep SDK distributions
         shell: pwsh
         run: |
@@ -173,11 +184,13 @@ jobs:
           }
           uvx twine check $files
 
-      - name: Assert bundled web UI
+      - name: Assert bundled web UI and console entry points
         shell: pwsh
         run: |
           @'
+          import configparser
           import glob
+          import io
           import sys
           import zipfile
 
@@ -185,23 +198,43 @@ jobs:
           if not wheels:
               sys.exit("no core omnigent wheel found")
           wheel = wheels[-1]
-          names = zipfile.ZipFile(wheel).namelist()
-          ui = [name for name in names if "server/static/web-ui/" in name]
-          has_index = any(name.endswith("server/static/web-ui/index.html") for name in ui)
+          with zipfile.ZipFile(wheel) as archive:
+              names = archive.namelist()
+              ui = [name for name in names if "server/static/web-ui/" in name]
+              has_index = any(name.endswith("server/static/web-ui/index.html") for name in ui)
+              entry_files = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
+              if len(entry_files) != 1:
+                  sys.exit(f"expected one entry_points.txt, got {entry_files}")
+              parser = configparser.ConfigParser()
+              parser.read_file(io.StringIO(archive.read(entry_files[0]).decode("utf-8")))
+              scripts = dict(parser["console_scripts"])
+
           print(f"{wheel}: {len(ui)} web UI files; index.html={has_index}")
+          print(f"console scripts: {scripts}")
           if not ui or not has_index:
               sys.exit("web UI bundle missing from core wheel")
+          expected = "omnigent.cli:main"
+          for name in ("omni", "omnigent"):
+              if scripts.get(name) != expected:
+                  sys.exit(f"missing/incorrect console script {name!r}: {scripts.get(name)!r}")
           '@ | python -
 
-      - name: Smoke-install built wheels
+      - name: Smoke-install built wheels like upstream
         shell: pwsh
         run: |
           uv venv --python 3.12 .artifact-smoke
           $python = (Resolve-Path .artifact-smoke\Scripts\python.exe).Path
           $wheels = Get-ChildItem dist\*.whl | ForEach-Object { $_.FullName }
           uv pip install --python $python $wheels
-          & .artifact-smoke\Scripts\omnigent.exe --version
-          & .artifact-smoke\Scripts\omnigent.exe --help | Out-Null
+
+          $omni = (Resolve-Path .artifact-smoke\Scripts\omni.exe).Path
+          $omnigent = (Resolve-Path .artifact-smoke\Scripts\omnigent.exe).Path
+          & $omni --version
+          if ($LASTEXITCODE -ne 0) { throw "omni.exe --version failed" }
+          & $omni --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "omni.exe --help failed" }
+          & $omnigent --version
+          if ($LASTEXITCODE -ne 0) { throw "omnigent.exe --version failed" }
           & $python -c "import omnigent; import omnigent.server.app; print('wheel import smoke OK')"
 
       - name: Assemble Windows bundle
@@ -236,10 +269,14 @@ jobs:
           Omnigent Windows build
           ======================
 
-          This is an installable Windows test build produced from a commit that
-          passed focused Linux compatibility, native Windows tests, psmux tests,
-          package metadata validation, bundled-web-UI validation, and clean wheel
-          installation checks.
+          This bundle follows the current upstream Omnigent packaging model.
+          The core wheel declares both user-facing console scripts:
+
+              omni     -> omnigent.cli:main
+              omnigent -> omnigent.cli:main
+
+          On Windows, installation therefore creates the real Python console
+          launchers omni.exe and omnigent.exe. No custom CLI wrapper is used.
 
           QUICK INSTALL
           -------------
@@ -251,30 +288,29 @@ jobs:
           The installer uses the exact three wheels in this bundle, creates an
           isolated Python 3.12 environment under:
 
-               %LOCALAPPDATA%\Programs\Omnigent
+               %LOCALAPPDATA%\Programs\Omnigent\.venv
 
-          and adds its launcher directory to your user PATH. If uv is missing,
-          the installer uses winget to install it. It also attempts to install
-          psmux for native managed terminals. Internet access is required for
-          Python/runtime dependencies and for installing missing prerequisites.
+          and adds that environment's Scripts directory to your user PATH. If uv
+          is missing, the installer uses winget to install it. It also attempts
+          to install psmux for native managed terminals.
 
           After installation, open a new PowerShell and run:
 
-               omnigent --version
-               omnigent --help
-               omnigent server
+               omni --version
+               omni --help
+               omni server
 
           Then, in another PowerShell:
 
-               omnigent host --server http://localhost:6767
+               omni host --server http://localhost:6767
 
-          The installed Python environment contains the generated console binary:
+          The installed entry points are:
 
+               %LOCALAPPDATA%\Programs\Omnigent\.venv\Scripts\omni.exe
                %LOCALAPPDATA%\Programs\Omnigent\.venv\Scripts\omnigent.exe
 
-          The stable command intended for normal use is:
-
-               %LOCALAPPDATA%\Programs\Omnigent\bin\omnigent.cmd
+          `omnigent` remains an equivalent long-form alias, matching current
+          upstream main.
 
           OPTIONS
           -------
@@ -306,21 +342,23 @@ jobs:
           & .\windows-bundle\install.ps1 -InstallDir $installDir -NoPath -SkipPsmux
           if ($LASTEXITCODE -ne 0) { throw "artifact installer failed" }
 
-          $launcher = Join-Path $installDir "bin\omnigent.cmd"
-          $python = Join-Path $installDir ".venv\Scripts\python.exe"
-          if (-not (Test-Path $launcher)) { throw "installer did not create omnigent.cmd" }
-          if (-not (Test-Path (Join-Path $installDir ".venv\Scripts\omnigent.exe"))) {
-            throw "installer did not create omnigent.exe"
-          }
+          $scriptsDir = Join-Path $installDir ".venv\Scripts"
+          $python = Join-Path $scriptsDir "python.exe"
+          $omni = Join-Path $scriptsDir "omni.exe"
+          $omnigent = Join-Path $scriptsDir "omnigent.exe"
+          if (-not (Test-Path $omni)) { throw "installer did not create omni.exe" }
+          if (-not (Test-Path $omnigent)) { throw "installer did not create omnigent.exe" }
 
-          & $launcher --version
-          if ($LASTEXITCODE -ne 0) { throw "installed launcher --version failed" }
-          & $launcher --help | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "installed launcher --help failed" }
-          & $launcher server --help | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "installed launcher server --help failed" }
-          & $launcher host --help | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "installed launcher host --help failed" }
+          & $omni --version
+          if ($LASTEXITCODE -ne 0) { throw "installed omni.exe --version failed" }
+          & $omni --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "installed omni.exe --help failed" }
+          & $omni server --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "installed omni.exe server --help failed" }
+          & $omni host --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "installed omni.exe host --help failed" }
+          & $omnigent --version
+          if ($LASTEXITCODE -ne 0) { throw "installed omnigent.exe --version failed" }
           & $python -c "import omnigent; import omnigent.server.app; print('artifact installer import smoke OK')"
           if ($LASTEXITCODE -ne 0) { throw "artifact installer import smoke failed" }
 
