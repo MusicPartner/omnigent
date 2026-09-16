@@ -62,7 +62,14 @@ jobs:
       - name: Check distribution metadata
         shell: pwsh
         run: |
-          $files = Get-ChildItem dist\* | ForEach-Object { $_.FullName }
+          $files = @(
+            Get-ChildItem "dist" -File |
+              Where-Object { $_.Name -match '\.(whl|tar\.gz)$' } |
+              Select-Object -ExpandProperty FullName
+          )
+          if ($files.Count -eq 0) {
+            throw "No distribution artifacts found in dist"
+          }
           uvx twine check $files
 
       - name: Assert bundled web UI
