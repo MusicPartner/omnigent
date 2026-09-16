@@ -49,15 +49,17 @@ jobs:
           pnpm install --frozen-lockfile --filter web
           pnpm --filter web run build
 
-      - name: Build three lockstep wheels
+      - name: Build three lockstep distributions
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          uv build --wheel --out-dir dist
+          # Match the v0.14 release workflow: build the core sdist + wheel, then
+          # build both lockstep SDK distributions into the same directory.
+          uv build --out-dir dist
           uv run --no-project --with build python scripts/build_subpackages.py --out-dir dist omnigent-client omnigent-ui-sdk
           Get-ChildItem dist
 
-      - name: Check wheel metadata
+      - name: Check distribution metadata
         shell: pwsh
         run: |
           $files = Get-ChildItem dist\* | ForEach-Object { $_.FullName }
