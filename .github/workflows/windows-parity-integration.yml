@@ -47,6 +47,11 @@ jobs:
             fi
           done < /tmp/windows-parity-conflicts.txt
 
+          # GitHub Actions tokens cannot push workflow-file changes. Keep the
+          # v0.14 workflow here; its Windows-parity edits are applied separately
+          # through the GitHub connector after the source merge lands.
+          git checkout HEAD -- .github/workflows/windows.yml
+
           cp /tmp/windows-parity-conflicts.txt .windows-parity-conflicts.txt
           git add -A
           git commit -m "merge(windows): integrate source branch onto v0.14 [windows-merge]"
