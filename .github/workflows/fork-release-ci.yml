@@ -95,6 +95,8 @@ jobs:
           uv run omni --help
           uv run omnigent --help
 
+      # Keep the hard native-Windows pair from current upstream main and layer
+      # the fork's broader Windows parity coverage below it.
       - name: Upstream Windows hard tests
         run: >-
           uv run pytest
@@ -151,8 +153,8 @@ jobs:
       - name: Set up pnpm
         uses: ./.github/actions/setup-pnpm
 
-      # Match upstream release-omnigent.yml: build the production web bundle
-      # before building the wheel so the UI is packaged into omnigent.
+      # Match current upstream release-omnigent.yml: build the production web
+      # bundle before the wheel so the packaged core contains the UI.
       - name: Build web UI
         shell: pwsh
         env:
@@ -162,7 +164,6 @@ jobs:
           pnpm install --frozen-lockfile --filter web
           pnpm --filter web run build
 
-      # Match upstream release semantics: core + the two lockstep SDK packages.
       - name: Build core and lockstep SDK distributions
         shell: pwsh
         run: |
@@ -219,6 +220,8 @@ jobs:
                   sys.exit(f"missing/incorrect console script {name!r}: {scripts.get(name)!r}")
           '@ | python -
 
+      # Keep the upstream release-style clean wheel smoke before exercising the
+      # downloadable installer itself.
       - name: Smoke-install built wheels like upstream
         shell: pwsh
         run: |
@@ -269,14 +272,15 @@ jobs:
           Omnigent Windows build
           ======================
 
-          This bundle follows the current upstream Omnigent packaging model.
-          The core wheel declares both user-facing console scripts:
+          This bundle follows the current upstream Omnigent install model:
+          `uv tool install`, with both console entry points coming directly from
+          the core wheel:
 
               omni     -> omnigent.cli:main
               omnigent -> omnigent.cli:main
 
-          On Windows, installation therefore creates the real Python console
-          launchers omni.exe and omnigent.exe. No custom CLI wrapper is used.
+          On Windows, installation creates real omni.exe and omnigent.exe tool
+          executables. No custom CLI wrapper is used.
 
           QUICK INSTALL
           -------------
@@ -285,14 +289,14 @@ jobs:
 
                .\install.ps1
 
-          The installer uses the exact three wheels in this bundle, creates an
-          isolated Python 3.12 environment under:
+          The installer uses the exact three wheels in this bundle and installs
+          them with uv's tool mechanism into an isolated location under:
 
-               %LOCALAPPDATA%\Programs\Omnigent\.venv
+               %LOCALAPPDATA%\Programs\Omnigent
 
-          and adds that environment's Scripts directory to your user PATH. If uv
-          is missing, the installer uses winget to install it. It also attempts
-          to install psmux for native managed terminals.
+          The executable directory is added to your user PATH. If uv is missing,
+          the installer uses winget to install it. It also attempts to install
+          psmux for native managed terminals.
 
           After installation, open a new PowerShell and run:
 
@@ -306,8 +310,8 @@ jobs:
 
           The installed entry points are:
 
-               %LOCALAPPDATA%\Programs\Omnigent\.venv\Scripts\omni.exe
-               %LOCALAPPDATA%\Programs\Omnigent\.venv\Scripts\omnigent.exe
+               %LOCALAPPDATA%\Programs\Omnigent\bin\omni.exe
+               %LOCALAPPDATA%\Programs\Omnigent\bin\omnigent.exe
 
           `omnigent` remains an equivalent long-form alias, matching current
           upstream main.
@@ -335,19 +339,18 @@ jobs:
           uv and psmux are left installed because they may be shared by other tools.
           '@ | Set-Content -Encoding utf8 windows-bundle\README.txt
 
-      - name: Test artifact installer and uninstaller
+      - name: Test upstream-style artifact installer and uninstaller
         shell: pwsh
         run: |
           $installDir = Join-Path $env:RUNNER_TEMP "omnigent-artifact-install"
           & .\windows-bundle\install.ps1 -InstallDir $installDir -NoPath -SkipPsmux
           if ($LASTEXITCODE -ne 0) { throw "artifact installer failed" }
 
-          $scriptsDir = Join-Path $installDir ".venv\Scripts"
-          $python = Join-Path $scriptsDir "python.exe"
-          $omni = Join-Path $scriptsDir "omni.exe"
-          $omnigent = Join-Path $scriptsDir "omnigent.exe"
-          if (-not (Test-Path $omni)) { throw "installer did not create omni.exe" }
-          if (-not (Test-Path $omnigent)) { throw "installer did not create omnigent.exe" }
+          $binDir = Join-Path $installDir "bin"
+          $omni = Join-Path $binDir "omni.exe"
+          $omnigent = Join-Path $binDir "omnigent.exe"
+          if (-not (Test-Path $omni)) { throw "uv tool installer did not create omni.exe" }
+          if (-not (Test-Path $omnigent)) { throw "uv tool installer did not create omnigent.exe" }
 
           & $omni --version
           if ($LASTEXITCODE -ne 0) { throw "installed omni.exe --version failed" }
@@ -359,8 +362,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "installed omni.exe host --help failed" }
           & $omnigent --version
           if ($LASTEXITCODE -ne 0) { throw "installed omnigent.exe --version failed" }
-          & $python -c "import omnigent; import omnigent.server.app; print('artifact installer import smoke OK')"
-          if ($LASTEXITCODE -ne 0) { throw "artifact installer import smoke failed" }
 
           & .\windows-bundle\uninstall.ps1 -InstallDir $installDir
           if (Test-Path $installDir) { throw "artifact uninstaller left the install directory behind" }
