@@ -1,0 +1,255 @@
+name: Fork release validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches:
+      - main
+      - windows-parity/v0.14-integration
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_INDEX_URL: https://pypi.org/simple
+  PIP_INDEX_URL: https://pypi.org/simple
+
+jobs:
+  focused-linux:
+    name: Focused Linux compatibility
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OMNIGENT_SKIP_WEB_UI: "true"
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+
+      - name: Install focused test and lint dependencies
+        run: uv sync --locked --group test --group lint --extra tracing
+
+      - name: Ruff Windows integration surfaces
+        run: >-
+          uv run ruff check
+          omnigent/inner/sandbox_capabilities.py
+          omnigent/runner/routing.py
+          omnigent/runner/transport_locator.py
+          omnigent/server/_runner_transport.py
+          omnigent/server/app.py
+          omnigent/server/routes/terminal_attach.py
+          omnigent/spec/parser.py
+          omnigent/spec/validator.py
+          omnigent/terminals/backend.py
+          omnigent/terminals/capture_bridge.py
+          tests/terminals/test_windows_psmux.py
+
+      - name: Focused integration tests
+        run: >-
+          uv run pytest -q -p no:cacheprovider
+          tests/inner/test_sandbox_capabilities.py
+          tests/runner/test_routing.py
+          tests/server/test_runner_transport.py
+          tests/spec/test_parser.py
+          tests/spec/test_validator.py
+          tests/terminals/test_windows_psmux.py
+
+  windows-native:
+    name: Native Windows compatibility
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      OMNIGENT_SKIP_WEB_UI: "true"
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version-file: ".python-version"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked --group test --extra tracing
+
+      - name: Import and CLI smoke
+        run: |
+          uv run python -c "import omnigent; print('import omnigent OK')"
+          uv run omnigent --help
+
+      - name: Windows stable subset
+        shell: pwsh
+        run: .\scripts\windows_safe_pytest.ps1 -StableOnly
+
+      - name: Install psmux
+        shell: pwsh
+        run: |
+          winget install --id marlocarlo.psmux -e --accept-package-agreements --accept-source-agreements --disable-interactivity
+          "$env:LOCALAPPDATA\Microsoft\WinGet\Links" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $env:PATH = "$env:LOCALAPPDATA\Microsoft\WinGet\Links;$env:PATH"
+          psmux --version
+
+      - name: psmux terminal backend tests
+        run: >-
+          uv run pytest
+          tests/terminals/test_windows_psmux.py::test_windows_psmux_backend_launch_send_read_close
+          tests/terminals/test_windows_psmux.py::test_windows_psmux_backend_strips_runner_auth_secrets
+          -p no:cacheprovider -q
+
+      - name: Broader Windows unit sweep
+        continue-on-error: true
+        run: >-
+          uv run pytest tests/inner tests/runtime/harnesses
+          -m "not posix_only"
+          -p no:cacheprovider -q
+
+  build-windows-artifact:
+    name: Build and smoke-install Windows artifact
+    needs: [focused-linux, windows-native]
+    if: ${{ !cancelled() && needs.focused-linux.result == 'success' && needs.windows-native.result == 'success' }}
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version-file: ".python-version"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: false
+
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+
+      - name: Build web UI
+        shell: pwsh
+        env:
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+        run: |
+          Remove-Item -Recurse -Force omnigent/server/static/web-ui -ErrorAction SilentlyContinue
+          pnpm install --frozen-lockfile --filter web
+          pnpm --filter web run build
+
+      - name: Build core and lockstep SDK distributions
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          uv build --out-dir dist
+          uv run --no-project --with build python scripts/build_subpackages.py --out-dir dist omnigent-client omnigent-ui-sdk
+          Get-ChildItem dist
+
+      - name: Check distribution metadata
+        shell: pwsh
+        run: |
+          $files = @(
+            Get-ChildItem "dist" -File |
+              Where-Object { $_.Name -match '\.(whl|tar\.gz)$' } |
+              Select-Object -ExpandProperty FullName
+          )
+          if ($files.Count -eq 0) {
+            throw "No distribution artifacts found in dist"
+          }
+          uvx twine check $files
+
+      - name: Assert bundled web UI
+        shell: pwsh
+        run: |
+          @'
+          import glob
+          import sys
+          import zipfile
+
+          wheels = sorted(glob.glob("dist/omnigent-*.whl"))
+          if not wheels:
+              sys.exit("no core omnigent wheel found")
+          wheel = wheels[-1]
+          names = zipfile.ZipFile(wheel).namelist()
+          ui = [name for name in names if "server/static/web-ui/" in name]
+          has_index = any(name.endswith("server/static/web-ui/index.html") for name in ui)
+          print(f"{wheel}: {len(ui)} web UI files; index.html={has_index}")
+          if not ui or not has_index:
+              sys.exit("web UI bundle missing from core wheel")
+          '@ | python -
+
+      - name: Smoke-install built wheels
+        shell: pwsh
+        run: |
+          uv venv --python 3.12 .artifact-smoke
+          $python = (Resolve-Path .artifact-smoke\Scripts\python.exe).Path
+          $wheels = Get-ChildItem dist\*.whl | ForEach-Object { $_.FullName }
+          uv pip install --python $python $wheels
+          & .artifact-smoke\Scripts\omnigent.exe --version
+          & .artifact-smoke\Scripts\omnigent.exe --help | Out-Null
+          & $python -c "import omnigent; import omnigent.server.app; print('wheel import smoke OK')"
+
+      - name: Assemble Windows bundle
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force windows-bundle\wheels | Out-Null
+          Copy-Item dist\*.whl windows-bundle\wheels\
+          Copy-Item scripts\install_oss.ps1 windows-bundle\install_oss.ps1
+          Copy-Item scripts\windows_safe_pytest.ps1 windows-bundle\windows_safe_pytest.ps1
+          Copy-Item docs\windows\README.md windows-bundle\WINDOWS-README.md
+          Copy-Item docs\windows\test-execution.md windows-bundle\TESTING.md
+
+          Get-ChildItem windows-bundle\wheels\*.whl |
+            Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $([IO.Path]::GetFileName($_.Path))" } |
+            Set-Content -Encoding ascii windows-bundle\SHA256SUMS.txt
+
+          @'
+          Omnigent Windows build
+          ======================
+
+          This bundle was produced by the fork release validation workflow from
+          a commit that passed focused Linux compatibility checks, native Windows
+          tests, distribution metadata validation, bundled-web-UI validation, and
+          a clean wheel installation smoke test.
+
+          Install the exact wheels from this artifact into an isolated environment:
+
+            uv venv --python 3.12 .venv
+            $python = (Resolve-Path .venv\Scripts\python.exe).Path
+            $wheels = Get-ChildItem .\wheels\*.whl | ForEach-Object { $_.FullName }
+            uv pip install --python $python $wheels
+            .\.venv\Scripts\omnigent.exe --version
+            .\.venv\Scripts\omnigent.exe --help
+
+          Start locally:
+
+            .\.venv\Scripts\omnigent.exe server
+
+          In another PowerShell:
+
+            .\.venv\Scripts\omnigent.exe host --server http://localhost:6767
+          '@ | Set-Content -Encoding utf8 windows-bundle\README.txt
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: omnigent-windows-${{ github.sha }}
+          path: windows-bundle/
+          if-no-files-found: error
+          retention-days: 30
