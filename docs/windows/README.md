@@ -1,10 +1,13 @@
 # Windows enablement documentation
 
+For installation, upgrades, local connection, and initial smoke tests, start with [`QUICKSTART.md`](QUICKSTART.md).
+
 This folder contains detailed Windows enablement material. The top-level decision
 record is [`../windows-first-class-support-adr.md`](../windows-first-class-support-adr.md).
 
 Use this folder as the product/engineering workspace for native Windows support:
 
+- [`QUICKSTART.md`](QUICKSTART.md) — install, upgrade, connect, smoke test, and uninstall.
 - [`qa-matrix.md`](qa-matrix.md) — review gates, CI levels, manual QA, and PR evidence expectations.
 - [`test-execution.md`](test-execution.md) — native PowerShell test workflow and stable/broad test split.
 - [`e2e-evidence.md`](e2e-evidence.md) — expected end-to-end evidence package for Windows behavior.
