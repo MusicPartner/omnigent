@@ -2,9 +2,10 @@
 <#
 Install an Omnigent Windows artifact bundle produced by the fork release workflow.
 
-The installer uses the exact wheels shipped beside this script, creates an
-isolated Python 3.12 environment, writes a stable omnigent.cmd launcher, and can
-add that launcher directory to the current user's PATH.
+The installer uses the exact wheels shipped beside this script and creates an
+isolated Python 3.12 environment. The wheel's upstream-compatible console-script
+metadata creates both omni.exe and omnigent.exe in the environment's Scripts
+directory; that directory can be added directly to the current user's PATH.
 #>
 
 param(
@@ -116,17 +117,16 @@ if ($wheels.Count -lt 3) {
 
 $uv = Resolve-Uv
 $venvDir = Join-Path $InstallDir ".venv"
-$binDir = Join-Path $InstallDir "bin"
-$python = Join-Path $venvDir "Scripts\python.exe"
-$omnigentExe = Join-Path $venvDir "Scripts\omnigent.exe"
-$launcher = Join-Path $binDir "omnigent.cmd"
+$scriptsDir = Join-Path $venvDir "Scripts"
+$python = Join-Path $scriptsDir "python.exe"
+$omniExe = Join-Path $scriptsDir "omni.exe"
+$omnigentExe = Join-Path $scriptsDir "omnigent.exe"
 
 Write-Step "Installing Omnigent from this artifact into $InstallDir"
 New-Item -ItemType Directory -Force $InstallDir | Out-Null
 if (Test-Path $venvDir) {
     Remove-Item -Recurse -Force $venvDir
 }
-New-Item -ItemType Directory -Force $binDir | Out-Null
 
 & $uv venv --python $script:PythonVersion $venvDir
 if ($LASTEXITCODE -ne 0) {
@@ -138,35 +138,40 @@ $wheelPaths = @($wheels | ForEach-Object { $_.FullName })
 if ($LASTEXITCODE -ne 0) {
     throw "Could not install the artifact wheels."
 }
+if (-not (Test-Path $omniExe)) {
+    throw "Installation completed without creating the upstream-compatible omni.exe entry point: $omniExe"
+}
 if (-not (Test-Path $omnigentExe)) {
-    throw "Installation completed without creating $omnigentExe."
+    throw "Installation completed without creating the omnigent.exe entry point: $omnigentExe"
 }
 
-$launcherText = "@echo off`r`n`"%~dp0..\.venv\Scripts\omnigent.exe`" %*`r`n"
-Set-Content -Path $launcher -Value $launcherText -Encoding ascii
-
 if (-not $NoPath) {
-    Add-UserPathEntry $binDir
+    Add-UserPathEntry $scriptsDir
 }
 Ensure-Psmux
 
-Write-Step "Verifying the installed CLI"
+Write-Step "Verifying the installed upstream-compatible CLI entry points"
+& $omniExe --version
+if ($LASTEXITCODE -ne 0) {
+    throw "Installed omni.exe failed its version smoke test."
+}
+& $omniExe --help *> $null
+if ($LASTEXITCODE -ne 0) {
+    throw "Installed omni.exe failed its help smoke test."
+}
 & $omnigentExe --version
 if ($LASTEXITCODE -ne 0) {
     throw "Installed omnigent.exe failed its version smoke test."
 }
-& $omnigentExe --help *> $null
-if ($LASTEXITCODE -ne 0) {
-    throw "Installed omnigent.exe failed its help smoke test."
-}
 
 Write-Host ""
 Write-Host "Omnigent installed successfully."
-Write-Host "Launcher: $launcher"
+Write-Host "omni.exe: $omniExe"
+Write-Host "omnigent.exe: $omnigentExe"
 if ($NoPath) {
-    Write-Host "Run: $launcher --version"
+    Write-Host "Run: $omniExe --version"
 } else {
-    Write-Host "Open a new PowerShell and run: omnigent --version"
+    Write-Host "Open a new PowerShell and run: omni --version"
 }
-Write-Host "Start the server with: omnigent server"
-Write-Host "Then start a host in another PowerShell with: omnigent host --server http://localhost:6767"
+Write-Host "Start the server with: omni server"
+Write-Host "Then start a host in another PowerShell with: omni host --server http://localhost:6767"
