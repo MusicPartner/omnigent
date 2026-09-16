@@ -10,13 +10,13 @@ repos:
       - id: ruff-format
         name: ruff format
         language: system
-        entry: .venv/bin/python -m ruff format --force-exclude
+        entry: uv run ruff format --force-exclude
         types: [python]
 
       - id: ruff-check
         name: ruff check
         language: system
-        entry: .venv/bin/python -m ruff check --fix --force-exclude
+        entry: uv run ruff check --fix --force-exclude
         types: [python]
 
       - id: pyrefly
@@ -31,14 +31,14 @@ repos:
       - id: no-global-asyncio-patch
         name: no globally-clobbering asyncio monkeypatch
         language: system
-        entry: .venv/bin/python dev/lint/lint_no_global_asyncio_patch.py
+        entry: uv run python dev/lint/lint_no_global_asyncio_patch.py
         types: [python]
         files: ^tests/
 
       - id: no-skipped-tests
         name: no unconditional `@pytest.mark.skip`
         language: system
-        entry: .venv/bin/python dev/lint/lint_no_skipped_tests.py
+        entry: uv run python dev/lint/lint_no_skipped_tests.py
         types: [python]
         files: ^tests/
 
@@ -153,7 +153,7 @@ repos:
       - id: sync-version-py
         name: sync omnigent/version.py to pyproject version
         language: system
-        entry: .venv/bin/python scripts/sync_version_py.py
+        entry: uv run python scripts/sync_version_py.py
         files: ^(pyproject\.toml|omnigent/version\.py)$
         pass_filenames: false
 
@@ -164,7 +164,7 @@ repos:
       - id: normalize-uv-lock-registry
         name: normalize uv.lock registry to pypi.org
         language: system
-        entry: .venv/bin/python scripts/normalize_uv_lock_registry.py
+        entry: uv run python scripts/normalize_uv_lock_registry.py
         files: ^uv\.lock$
         pass_filenames: true
 

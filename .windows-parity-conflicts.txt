@@ -1,0 +1,15 @@
+CONTRIBUTING.md
+omnigent/harnesses/goose_native/bridge.py
+omnigent/onboarding/wizard.py
+omnigent/runner/app.py
+omnigent/runner/routing.py
+omnigent/server/app.py
+omnigent/server/routes/terminal_attach.py
+omnigent/spec/parser.py
+omnigent/spec/validator.py
+omnigent/terminals/ws_bridge.py
+tests/e2e_ui/conftest.py
+tests/spec/test_parser.py
+tests/terminals/test_registry.py
+tests/terminals/test_ws_bridge.py
+tests/test_claude_native_bridge.py

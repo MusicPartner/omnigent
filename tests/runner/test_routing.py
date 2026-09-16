@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import httpx
 import pytest
 
 from omnigent.entities import Conversation
 from omnigent.errors import ErrorCode, OmnigentError
 from omnigent.runner.routing import RunnerRouter, runner_dispatch_harness
+from omnigent.runner.transport_locator import LocalRunnerTransportLocator
 from omnigent.runner.transports.ws_tunnel.frames import HelloFrame
 from omnigent.runner.transports.ws_tunnel.registry import TunnelRegistry
 from omnigent.spec import AgentSpec, ExecutorSpec, LLMConfig
@@ -31,6 +33,25 @@ class _FakeWebSocket:
         :returns: Empty frame string.
         """
         return ""
+
+
+class _FakeTransportLocator:
+    """Transport locator test double."""
+
+    def __init__(self) -> None:
+        self.client = httpx.AsyncClient(base_url="http://runner-test")
+        self.requested: list[str] = []
+        self.closed = False
+
+    def client_for_runner(self, runner_id: str) -> httpx.AsyncClient:
+        """Record and return a stable client."""
+        self.requested.append(runner_id)
+        return self.client
+
+    async def aclose(self) -> None:
+        """Close the fake client."""
+        self.closed = True
+        await self.client.aclose()
 
 
 class _ConversationStore:
@@ -198,19 +219,40 @@ async def test_runner_router_requires_pinned_runner_to_be_online() -> None:
 
 
 @pytest.mark.asyncio
+async def test_local_runner_transport_locator_returns_configured_client() -> None:
+    """Env-selected local transports are usable by the router seam."""
+    client = httpx.AsyncClient(base_url="http://127.0.0.1:7777")
+    locator = LocalRunnerTransportLocator(client)
+    try:
+        assert locator.client_for_runner("runner_one") is client
+        assert locator.client_for_runner("runner_two") is client
+    finally:
+        await locator.aclose()
+
+
+@pytest.mark.asyncio
 async def test_runner_router_uses_pinned_runner_when_multiple_online() -> None:
     """A pinned conversation keeps hard affinity with multiple runners online."""
     registry = TunnelRegistry()
     registry.register("runner_one", _FakeWebSocket(), _hello(harnesses=["codex"]))
     registry.register("runner_two", _FakeWebSocket(), _hello(harnesses=["codex"]))
     store = _ConversationStore({"conv_test": _conversation(runner_id="runner_two")})
-    router = RunnerRouter(registry=registry, conversation_store=store)  # type: ignore[arg-type]
+    locator = _FakeTransportLocator()
+    router = RunnerRouter(
+        registry=registry,
+        conversation_store=store,  # type: ignore[arg-type]
+        transport_locator=locator,
+    )
     try:
         routed = router.client_for_conversation(conversation_id="conv_test", harness="codex")
 
         assert routed.runner_id == "runner_two"
+        assert routed.client is locator.client
+        assert locator.requested == ["runner_two"]
     finally:
         await router.aclose()
+
+    assert locator.closed is True
 
 
 @pytest.mark.asyncio

@@ -38,7 +38,7 @@ def _resolve_venv_python() -> Path:
 
     Git worktrees don't have their own ``.venv`` — they share the
     main checkout's venv. Walk up the directory tree from the
-    current repo root, looking for ``.venv/bin/python`` in this
+    current repo root, looking for the platform's venv Python in this
     directory then in each parent, stopping when we find one.
     Stops at the filesystem root if none is found (which surfaces
     the misconfiguration loudly from the fixture).
@@ -49,13 +49,18 @@ def _resolve_venv_python() -> Path:
     """
     current = _OMNIGENT_REPO
     while True:
-        candidate = current / ".venv" / "bin" / "python"
-        if candidate.is_file():
-            return candidate
+        candidates = (
+            [current / ".venv" / "Scripts" / "python.exe"]
+            if os.name == "nt"
+            else [current / ".venv" / "bin" / "python"]
+        )
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
         if current.parent == current:
             # Reached filesystem root without finding a venv.
             raise RuntimeError(
-                f"no .venv/bin/python found walking up from "
+                f"no .venv Python found walking up from "
                 f"{_OMNIGENT_REPO} — worktrees share the main "
                 f"checkout's venv, so one parent of this path "
                 f"should contain ``.venv``."
@@ -81,7 +86,8 @@ def omnigent_python() -> Path:
 
     :returns: Absolute path to the Omnigent ``.venv`` Python
         interpreter, e.g.
-        ``"/path/to/omnigent/.venv/bin/python"``.
+        ``"/path/to/omnigent/.venv/bin/python"`` or
+        ``"C:\\path\\to\\omnigent\\.venv\\Scripts\\python.exe"``.
     :raises RuntimeError: If the interpreter is not present at
         the expected path — indicates the Omnigent checkout is
         missing or its .venv hasn't been created.

@@ -28,6 +28,8 @@ class _KiroMcpConfig(TypedDict):
     mcpServers: dict[str, _McpServerEntry]
 
 
+from omnigent._platform import stable_user_id
+
 KIRO_NATIVE_BRIDGE_DIR_ENV_VAR = "HARNESS_KIRO_NATIVE_BRIDGE_DIR"
 KIRO_ACP_RECORD_PATH_ENV_VAR = "KIRO_ACP_RECORD_PATH"
 

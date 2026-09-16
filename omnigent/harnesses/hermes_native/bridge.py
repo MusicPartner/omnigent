@@ -42,6 +42,8 @@ from typing import TypeAlias
 
 from omnigent._platform import stable_user_id
 
+from omnigent._platform import stable_user_id
+
 _logger = logging.getLogger(__name__)
 
 _ConfigObject: TypeAlias = dict[str, object]

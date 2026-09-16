@@ -39,6 +39,7 @@ REQUIRED=(
   "Integration (claude-sdk)"
   "Integration (openai-agents)"
   "Integration (codex)"
+  "Windows smoke + unit"
 )
 
 ALLOW_SKIP=(
@@ -72,6 +73,7 @@ ALLOW_SKIP=(
   "Integration (claude-sdk)"
   "Integration (openai-agents)"
   "Integration (codex)"
+  "Windows smoke + unit"
 )
 
 is_allow_skip() { printf '%s\n' "${ALLOW_SKIP[@]}" | grep -qxF "$1"; }
@@ -88,6 +90,7 @@ workflow_for() {
     "E2E UI Tests (shard "*) echo "E2E UI Tests" ;;
     "UI Snapshot (visual baselines)") echo "UI Snapshot" ;;
     "Integration ("*)        echo "Integration Tests" ;;
+    "Windows smoke + unit")  echo "Windows (native)" ;;
     *)                       echo "" ;;
   esac
 }

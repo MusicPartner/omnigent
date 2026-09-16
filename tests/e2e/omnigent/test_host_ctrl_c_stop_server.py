@@ -27,7 +27,19 @@ wired to the wrong default, fires for a reused server, or if ``y`` fails to
 actually terminate the server — none of which a mock-based test would catch.
 """
 
+# ruff: noqa: E402 - Windows module skip must run before POSIX-only imports.
+
 from __future__ import annotations
+
+import os
+
+import pytest
+
+pytestmark = pytest.mark.posix_only
+
+if os.name == "nt":
+    pytest.skip("POSIX-only test; requires PTY/tmux/pexpect", allow_module_level=True)
+
 
 import contextlib
 import os
