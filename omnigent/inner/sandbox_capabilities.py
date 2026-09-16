@@ -96,16 +96,12 @@ def sandbox_capabilities(backend: str | None) -> SandboxCapabilities:
 
 def egress_capable_backends() -> frozenset[str]:
     """Return backends that hard-enforce Omnigent egress policy."""
-    return frozenset(
-        backend for backend, caps in _CAPABILITIES.items() if caps.egress_policy
-    )
+    return frozenset(backend for backend, caps in _CAPABILITIES.items() if caps.egress_policy)
 
 
 def network_isolation_capable_backends() -> frozenset[str]:
     """Return backends that can hard-deny/isolate network access."""
-    return frozenset(
-        backend for backend, caps in _CAPABILITIES.items() if caps.network_isolation
-    )
+    return frozenset(backend for backend, caps in _CAPABILITIES.items() if caps.network_isolation)
 
 
 def sandbox_network_deny_error(backend: str | None) -> str | None:

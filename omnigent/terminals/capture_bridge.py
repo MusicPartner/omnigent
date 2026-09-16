@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import json
 import logging
 from collections.abc import Callable
@@ -37,7 +38,10 @@ async def bridge_capture_to_websocket(
     async def _instance_alive() -> bool:
         is_alive = getattr(instance, "is_alive", None)
         if callable(is_alive):
-            return bool(await is_alive())
+            result = is_alive()
+            if inspect.isawaitable(result):
+                result = await result
+            return bool(result)
         return bool(getattr(instance, "running", False))
 
     async def _capture_loop() -> None:
@@ -76,7 +80,9 @@ async def bridge_capture_to_websocket(
                         continue
                     resize = getattr(instance, "resize", None)
                     if callable(resize):
-                        await resize(cols=cols, rows=rows)
+                        result = resize(cols=cols, rows=rows)
+                        if inspect.isawaitable(result):
+                            await result
                 continue
             data = msg.get("bytes")
             if data is None or read_only:

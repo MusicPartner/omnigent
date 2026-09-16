@@ -18,8 +18,8 @@ from omnigent.terminals.backend import (
 from omnigent.terminals.registry import TerminalListEntry, TerminalRegistry
 
 __all__ = [
-    "TerminalListEntry",
     "PsmuxTerminalMuxBackend",
+    "TerminalListEntry",
     "TerminalMuxBackend",
     "TerminalRegistry",
     "TmuxTerminalMuxBackend",

@@ -4451,7 +4451,6 @@ def test_parse_executor_reasoning_effort_absent(tmp_path: Path) -> None:
     assert spec.executor.reasoning_effort is None
 
 
-
 def test_parse_windows_jobobject_rejects_network_deny(tmp_path: Path) -> None:
     config = {
         "spec_version": 1,

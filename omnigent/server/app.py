@@ -1432,9 +1432,7 @@ def create_app(
                 make_tunnel_ws_factory,
             )
 
-            set_runner_ws_factory(
-                make_tunnel_ws_factory(runner_router, tunnel_registry)
-            )
+            set_runner_ws_factory(make_tunnel_ws_factory(runner_router, tunnel_registry))
             set_runner_direct_attach_resolver(
                 make_direct_attach_resolver(runner_router, tunnel_registry)
             )
