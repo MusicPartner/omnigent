@@ -4449,3 +4449,34 @@ def test_parse_executor_reasoning_effort_absent(tmp_path: Path) -> None:
     spec = parse(tmp_path)
 
     assert spec.executor.reasoning_effort is None
+
+
+def test_parse_windows_jobobject_rejects_network_deny(tmp_path: Path) -> None:
+    config = {
+        "spec_version": 1,
+        "name": "windows-network-deny",
+        "os_env": {
+            "type": "caller_process",
+            "sandbox": {"type": "windows_jobobject", "allow_network": False},
+        },
+    }
+    (tmp_path / "config.yaml").write_text(yaml.dump(config))
+    with pytest.raises(OmnigentError, match=r"windows_jobobject"):
+        parse(tmp_path)
+
+
+def test_parse_windows_jobobject_rejects_egress_rules(tmp_path: Path) -> None:
+    config = {
+        "spec_version": 1,
+        "name": "windows-egress-rules",
+        "os_env": {
+            "type": "caller_process",
+            "sandbox": {
+                "type": "windows_jobobject",
+                "egress_rules": ["* api.github.com/**"],
+            },
+        },
+    }
+    (tmp_path / "config.yaml").write_text(yaml.dump(config))
+    with pytest.raises(OmnigentError, match=r"windows_jobobject"):
+        parse(tmp_path)

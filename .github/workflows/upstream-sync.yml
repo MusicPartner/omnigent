@@ -1,0 +1,145 @@
+name: Sync upstream release
+
+on:
+  schedule:
+    - cron: "23 6 * * *"
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "latest-release, main, a tag, branch, or SHA from omnigent-ai/omnigent"
+        required: true
+        default: "latest-release"
+        type: string
+      target_branch:
+        description: "Fork branch that receives the upstream sync PR"
+        required: true
+        default: "main"
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: upstream-release-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Prepare upstream sync PR
+    if: ${{ github.repository == 'MusicPartner/omnigent' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REQUESTED_REF: ${{ github.event.inputs.upstream_ref || 'latest-release' }}
+      TARGET_BRANCH: ${{ github.event.inputs.target_branch || 'main' }}
+      UPSTREAM_REPOSITORY: omnigent-ai/omnigent
+    steps:
+      - name: Check out target branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.target_branch || 'main' }}
+
+      - name: Resolve upstream ref
+        id: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git" 2>/dev/null || true
+          git fetch --prune origin "${TARGET_BRANCH}"
+
+          if [[ "${REQUESTED_REF}" == "latest-release" ]]; then
+            resolved_ref="$(gh api "repos/${UPSTREAM_REPOSITORY}/releases/latest" --jq .tag_name)"
+            git fetch --force --no-tags upstream "refs/tags/${resolved_ref}"
+          else
+            resolved_ref="${REQUESTED_REF}"
+            git fetch --force --no-tags upstream "${resolved_ref}"
+          fi
+
+          upstream_sha="$(git rev-parse FETCH_HEAD)"
+          echo "ref=${resolved_ref}" >> "${GITHUB_OUTPUT}"
+          echo "sha=${upstream_sha}" >> "${GITHUB_OUTPUT}"
+
+          if git merge-base --is-ancestor "${upstream_sha}" "origin/${TARGET_BRANCH}"; then
+            echo "needed=false" >> "${GITHUB_OUTPUT}"
+            echo "${resolved_ref} (${upstream_sha}) is already integrated into ${TARGET_BRANCH}." >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "needed=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Merge upstream into a sync branch
+        id: merge
+        if: ${{ steps.upstream.outputs.needed == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          safe_ref="$(printf '%s' '${{ steps.upstream.outputs.ref }}' | sed -E 's/[^A-Za-z0-9._-]+/-/g')"
+          sync_branch="upstream-sync/${safe_ref}"
+          echo "branch=${sync_branch}" >> "${GITHUB_OUTPUT}"
+
+          git config user.name "MusicPartner Upstream Sync"
+          git config user.email "keivan@musicpartner.se"
+          git switch -C "${sync_branch}" "origin/${TARGET_BRANCH}"
+
+          set +e
+          git merge --no-ff --no-edit "${{ steps.upstream.outputs.sha }}"
+          merge_status=$?
+          set -e
+
+          if [[ ${merge_status} -ne 0 ]]; then
+            {
+              echo "## Upstream merge needs manual conflict resolution"
+              echo
+              echo "Upstream ref: \`${{ steps.upstream.outputs.ref }}\`"
+              echo "Upstream SHA: \`${{ steps.upstream.outputs.sha }}\`"
+              echo "Target branch: \`${TARGET_BRANCH}\`"
+              echo
+              echo "Conflicted files:"
+              git diff --name-only --diff-filter=U | sed 's/^/- `/' | sed 's/$/`/'
+            } >> "${GITHUB_STEP_SUMMARY}"
+            exit ${merge_status}
+          fi
+
+          git push --force-with-lease origin "${sync_branch}"
+
+      - name: Create or reuse sync PR
+        id: pr
+        if: ${{ steps.upstream.outputs.needed == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sync_branch="${{ steps.merge.outputs.branch }}"
+          existing_pr="$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open --base "${TARGET_BRANCH}" --head "${sync_branch}" --json number --jq '.[0].number // empty')"
+
+          if [[ -n "${existing_pr}" ]]; then
+            pr_url="$(gh pr view "${existing_pr}" --repo "${GITHUB_REPOSITORY}" --json url --jq .url)"
+          else
+            body_file="$(mktemp)"
+            cat > "${body_file}" <<EOF
+          Automated upstream sync from \`${UPSTREAM_REPOSITORY}\`.
+
+          - Upstream ref: \`${{ steps.upstream.outputs.ref }}\`
+          - Upstream SHA: \`${{ steps.upstream.outputs.sha }}\`
+          - Target branch: \`${TARGET_BRANCH}\`
+
+          The fork release validation workflow is dispatched against this sync branch after the PR is created. Merge only after those checks pass and any upstream/custom Windows conflicts have been reviewed.
+          EOF
+            pr_url="$(gh pr create --repo "${GITHUB_REPOSITORY}" --base "${TARGET_BRANCH}" --head "${sync_branch}" --title "chore(upstream): sync ${{ steps.upstream.outputs.ref }}" --body-file "${body_file}")"
+          fi
+
+          echo "url=${pr_url}" >> "${GITHUB_OUTPUT}"
+          echo "Sync PR: ${pr_url}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Dispatch fork release validation
+        if: ${{ steps.upstream.outputs.needed == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run fork-release-ci.yml --repo "${GITHUB_REPOSITORY}" --ref "${{ steps.merge.outputs.branch }}"
+          echo "Dispatched Fork release validation for \`${{ steps.merge.outputs.branch }}\`." >> "${GITHUB_STEP_SUMMARY}"

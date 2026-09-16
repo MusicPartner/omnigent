@@ -1,0 +1,381 @@
+name: Fork release validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+  push:
+    branches:
+      - main
+      - windows-parity/v0.14-integration
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_INDEX_URL: https://pypi.org/simple
+  PIP_INDEX_URL: https://pypi.org/simple
+
+jobs:
+  focused-linux:
+    name: Focused Linux compatibility
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OMNIGENT_SKIP_WEB_UI: "true"
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+
+      - name: Install focused test and lint dependencies
+        run: uv sync --locked --group test --group lint --extra tracing
+
+      - name: Ruff Windows integration surfaces
+        run: >-
+          uv run ruff check
+          omnigent/inner/sandbox_capabilities.py
+          omnigent/runner/routing.py
+          omnigent/runner/transport_locator.py
+          omnigent/server/_runner_transport.py
+          omnigent/server/app.py
+          omnigent/server/routes/terminal_attach.py
+          omnigent/spec/parser.py
+          omnigent/spec/validator.py
+          omnigent/terminals/backend.py
+          omnigent/terminals/capture_bridge.py
+          tests/terminals/test_windows_psmux.py
+
+      - name: Focused integration tests
+        run: >-
+          uv run pytest -q -p no:cacheprovider
+          tests/inner/test_sandbox_capabilities.py
+          tests/runner/test_routing.py
+          tests/server/test_runner_transport.py
+          tests/spec/test_parser.py
+          tests/spec/test_validator.py
+          tests/terminals/test_windows_psmux.py
+
+  windows-native:
+    name: Native Windows compatibility
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      OMNIGENT_SKIP_WEB_UI: "true"
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version-file: ".python-version"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked --group test --extra tracing
+
+      - name: Import and CLI smoke
+        run: |
+          uv run python -c "import omnigent; print('import omnigent OK')"
+          uv run omni --help
+          uv run omnigent --help
+
+      # Keep the hard native-Windows pair from current upstream main and layer
+      # the fork's broader Windows parity coverage below it.
+      - name: Upstream Windows hard tests
+        run: >-
+          uv run pytest
+          tests/inner/test_proc_and_platform.py
+          tests/runtime/test_process_manager.py
+          -p no:cacheprovider -q
+
+      - name: Windows stable subset
+        shell: pwsh
+        run: .\scripts\windows_safe_pytest.ps1 -StableOnly
+
+      - name: Install psmux
+        shell: pwsh
+        run: |
+          winget install --id marlocarlo.psmux -e --accept-package-agreements --accept-source-agreements --disable-interactivity
+          "$env:LOCALAPPDATA\Microsoft\WinGet\Links" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $env:PATH = "$env:LOCALAPPDATA\Microsoft\WinGet\Links;$env:PATH"
+          psmux --version
+
+      - name: psmux terminal backend tests
+        run: >-
+          uv run pytest
+          tests/terminals/test_windows_psmux.py::test_windows_psmux_backend_launch_send_read_close
+          tests/terminals/test_windows_psmux.py::test_windows_psmux_backend_strips_runner_auth_secrets
+          -p no:cacheprovider -q
+
+      - name: Broader Windows unit sweep
+        continue-on-error: true
+        run: >-
+          uv run pytest tests/inner tests/runtime/harnesses
+          -m "not posix_only"
+          -p no:cacheprovider -q
+
+  build-windows-artifact:
+    name: Build and install Windows artifact (omni.exe)
+    needs: [focused-linux, windows-native]
+    if: ${{ !cancelled() && needs.focused-linux.result == 'success' && needs.windows-native.result == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version-file: ".python-version"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: false
+
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+
+      # Match current upstream release-omnigent.yml: build the production web
+      # bundle before the wheel so the packaged core contains the UI.
+      - name: Build web UI
+        shell: pwsh
+        env:
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+        run: |
+          Remove-Item -Recurse -Force omnigent/server/static/web-ui -ErrorAction SilentlyContinue
+          pnpm install --frozen-lockfile --filter web
+          pnpm --filter web run build
+
+      - name: Build core and lockstep SDK distributions
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          uv build --out-dir dist
+          uv run --no-project --with build python scripts/build_subpackages.py --out-dir dist omnigent-client omnigent-ui-sdk
+          Get-ChildItem dist
+
+      - name: Check distribution metadata
+        shell: pwsh
+        run: |
+          $files = @(
+            Get-ChildItem "dist" -File |
+              Where-Object { $_.Name -match '\.(whl|tar\.gz)$' } |
+              Select-Object -ExpandProperty FullName
+          )
+          if ($files.Count -eq 0) {
+            throw "No distribution artifacts found in dist"
+          }
+          uvx twine check $files
+
+      - name: Assert bundled web UI and console entry points
+        shell: pwsh
+        run: |
+          @'
+          import configparser
+          import glob
+          import io
+          import sys
+          import zipfile
+
+          wheels = sorted(glob.glob("dist/omnigent-*.whl"))
+          if not wheels:
+              sys.exit("no core omnigent wheel found")
+          wheel = wheels[-1]
+          with zipfile.ZipFile(wheel) as archive:
+              names = archive.namelist()
+              ui = [name for name in names if "server/static/web-ui/" in name]
+              has_index = any(name.endswith("server/static/web-ui/index.html") for name in ui)
+              entry_files = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
+              if len(entry_files) != 1:
+                  sys.exit(f"expected one entry_points.txt, got {entry_files}")
+              parser = configparser.ConfigParser()
+              parser.read_file(io.StringIO(archive.read(entry_files[0]).decode("utf-8")))
+              scripts = dict(parser["console_scripts"])
+
+          print(f"{wheel}: {len(ui)} web UI files; index.html={has_index}")
+          print(f"console scripts: {scripts}")
+          if not ui or not has_index:
+              sys.exit("web UI bundle missing from core wheel")
+          expected = "omnigent.cli:main"
+          for name in ("omni", "omnigent"):
+              if scripts.get(name) != expected:
+                  sys.exit(f"missing/incorrect console script {name!r}: {scripts.get(name)!r}")
+          '@ | python -
+
+      # Keep the upstream release-style clean wheel smoke before exercising the
+      # downloadable installer itself.
+      - name: Smoke-install built wheels like upstream
+        shell: pwsh
+        run: |
+          uv venv --python 3.12 .artifact-smoke
+          $python = (Resolve-Path .artifact-smoke\Scripts\python.exe).Path
+          $wheels = Get-ChildItem dist\*.whl | ForEach-Object { $_.FullName }
+          uv pip install --python $python $wheels
+
+          $omni = (Resolve-Path .artifact-smoke\Scripts\omni.exe).Path
+          $omnigent = (Resolve-Path .artifact-smoke\Scripts\omnigent.exe).Path
+          & $omni --version
+          if ($LASTEXITCODE -ne 0) { throw "omni.exe --version failed" }
+          & $omni --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "omni.exe --help failed" }
+          & $omnigent --version
+          if ($LASTEXITCODE -ne 0) { throw "omnigent.exe --version failed" }
+          & $python -c "import omnigent; import omnigent.server.app; print('wheel import smoke OK')"
+
+      - name: Assemble Windows bundle
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force windows-bundle\wheels | Out-Null
+          Copy-Item dist\*.whl windows-bundle\wheels\
+          Copy-Item scripts\install_windows_bundle.ps1 windows-bundle\install.ps1
+          Copy-Item scripts\uninstall_windows_bundle.ps1 windows-bundle\uninstall.ps1
+          Copy-Item scripts\windows_safe_pytest.ps1 windows-bundle\windows_safe_pytest.ps1
+          Copy-Item docs\windows\README.md windows-bundle\WINDOWS-README.md
+          Copy-Item docs\windows\test-execution.md windows-bundle\TESTING.md
+
+          @'
+          @echo off
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" %*
+          if errorlevel 1 pause
+          '@ | Set-Content -Encoding ascii windows-bundle\INSTALL.cmd
+
+          @'
+          @echo off
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0uninstall.ps1" %*
+          if errorlevel 1 pause
+          '@ | Set-Content -Encoding ascii windows-bundle\UNINSTALL.cmd
+
+          Get-ChildItem windows-bundle\wheels\*.whl |
+            Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $([IO.Path]::GetFileName($_.Path))" } |
+            Set-Content -Encoding ascii windows-bundle\SHA256SUMS.txt
+
+          @'
+          Omnigent Windows build
+          ======================
+
+          This bundle follows the current upstream Omnigent install model:
+          `uv tool install`, with both console entry points coming directly from
+          the core wheel:
+
+              omni     -> omnigent.cli:main
+              omnigent -> omnigent.cli:main
+
+          On Windows, installation creates real omni.exe and omnigent.exe tool
+          executables. No custom CLI wrapper is used.
+
+          QUICK INSTALL
+          -------------
+          1. Extract this ZIP to a normal folder.
+          2. Double-click INSTALL.cmd, or run from PowerShell:
+
+               .\install.ps1
+
+          The installer uses the exact three wheels in this bundle and installs
+          them with uv's tool mechanism into an isolated location under:
+
+               %LOCALAPPDATA%\Programs\Omnigent
+
+          The executable directory is added to your user PATH. If uv is missing,
+          the installer uses winget to install it. It also attempts to install
+          psmux for native managed terminals.
+
+          After installation, open a new PowerShell and run:
+
+               omni --version
+               omni --help
+               omni server
+
+          Then, in another PowerShell:
+
+               omni host --server http://localhost:6767
+
+          The installed entry points are:
+
+               %LOCALAPPDATA%\Programs\Omnigent\bin\omni.exe
+               %LOCALAPPDATA%\Programs\Omnigent\bin\omnigent.exe
+
+          `omnigent` remains an equivalent long-form alias, matching current
+          upstream main.
+
+          OPTIONS
+          -------
+          Install without changing PATH:
+
+               .\install.ps1 -NoPath
+
+          Install without attempting psmux installation:
+
+               .\install.ps1 -SkipPsmux
+
+          Install somewhere else:
+
+               .\install.ps1 -InstallDir C:\Tools\Omnigent
+
+          UNINSTALL
+          ---------
+          Double-click UNINSTALL.cmd, or run:
+
+               .\uninstall.ps1
+
+          uv and psmux are left installed because they may be shared by other tools.
+          '@ | Set-Content -Encoding utf8 windows-bundle\README.txt
+
+      - name: Test upstream-style artifact installer and uninstaller
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:RUNNER_TEMP "omnigent-artifact-install"
+          & .\windows-bundle\install.ps1 -InstallDir $installDir -NoPath -SkipPsmux
+          if ($LASTEXITCODE -ne 0) { throw "artifact installer failed" }
+
+          $binDir = Join-Path $installDir "bin"
+          $omni = Join-Path $binDir "omni.exe"
+          $omnigent = Join-Path $binDir "omnigent.exe"
+          if (-not (Test-Path $omni)) { throw "uv tool installer did not create omni.exe" }
+          if (-not (Test-Path $omnigent)) { throw "uv tool installer did not create omnigent.exe" }
+
+          & $omni --version
+          if ($LASTEXITCODE -ne 0) { throw "installed omni.exe --version failed" }
+          & $omni --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "installed omni.exe --help failed" }
+          & $omni server --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "installed omni.exe server --help failed" }
+          & $omni host --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "installed omni.exe host --help failed" }
+          & $omnigent --version
+          if ($LASTEXITCODE -ne 0) { throw "installed omnigent.exe --version failed" }
+
+          & .\windows-bundle\uninstall.ps1 -InstallDir $installDir
+          if (Test-Path $installDir) { throw "artifact uninstaller left the install directory behind" }
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: omnigent-windows-${{ github.sha }}
+          path: windows-bundle/
+          if-no-files-found: error
+          retention-days: 30

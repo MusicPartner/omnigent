@@ -718,3 +718,37 @@ def test_os_env_no_validation_when_absent() -> None:
     result = validate(spec)
     os_env_errors = [e for e in result.errors if e.path.startswith("os_env")]
     assert os_env_errors == [], f"absent os_env should not produce errors, got: {result.errors}"
+
+
+def test_os_env_windows_jobobject_rejects_network_deny() -> None:
+    """Programmatic specs get the same Windows network-deny guard."""
+    spec = _minimal_spec(
+        os_env=_os_env(
+            type="windows_jobobject",
+            allow_network=False,
+        ),
+    )
+
+    result = validate(spec)
+
+    assert not result.valid
+    matches = [e for e in result.errors if e.path == "os_env.sandbox.allow_network"]
+    assert matches, f"expected allow_network error, got: {result.errors}"
+    assert "windows_jobobject" in matches[0].message
+
+
+def test_os_env_windows_jobobject_rejects_egress_rules() -> None:
+    """Validator uses shared capabilities for Windows egress fail-closed policy."""
+    spec = _minimal_spec(
+        os_env=_os_env(
+            type="windows_jobobject",
+            egress_rules=["* api.github.com/**"],
+        ),
+    )
+
+    result = validate(spec)
+
+    assert not result.valid
+    matches = [e for e in result.errors if e.path == "os_env.sandbox.egress_rules"]
+    assert matches, f"expected egress_rules error, got: {result.errors}"
+    assert "windows_jobobject" in matches[0].message

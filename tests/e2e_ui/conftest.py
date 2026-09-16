@@ -810,15 +810,16 @@ def built_spa(request: pytest.FixtureRequest) -> None:
         # from blocking on its download confirmation under captured
         # pytest output, which reads as a hung test run.
         env = {**os.environ, "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0"}
+        pnpm = "pnpm.cmd" if sys.platform == "win32" else "pnpm"
         subprocess.run(
-            ["pnpm", "install", "--frozen-lockfile", "--filter", "web"],
+            [pnpm, "install", "--frozen-lockfile", "--filter", "web"],
             cwd=_REPO_ROOT,
             check=True,
             stdin=subprocess.DEVNULL,
             env=env,
         )
         subprocess.run(
-            ["pnpm", "--filter", "web", "run", "build"],
+            [pnpm, "--filter", "web", "run", "build"],
             cwd=_REPO_ROOT,
             check=True,
             stdin=subprocess.DEVNULL,

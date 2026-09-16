@@ -23,7 +23,19 @@ mock-compatible and exercises the same terminal-launch + overview path.
 - ``sys_terminal_launch`` fails to register the instance.
 """
 
+# ruff: noqa: E402 - Windows module skip must run before POSIX-only imports.
+
 from __future__ import annotations
+
+import os
+
+import pytest
+
+pytestmark = pytest.mark.posix_only
+
+if os.name == "nt":
+    pytest.skip("POSIX-only test; requires PTY/tmux/pexpect", allow_module_level=True)
+
 
 import contextlib
 from pathlib import Path
