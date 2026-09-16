@@ -125,7 +125,7 @@ jobs:
     needs: [focused-linux, windows-native]
     if: ${{ !cancelled() && needs.focused-linux.result == 'success' && needs.windows-native.result == 'success' }}
     runs-on: windows-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - name: Check out repo
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -209,10 +209,23 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force windows-bundle\wheels | Out-Null
           Copy-Item dist\*.whl windows-bundle\wheels\
-          Copy-Item scripts\install_oss.ps1 windows-bundle\install_oss.ps1
+          Copy-Item scripts\install_windows_bundle.ps1 windows-bundle\install.ps1
+          Copy-Item scripts\uninstall_windows_bundle.ps1 windows-bundle\uninstall.ps1
           Copy-Item scripts\windows_safe_pytest.ps1 windows-bundle\windows_safe_pytest.ps1
           Copy-Item docs\windows\README.md windows-bundle\WINDOWS-README.md
           Copy-Item docs\windows\test-execution.md windows-bundle\TESTING.md
+
+          @'
+          @echo off
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" %*
+          if errorlevel 1 pause
+          '@ | Set-Content -Encoding ascii windows-bundle\INSTALL.cmd
+
+          @'
+          @echo off
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0uninstall.ps1" %*
+          if errorlevel 1 pause
+          '@ | Set-Content -Encoding ascii windows-bundle\UNINSTALL.cmd
 
           Get-ChildItem windows-bundle\wheels\*.whl |
             Get-FileHash -Algorithm SHA256 |
@@ -223,28 +236,96 @@ jobs:
           Omnigent Windows build
           ======================
 
-          This bundle was produced by the fork release validation workflow from
-          a commit that passed focused Linux compatibility checks, native Windows
-          tests, distribution metadata validation, bundled-web-UI validation, and
-          a clean wheel installation smoke test.
+          This is an installable Windows test build produced from a commit that
+          passed focused Linux compatibility, native Windows tests, psmux tests,
+          package metadata validation, bundled-web-UI validation, and clean wheel
+          installation checks.
 
-          Install the exact wheels from this artifact into an isolated environment:
+          QUICK INSTALL
+          -------------
+          1. Extract this ZIP to a normal folder.
+          2. Double-click INSTALL.cmd, or run from PowerShell:
 
-            uv venv --python 3.12 .venv
-            $python = (Resolve-Path .venv\Scripts\python.exe).Path
-            $wheels = Get-ChildItem .\wheels\*.whl | ForEach-Object { $_.FullName }
-            uv pip install --python $python $wheels
-            .\.venv\Scripts\omnigent.exe --version
-            .\.venv\Scripts\omnigent.exe --help
+               .\install.ps1
 
-          Start locally:
+          The installer uses the exact three wheels in this bundle, creates an
+          isolated Python 3.12 environment under:
 
-            .\.venv\Scripts\omnigent.exe server
+               %LOCALAPPDATA%\Programs\Omnigent
 
-          In another PowerShell:
+          and adds its launcher directory to your user PATH. If uv is missing,
+          the installer uses winget to install it. It also attempts to install
+          psmux for native managed terminals. Internet access is required for
+          Python/runtime dependencies and for installing missing prerequisites.
 
-            .\.venv\Scripts\omnigent.exe host --server http://localhost:6767
+          After installation, open a new PowerShell and run:
+
+               omnigent --version
+               omnigent --help
+               omnigent server
+
+          Then, in another PowerShell:
+
+               omnigent host --server http://localhost:6767
+
+          The installed Python environment contains the generated console binary:
+
+               %LOCALAPPDATA%\Programs\Omnigent\.venv\Scripts\omnigent.exe
+
+          The stable command intended for normal use is:
+
+               %LOCALAPPDATA%\Programs\Omnigent\bin\omnigent.cmd
+
+          OPTIONS
+          -------
+          Install without changing PATH:
+
+               .\install.ps1 -NoPath
+
+          Install without attempting psmux installation:
+
+               .\install.ps1 -SkipPsmux
+
+          Install somewhere else:
+
+               .\install.ps1 -InstallDir C:\Tools\Omnigent
+
+          UNINSTALL
+          ---------
+          Double-click UNINSTALL.cmd, or run:
+
+               .\uninstall.ps1
+
+          uv and psmux are left installed because they may be shared by other tools.
           '@ | Set-Content -Encoding utf8 windows-bundle\README.txt
+
+      - name: Test artifact installer and uninstaller
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:RUNNER_TEMP "omnigent-artifact-install"
+          & .\windows-bundle\install.ps1 -InstallDir $installDir -NoPath -SkipPsmux
+          if ($LASTEXITCODE -ne 0) { throw "artifact installer failed" }
+
+          $launcher = Join-Path $installDir "bin\omnigent.cmd"
+          $python = Join-Path $installDir ".venv\Scripts\python.exe"
+          if (-not (Test-Path $launcher)) { throw "installer did not create omnigent.cmd" }
+          if (-not (Test-Path (Join-Path $installDir ".venv\Scripts\omnigent.exe"))) {
+            throw "installer did not create omnigent.exe"
+          }
+
+          & $launcher --version
+          if ($LASTEXITCODE -ne 0) { throw "installed launcher --version failed" }
+          & $launcher --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "installed launcher --help failed" }
+          & $launcher server --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "installed launcher server --help failed" }
+          & $launcher host --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "installed launcher host --help failed" }
+          & $python -c "import omnigent; import omnigent.server.app; print('artifact installer import smoke OK')"
+          if ($LASTEXITCODE -ne 0) { throw "artifact installer import smoke failed" }
+
+          & .\windows-bundle\uninstall.ps1 -InstallDir $installDir
+          if (Test-Path $installDir) { throw "artifact uninstaller left the install directory behind" }
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
