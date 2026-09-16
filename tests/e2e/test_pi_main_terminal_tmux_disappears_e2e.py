@@ -23,7 +23,6 @@ enough to keep the interactive CLI open until the test kills it.
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import io
 import json
