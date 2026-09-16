@@ -187,7 +187,12 @@ async def test_capture_bridge_streams_read_and_forwards_input() -> None:
 
     instance = FakeInstance()
     ws = FakeWebSocket()
-    await bridge_capture_to_websocket(ws, instance=instance, read_only=False, poll_interval_s=0)  # type: ignore[arg-type]
+    await bridge_capture_to_websocket(
+        ws,
+        instance=instance,  # type: ignore[arg-type]
+        read_only=False,
+        poll_interval_s=0,
+    )
     assert ws.sent_bytes[0].startswith(b"\x1b[H\x1b[2J")
     assert b"ready" in ws.sent_bytes[0]
     assert ("echo hi", "Enter") in instance.sent
@@ -223,7 +228,12 @@ async def test_capture_bridge_closes_not_found_when_backend_dies() -> None:
             self.close_reason = reason
 
     ws = WaitingWebSocket()
-    await bridge_capture_to_websocket(ws, instance=DeadInstance(), read_only=False, poll_interval_s=0)  # type: ignore[arg-type]
+    await bridge_capture_to_websocket(
+        ws,
+        instance=DeadInstance(),  # type: ignore[arg-type]
+        read_only=False,
+        poll_interval_s=0,
+    )
     assert ws.close_code == WS_CLOSE_TERMINAL_NOT_FOUND
     assert ws.close_reason == "terminal session ended"
 
