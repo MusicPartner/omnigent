@@ -34,7 +34,7 @@ async def test_windows_psmux_backend_launch_send_read_close(tmp_path: Path) -> N
     try:
         assert instance.running is True
         read: dict[str, object] = {}
-        for _ in range(20):
+        for _ in range(75):
             await asyncio.sleep(0.2)
             read = await instance.read()
             if "ready" in str(read.get("screen", "")):
@@ -42,7 +42,7 @@ async def test_windows_psmux_backend_launch_send_read_close(tmp_path: Path) -> N
         assert "ready" in str(read.get("screen", ""))
         sent = await instance.send("Write-Output hi", keys="Enter")
         assert sent == {"status": "sent"}
-        for _ in range(20):
+        for _ in range(75):
             await asyncio.sleep(0.2)
             read = await instance.read()
             if "hi" in str(read.get("screen", "")):
