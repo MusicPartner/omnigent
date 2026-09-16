@@ -1360,6 +1360,57 @@ def test_local_run_preflights_local_claude_binary(
     assert called_local is False
 
 
+def test_local_run_defaults_claude_command_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing command falls back to the default Claude executable."""
+    seen: list[str] = []
+    called_local = False
+
+    def fake_which(command: str) -> str | None:
+        seen.append(command)
+        if command == "tmux":
+            return "/usr/bin/tmux"
+        return f"/usr/bin/{command}"
+
+    def fake_local(
+        spec_path: Path,
+        *,
+        session_id: str | None,
+        resume_picker: bool,
+        claude_args: tuple[str, ...],
+        command: str,
+        claude_config: claude_native.ClaudeNativeUcodeConfig | None,
+        auto_open_conversation: bool,
+        startup_profiler: StartupProfiler,
+    ) -> None:
+        nonlocal called_local
+        del (
+            spec_path,
+            session_id,
+            resume_picker,
+            claude_args,
+            claude_config,
+            auto_open_conversation,
+            startup_profiler,
+        )
+        called_local = True
+        assert command == "claude"
+
+    monkeypatch.setattr(claude_native.shutil, "which", fake_which)
+    monkeypatch.setattr(claude_native, "_run_with_local_server", fake_local)
+
+    claude_native.run_claude_native(
+        server=None,
+        session_id=None,
+        claude_args=(),
+        command=None,
+    )
+
+    assert called_local is True
+    assert "claude" in seen
+
+
 def test_run_preflights_local_tmux(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     The native wrapper fails before setup when local tmux is unavailable.
@@ -8555,6 +8606,36 @@ def test_bedrock_config_auth_command_failure_returns_none() -> None:
             }
         }
     )["b"]
+    assert claude_native._bedrock_config_for_native_claude(entry) is None
+
+
+def test_bedrock_config_auth_command_without_stdout_returns_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing auth_command stdout falls back instead of crashing."""
+    from omnigent.onboarding.provider_config import load_providers
+
+    entry = load_providers(
+        {
+            "providers": {
+                "b": {
+                    "kind": "bedrock",
+                    "anthropic": {
+                        "base_url": "https://gw.example/bedrock",
+                        "auth_command": "printf minted-bedrock-token",
+                        "models": {"default": "us.anthropic.claude-haiku-4-5-20251001-v1:0"},
+                    },
+                }
+            }
+        }
+    )["b"]
+
+    monkeypatch.setattr(
+        claude_native.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(stdout=None),  # type: ignore[arg-type]
+    )
+
     assert claude_native._bedrock_config_for_native_claude(entry) is None
 
 

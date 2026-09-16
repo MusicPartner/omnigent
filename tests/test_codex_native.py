@@ -7844,6 +7844,51 @@ def test_run_codex_native_does_not_require_local_codex_binary(
     assert remote_called is True
 
 
+def test_run_with_remote_server_defaults_codex_command_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing command falls back to the default codex executable."""
+
+    def fake_which(command: str) -> str | None:
+        return f"/usr/bin/{command}"
+
+    remote_called = False
+
+    def fake_remote(
+        base_url: str,
+        spec_path: Path,
+        *,
+        session_id: str | None,
+        resume_picker: bool,
+        codex_args: tuple[str, ...],
+        model: str | None,
+        prompt: str | None,
+        auto_open_conversation: bool,
+    ) -> None:
+        del (
+            base_url,
+            spec_path,
+            session_id,
+            resume_picker,
+            codex_args,
+            model,
+            prompt,
+            auto_open_conversation,
+        )
+        nonlocal remote_called
+        remote_called = True
+
+    monkeypatch.setattr(codex_native.shutil, "which", fake_which)
+    monkeypatch.setattr(codex_native, "_run_with_remote_server", fake_remote)
+    codex_native.run_codex_native(
+        server="http://localhost:8000",
+        session_id=None,
+        codex_args=(),
+        command=None,
+    )
+    assert remote_called is True
+
+
 def test_record_launch_for_fresh_session_persists_current_cwd(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
