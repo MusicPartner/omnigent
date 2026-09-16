@@ -76,9 +76,7 @@ def test_normalize_repo_url_rejects_unsupported_shape() -> None:
         ("git+https://github.com/o/r", "", "", "git+https://github.com/o/r"),
     ],
 )
-def test_get_uv_install_target(
-    install_url: str, version: str, extras: str, expected: str
-) -> None:
+def test_get_uv_install_target(install_url: str, version: str, extras: str, expected: str) -> None:
     r = run_ps(f"Get-UvInstallTarget '{install_url}' '{version}' '{extras}'")
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip() == expected
@@ -86,7 +84,11 @@ def test_get_uv_install_target(
 
 def test_check_only_does_not_run_uv_install(tmp_path: Path) -> None:
     uv = tmp_path / ("uv.cmd" if os.name == "nt" else "uv")
-    uv.write_text("@echo off\necho uv called %*\nexit /b 0\n" if os.name == "nt" else "#!/bin/sh\necho uv called \"$@\"\n")
+    uv.write_text(
+        "@echo off\necho uv called %*\nexit /b 0\n"
+        if os.name == "nt"
+        else '#!/bin/sh\necho uv called "$@"\n'
+    )
     uv.chmod(0o755)
     env = {"PATH": f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}"}
     r = subprocess.run(

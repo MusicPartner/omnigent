@@ -70,9 +70,7 @@ def test_psmux_backend_rejects_outside_cwd_override(
         ),
     )
     with pytest.raises(ValueError, match="outside the allowed root"):
-        PsmuxTerminalMuxBackend().create(
-            "shell", "s1", spec, cwd_override=str(outside)
-        )
+        PsmuxTerminalMuxBackend().create("shell", "s1", spec, cwd_override=str(outside))
 
 
 @pytest.mark.parametrize("terminal_os_env", [None, "inherit"])

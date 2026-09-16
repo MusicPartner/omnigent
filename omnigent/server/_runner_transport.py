@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 from urllib.parse import urljoin, urlparse, urlunparse
 
@@ -19,7 +19,7 @@ RUNNER_TCP_BASE_URL_ENV = "OMNIGENT_RUNNER_TCP_BASE_URL"
 RUNNER_UDS_PATH_ENV = "OMNIGENT_RUNNER_UDS_PATH"
 
 
-def runner_transport_env_configured(environ: dict[str, str] | None = None) -> bool:
+def runner_transport_env_configured(environ: Mapping[str, str] | None = None) -> bool:
     """Return whether local runner transport env configuration is present."""
     env = os.environ if environ is None else environ
     return bool(
@@ -28,7 +28,7 @@ def runner_transport_env_configured(environ: dict[str, str] | None = None) -> bo
 
 
 def build_runner_transport_from_env(
-    environ: dict[str, str] | None = None,
+    environ: Mapping[str, str] | None = None,
 ) -> tuple[httpx.AsyncClient, RunnerWSFactory, str]:
     """Build a local runner transport from environment configuration.
 
@@ -48,7 +48,7 @@ def build_runner_transport_from_env(
     return client, ws_factory, selected
 
 
-def _non_empty_env(env: dict[str, str], name: str) -> str | None:
+def _non_empty_env(env: Mapping[str, str], name: str) -> str | None:
     """Return a stripped env value or ``None`` when unset/blank."""
     value = env.get(name)
     if value is None:

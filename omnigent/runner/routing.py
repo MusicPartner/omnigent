@@ -104,9 +104,7 @@ class RunnerRouter:
         self._conversation_store = conversation_store
         self._host_registry = host_registry
         self._host_store = host_store
-        self._transport_locator = (
-            transport_locator or WSTunnelRunnerTransportLocator(registry)
-        )
+        self._transport_locator = transport_locator or WSTunnelRunnerTransportLocator(registry)
 
     def client_for_conversation(self, *, conversation_id: str, harness: str) -> RoutedRunner:
         """

@@ -65,7 +65,7 @@ class PsmuxTerminalInstance(TerminalInstance):
         if self.running:
             return
         effective_cwd = str(cwd or self.private_dir)
-        env = os.environ.copy() if self.inherit_env else {}
+        env: dict[str, str] = os.environ.copy() if self.inherit_env else {}
         env.pop("OMNIGENT_TMUX_SOCK", None)
         env.update(self.env)
         for key in self.env_unset:
@@ -170,12 +170,19 @@ class PsmuxTerminalMuxBackend:
         )
         private_dir = Path(tempfile.mkdtemp(prefix="omnigent-terminal-"))
         cwd = Path(effective_os_env.cwd or os.getcwd()).resolve()
+        command = (
+            spec.command
+            or shutil.which("pwsh")
+            or shutil.which("powershell.exe")
+            or os.environ.get("COMSPEC")
+            or "cmd.exe"
+        )
         instance = PsmuxTerminalInstance(
             name=terminal_name,
             session_key=session_key,
             socket_path=private_dir / "psmux.sock",
             private_dir=private_dir,
-            command=spec.command,
+            command=command,
             args=list(spec.args),
             env=dict(spec.env),
             env_unset=list(spec.env_unset),

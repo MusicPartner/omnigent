@@ -496,7 +496,6 @@ def _validate_compaction(spec: AgentSpec, result: ValidationResult) -> None:
         )
 
 
-
 def _validate_os_env(spec: AgentSpec, result: ValidationResult) -> None:
     """
     Validate the agent's ``os_env`` block, focused on sandbox combos
@@ -537,9 +536,7 @@ def _validate_os_env(spec: AgentSpec, result: ValidationResult) -> None:
     egress_rules = (
         list(getattr(sandbox, "egress_rules", None) or []) if sandbox is not None else []
     )
-    allow_network = (
-        bool(getattr(sandbox, "allow_network", True)) if sandbox is not None else True
-    )
+    allow_network = bool(getattr(sandbox, "allow_network", True)) if sandbox is not None else True
 
     if start_in_scratch and fork:
         result.add(

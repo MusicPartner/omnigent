@@ -49,9 +49,7 @@ def _capture_terminal_transcript(
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     transcript = (
-        output_path.read_text(encoding="utf-8", errors="replace")
-        if output_path.exists()
-        else ""
+        output_path.read_text(encoding="utf-8", errors="replace") if output_path.exists() else ""
     )
     transcript += "\n--- attach command batch ---\n"
     with connect(url, max_size=20_000_000) as ws:
@@ -60,8 +58,10 @@ def _capture_terminal_transcript(
         if not expected:
             time.sleep(0.5)
         deadline = time.monotonic() + 15.0
-        while expected and time.monotonic() < deadline and not all(
-            item in transcript for item in expected
+        while (
+            expected
+            and time.monotonic() < deadline
+            and not all(item in transcript for item in expected)
         ):
             try:
                 message = ws.recv(timeout=0.75)
@@ -128,7 +128,9 @@ def test_windows_psmux_browser_evidence(page: Page, terminal_session: tuple[str,
         "button", name=re.compile("zsh")
     ).first.click()
     main_terminal, terminal_view = _connected_terminal(page)
-    page.screenshot(path=str(evidence_dir / "browser-psmux-terminal-reconnect.png"), full_page=True)
+    page.screenshot(
+        path=str(evidence_dir / "browser-psmux-terminal-reconnect.png"), full_page=True
+    )
 
     _capture_terminal_transcript(
         base_url=base_url,
@@ -138,7 +140,9 @@ def test_windows_psmux_browser_evidence(page: Page, terminal_session: tuple[str,
         commands=["printf '\\033[31mRED\\033[0m cursor-limit-check\\n'\n"],
         expected=["cursor-limit-check"],
     )
-    page.screenshot(path=str(evidence_dir / "browser-psmux-terminal-ansi-limitation.png"), full_page=True)
+    page.screenshot(
+        path=str(evidence_dir / "browser-psmux-terminal-ansi-limitation.png"), full_page=True
+    )
 
     _capture_terminal_transcript(
         base_url=base_url,
