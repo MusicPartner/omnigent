@@ -70,10 +70,11 @@ def test_router_hooks_settings_registers_the_pretooluse_gate(tmp_path: Path) -> 
     # Codex's kill is the outermost bound: just above the hook's own budget.
     assert pre_hook["timeout"] > REQUEST_TIMEOUT_S
     assert pre_hook["timeout"] < 2 * REQUEST_TIMEOUT_S
-    assert "route-subagent" in pre_hook["command"]
-    assert "--session-id conv_abc" in pre_hook["command"]
-    assert "--harness codex" in pre_hook["command"]
-    assert f"--bridge-dir {tmp_path / 'bridge'}" in pre_hook["command"]
+    command_argv = shlex.split(pre_hook["command"])
+    assert "route-subagent" in command_argv
+    assert command_argv[command_argv.index("--session-id") + 1] == "conv_abc"
+    assert command_argv[command_argv.index("--harness") + 1] == "codex"
+    assert command_argv[command_argv.index("--bridge-dir") + 1] == str(tmp_path / "bridge")
 
 
 def test_router_hooks_settings_omits_session_flag_when_unknown(tmp_path: Path) -> None:

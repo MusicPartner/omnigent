@@ -349,6 +349,7 @@ async def test_get_client_isolates_per_conversation(
         await manager.shutdown()
 
 
+@pytest.mark.posix_only
 async def test_release_terminates_subprocess(
     manager: HarnessProcessManager,
 ) -> None:
@@ -420,6 +421,7 @@ async def test_close_entry_kills_process_when_aclose_raises(
         await manager.shutdown()
 
 
+@pytest.mark.posix_only
 @pytest.mark.parametrize("response_id", [None, "resp_crashed"])
 async def test_get_client_respawns_after_crash(
     manager: HarnessProcessManager,
@@ -674,6 +676,7 @@ async def test_get_client_seeds_model_and_reuses_without_respawn(
 # ── Idle reaping ───────────────────────────────────────────────
 
 
+@pytest.mark.posix_only
 async def test_idle_reaper_releases_stale_entries(
     register_test_harness: None,
     short_tmp_parent: Path,
@@ -715,6 +718,7 @@ async def test_idle_reaper_releases_stale_entries(
         await fast.shutdown()
 
 
+@pytest.mark.posix_only
 async def test_idle_reaper_survives_release_error(
     register_test_harness: None,
     short_tmp_parent: Path,
@@ -775,6 +779,7 @@ async def test_idle_reaper_survives_release_error(
         await fast.shutdown()
 
 
+@pytest.mark.posix_only
 async def test_idle_reaper_skips_in_flight_turn(
     register_test_harness: None,
     short_tmp_parent: Path,
@@ -963,6 +968,7 @@ async def test_idle_reaper_spares_turn_started_during_pass(tmp_path: Path) -> No
             await reaper
 
 
+@pytest.mark.posix_only
 async def test_idle_reaper_disabled_when_timeout_zero(
     register_test_harness: None,
     short_tmp_parent: Path,
@@ -1312,6 +1318,7 @@ async def test_runner_subprocess_hard_exits_when_sigterm_shutdown_wedges(
         await manager.shutdown()
 
 
+@pytest.mark.posix_only
 async def test_orphan_sweep_escalates_to_sigkill(
     short_tmp_parent: Path,
     register_test_harness: None,

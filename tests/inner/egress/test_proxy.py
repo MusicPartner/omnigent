@@ -204,6 +204,7 @@ async def test_proxy_start_stop_tcp(
         _ = proxy.port
 
 
+@pytest.mark.posix_only
 @pytest.mark.asyncio
 async def test_proxy_start_unix(ca_paths: tuple[Path, Path, Path], short_tmp_parent: Path) -> None:
     """Proxy can listen on a Unix socket."""

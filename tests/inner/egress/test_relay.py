@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.posix_only
+
 from omnigent.inner.egress.relay import start_relay
 
 

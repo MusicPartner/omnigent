@@ -38,6 +38,8 @@ from unittest.mock import patch
 
 import pytest
 
+pytestmark = pytest.mark.posix_only
+
 from omnigent.inner import bwrap_sandbox
 from omnigent.inner.bwrap_sandbox import (
     _ALLOWED_SOCKET_FAMILIES,

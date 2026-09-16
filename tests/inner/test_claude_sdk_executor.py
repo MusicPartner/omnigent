@@ -28,6 +28,16 @@ from omnigent.inner.executor import (
 )
 
 
+_HOME_ENV_VARS = ("HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH")
+
+
+def _cleared_env_preserving_home() -> dict[str, str]:
+    """Clear ambient env while keeping enough home config for ``Path.home()``."""
+    return {
+        key: value for key in _HOME_ENV_VARS if (value := os.environ.get(key)) is not None
+    }
+
+
 def _run(coro):
     loop = asyncio.new_event_loop()
     try:
@@ -506,7 +516,7 @@ class TestConstructor(unittest.TestCase):
         from omnigent.inner.databricks_executor import DatabricksCredentials
 
         with (
-            patch.dict("os.environ", {}, clear=True),
+            patch.dict("os.environ", _cleared_env_preserving_home(), clear=True),
             patch(
                 "omnigent.inner.databricks_executor._read_databrickscfg",
                 return_value=DatabricksCredentials(
@@ -541,7 +551,7 @@ class TestConstructor(unittest.TestCase):
         from omnigent.inner.databricks_executor import DatabricksCredentials
 
         with (
-            patch.dict("os.environ", {}, clear=True),
+            patch.dict("os.environ", _cleared_env_preserving_home(), clear=True),
             patch(
                 "omnigent.inner.databricks_executor._read_databrickscfg",
                 return_value=DatabricksCredentials(
@@ -573,7 +583,7 @@ class TestConstructor(unittest.TestCase):
         from omnigent.inner.claude_sdk_executor import ClaudeSDKExecutor
 
         with (
-            patch.dict("os.environ", {}, clear=True),
+            patch.dict("os.environ", _cleared_env_preserving_home(), clear=True),
             patch("omnigent.inner.claude_sdk_executor._resolve_gateway_env", return_value={}),
         ):
             with self.assertRaises(EnvironmentError):
@@ -583,7 +593,7 @@ class TestConstructor(unittest.TestCase):
         from omnigent.inner.claude_sdk_executor import ClaudeSDKExecutor
 
         with (
-            patch.dict("os.environ", {}, clear=True),
+            patch.dict("os.environ", _cleared_env_preserving_home(), clear=True),
             patch("omnigent.inner.databricks_executor._read_databrickscfg") as read_cfg,
         ):
             executor = ClaudeSDKExecutor(
@@ -609,7 +619,7 @@ class TestConstructor(unittest.TestCase):
         from omnigent.inner.claude_sdk_executor import ClaudeSDKExecutor
 
         with (
-            patch.dict("os.environ", {}, clear=True),
+            patch.dict("os.environ", _cleared_env_preserving_home(), clear=True),
             self.assertRaisesRegex(OSError, "GATEWAY_BASE_URL"),
         ):
             ClaudeSDKExecutor(
@@ -622,7 +632,7 @@ class TestConstructor(unittest.TestCase):
         from omnigent.inner.claude_sdk_executor import ClaudeSDKExecutor
 
         with (
-            patch.dict("os.environ", {}, clear=True),
+            patch.dict("os.environ", _cleared_env_preserving_home(), clear=True),
             self.assertRaisesRegex(OSError, "GATEWAY_AUTH_COMMAND"),
         ):
             ClaudeSDKExecutor(
@@ -1415,7 +1425,7 @@ class TestResolveGatewayEnv(unittest.TestCase):
         from omnigent.inner.databricks_executor import DatabricksCredentials
 
         with (
-            patch.dict("os.environ", {}, clear=True),
+            patch.dict("os.environ", _cleared_env_preserving_home(), clear=True),
             patch(
                 "omnigent.inner.databricks_executor._read_databrickscfg",
                 return_value=DatabricksCredentials(
@@ -1452,7 +1462,7 @@ class TestResolveGatewayEnv(unittest.TestCase):
         from omnigent.inner.databricks_executor import DatabricksCredentials
 
         with (
-            patch.dict("os.environ", {}, clear=True),
+            patch.dict("os.environ", _cleared_env_preserving_home(), clear=True),
             patch(
                 "omnigent.inner.databricks_executor._read_databrickscfg",
                 return_value=DatabricksCredentials(
@@ -1475,7 +1485,7 @@ class TestResolveGatewayEnv(unittest.TestCase):
         from omnigent.inner.databricks_executor import DatabricksCredentials
 
         with (
-            patch.dict("os.environ", {}, clear=True),
+            patch.dict("os.environ", _cleared_env_preserving_home(), clear=True),
             patch(
                 "omnigent.inner.databricks_executor._read_databrickscfg",
                 # Not under a trusted Databricks parent domain.
@@ -1493,7 +1503,7 @@ class TestResolveGatewayEnv(unittest.TestCase):
         from omnigent.inner.databricks_executor import DatabricksCredentials
 
         with (
-            patch.dict("os.environ", {}, clear=True),
+            patch.dict("os.environ", _cleared_env_preserving_home(), clear=True),
             patch(
                 "omnigent.inner.databricks_executor._read_databrickscfg",
                 return_value=DatabricksCredentials(host="https://my-workspace.com/", token="tok"),
@@ -1507,7 +1517,7 @@ class TestResolveGatewayEnv(unittest.TestCase):
         from omnigent.inner.claude_sdk_executor import _resolve_gateway_env
 
         with (
-            patch.dict("os.environ", {}, clear=True),
+            patch.dict("os.environ", _cleared_env_preserving_home(), clear=True),
             patch("omnigent.inner.databricks_executor._read_databrickscfg", return_value=None),
             # Host derivation no longer needs a static token, so "no creds"
             # must also mean no host is resolvable from ~/.databrickscfg.
@@ -1532,7 +1542,7 @@ class TestResolveGatewayEnv(unittest.TestCase):
         from omnigent.inner.claude_sdk_executor import _resolve_gateway_env
 
         with (
-            patch.dict("os.environ", {}, clear=True),
+            patch.dict("os.environ", _cleared_env_preserving_home(), clear=True),
             patch("omnigent.inner.databricks_executor._read_databrickscfg", return_value=None),
             patch(
                 "omnigent.inner.databricks_executor._read_databrickscfg_host",
@@ -3442,22 +3452,22 @@ def test_resolve_sandbox_cwd_roots_relative_at_runner_workspace(monkeypatch) -> 
     ``Path.resolve(strict=False)``."""
     from omnigent.inner.claude_sdk_executor import _resolve_sandbox_cwd
 
-    monkeypatch.setenv("OMNIGENT_RUNNER_WORKSPACE", "/home/bobby/code/agents")
-    monkeypatch.chdir("/tmp")
+    process_cwd = Path.cwd().resolve(strict=False)
+    workspace = (process_cwd / "sandbox-workspace").resolve(strict=False)
+    monkeypatch.setenv("OMNIGENT_RUNNER_WORKSPACE", str(workspace))
+    monkeypatch.chdir(process_cwd)
 
-    # ``_resolve_sandbox_cwd`` ends in ``Path.resolve(strict=False)``. On macOS,
-    # these literal paths route through firmlinks (``/home`` -> the automounter,
-    # ``/tmp`` -> ``/private/tmp``), so compare against the same resolution
-    # instead of literal strings. On Linux both sides are identical.
-    workspace = Path("/home/bobby/code/agents").resolve(strict=False)
+    # ``_resolve_sandbox_cwd`` ends in ``Path.resolve(strict=False)``, so compare
+    # against equally resolved paths instead of platform-specific literals.
     assert _resolve_sandbox_cwd(".") == workspace
     assert _resolve_sandbox_cwd(None) == workspace
     assert _resolve_sandbox_cwd("src") == (workspace / "src").resolve(strict=False)
-    assert _resolve_sandbox_cwd("/etc/foo") == Path("/etc/foo").resolve(strict=False)
+    absolute = (Path(process_cwd.anchor) / "etc" / "foo").resolve(strict=False)
+    assert _resolve_sandbox_cwd(str(absolute)) == absolute
 
     # No workspace set → falls back to the process cwd (prior behavior).
     monkeypatch.delenv("OMNIGENT_RUNNER_WORKSPACE", raising=False)
-    assert _resolve_sandbox_cwd(".") == Path("/tmp").resolve(strict=False)
+    assert _resolve_sandbox_cwd(".") == process_cwd
 
 
 @pytest.mark.parametrize("env_value", ["1", "true", "yes"])

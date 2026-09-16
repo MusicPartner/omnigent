@@ -29,6 +29,7 @@ import contextlib
 import json
 import os
 import shutil
+import tempfile
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
@@ -263,13 +264,28 @@ def register_fixture_harness() -> Iterator[None]:
 
 @pytest.fixture
 def short_tmp_parent() -> Iterator[Path]:
-    """Per-test parent directory under /tmp with a short path."""
-    parent = Path("/tmp") / f"omni-sc-{uuid.uuid4().hex[:8]}"
-    parent.mkdir(mode=0o700)
-    try:
-        yield parent
-    finally:
-        shutil.rmtree(parent, ignore_errors=True)
+    """Per-test parent directory under a short writable temp root."""
+    roots = [Path("/tmp")]
+    temp_root = Path(tempfile.gettempdir())
+    if temp_root not in roots:
+        roots.append(temp_root)
+
+    last_error: OSError | None = None
+    for root in roots:
+        parent = root / f"omni-sc-{uuid.uuid4().hex[:8]}"
+        try:
+            parent.mkdir(mode=0o700)
+        except OSError as exc:
+            last_error = exc
+            continue
+        try:
+            yield parent
+        finally:
+            shutil.rmtree(parent, ignore_errors=True)
+        return
+
+    assert last_error is not None
+    raise last_error
 
 
 @pytest.fixture
@@ -1089,6 +1105,7 @@ async def test_session_events_404s_on_conversation_id_mismatch(
     assert body["error"]["code"] == ErrorCode.NOT_FOUND
 
 
+@pytest.mark.posix_only
 async def test_session_tool_result_event_resolves_parked_dispatch(
     use_tool_dispatch: None,
     manager: HarnessProcessManager,
@@ -1158,6 +1175,7 @@ async def test_session_tool_result_event_resolves_parked_dispatch(
         await side_client.aclose()
 
 
+@pytest.mark.posix_only
 async def test_session_tool_result_over_cap_streams_truncated_but_returns_full(
     use_tool_dispatch: None,
     manager: HarnessProcessManager,
@@ -1237,6 +1255,7 @@ async def test_session_tool_result_over_cap_streams_truncated_but_returns_full(
         await side_client.aclose()
 
 
+@pytest.mark.posix_only
 async def test_session_tool_result_event_404s_on_conversation_id_mismatch(
     use_tool_dispatch: None,
     manager: HarnessProcessManager,
@@ -1298,6 +1317,7 @@ async def test_session_tool_result_event_404s_on_conversation_id_mismatch(
         await side_client.aclose()
 
 
+@pytest.mark.posix_only
 async def test_session_interrupt_event_cancels_in_flight_turn(
     use_cancellable: None,
     manager: HarnessProcessManager,
@@ -1383,6 +1403,7 @@ async def test_session_interrupt_event_404s_when_no_turn_in_flight(
     assert resp.status_code == 404
 
 
+@pytest.mark.posix_only
 async def test_session_approval_event_resolves_elicitation(
     use_elicitation: None,
     manager: HarnessProcessManager,
@@ -1431,6 +1452,7 @@ async def test_session_approval_event_resolves_elicitation(
         await side_client.aclose()
 
 
+@pytest.mark.posix_only
 async def test_session_approval_event_404s_on_conversation_id_mismatch(
     use_elicitation: None,
     manager: HarnessProcessManager,
@@ -1487,6 +1509,7 @@ async def test_session_approval_event_404s_on_conversation_id_mismatch(
         await side_client.aclose()
 
 
+@pytest.mark.posix_only
 async def test_session_message_event_without_previous_response_id_injects_active_turn(
     use_injection: None,
     manager: HarnessProcessManager,
@@ -1545,6 +1568,7 @@ async def test_session_message_event_without_previous_response_id_injects_active
         await side_client.aclose()
 
 
+@pytest.mark.posix_only
 async def test_interrupt_then_message_without_prev_id_starts_fresh_turn(
     use_cancellable: None,
     manager: HarnessProcessManager,
@@ -1609,6 +1633,7 @@ async def test_interrupt_then_message_without_prev_id_starts_fresh_turn(
         await followup_client.aclose()
 
 
+@pytest.mark.posix_only
 async def test_interrupt_then_message_with_prev_id_starts_fresh_turn(
     use_cancellable: None,
     manager: HarnessProcessManager,
@@ -1675,6 +1700,7 @@ async def test_interrupt_then_message_with_prev_id_starts_fresh_turn(
         await followup_client.aclose()
 
 
+@pytest.mark.posix_only
 async def test_session_message_event_in_band_injection(
     use_injection: None,
     manager: HarnessProcessManager,

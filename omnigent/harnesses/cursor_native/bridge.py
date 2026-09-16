@@ -494,7 +494,7 @@ def approve_mcp_server_for_workspace(workspace: Path) -> None:
 
 def cursor_project_key(workspace: Path) -> str:
     """Return Cursor's project-state directory key for *workspace*."""
-    return str(workspace).strip("/").replace("/", "-") or "root"
+    return str(workspace).strip("/\\").replace("\\", "-").replace("/", "-") or "root"
 
 
 def enable_mcp_for_workspace(workspace: Path) -> None:

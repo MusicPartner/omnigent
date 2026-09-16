@@ -13,6 +13,8 @@ in the e2e suite, gated on the ``hermes`` binary being available.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from omnigent.inner import hermes_harness
@@ -132,13 +134,14 @@ def test_executor_factory_skills_filter_default_all() -> None:
 
 
 def test_executor_factory_reads_bundle_and_agent_name(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Factory reads bundle dir and agent name from env vars."""
-    monkeypatch.setenv("HARNESS_HERMES_BUNDLE_DIR", "/tmp/bundle")
+    bundle_dir = tmp_path / "bundle"
+    monkeypatch.setenv("HARNESS_HERMES_BUNDLE_DIR", str(bundle_dir))
     monkeypatch.setenv("HARNESS_HERMES_AGENT_NAME", "my-hermes-agent")
 
     executor = hermes_harness._build_hermes_executor()
 
-    assert executor._bundle_dir == "/tmp/bundle"
+    assert Path(executor._bundle_dir) == bundle_dir
     assert executor._agent_name == "my-hermes-agent"

@@ -913,6 +913,7 @@ async def test_is_alive_false_when_probe_communication_fails(
     assert instance.running is False
 
 
+@pytest.mark.posix_only
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="requires a real tmux binary")
 @pytest.mark.asyncio
 async def test_server_survives_inner_process_exit_real_tmux(
@@ -1067,6 +1068,7 @@ def test_require_supported_tmux_rejects_old_or_unknown_version(
         terminal_mod._require_supported_tmux()
 
 
+@pytest.mark.posix_only
 @pytest.mark.parametrize("keep_alive", [True, False])
 def test_create_terminal_instance_propagates_keep_alive_after_exit(
     tmp_path: Path,

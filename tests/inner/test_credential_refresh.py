@@ -268,6 +268,7 @@ def test_refresh_requires_a_policy_and_revalidates_rotation(
         provider.resolve()
 
 
+@pytest.mark.posix_only
 @pytest.mark.parametrize(
     "status,payload",
     [
@@ -342,6 +343,7 @@ def test_rejects_sandbox_readable_refresh_sources(
         )
 
 
+@pytest.mark.posix_only
 @pytest.mark.parametrize("refresh", [None, 60])
 def test_readonly_broker_is_rejected_before_contact(
     broker: tuple[Path, dict[str, object]], sandbox: SandboxPolicy, refresh: int | None
@@ -355,6 +357,7 @@ def test_readonly_broker_is_rejected_before_contact(
     assert state["calls"] == 0
 
 
+@pytest.mark.posix_only
 def test_hardlinked_broker_is_rejected_before_contact(
     broker: tuple[Path, dict[str, object]], sandbox: SandboxPolicy
 ) -> None:
@@ -430,6 +433,7 @@ def test_missing_broker_fails_at_startup(
         prepare_credential_proxy_runtime(spec, parent_env={}, sandbox=sandbox)
 
 
+@pytest.mark.posix_only
 def test_socket_without_interval_remains_startup_only(
     broker: tuple[Path, dict[str, object]], sandbox: SandboxPolicy
 ) -> None:
@@ -472,6 +476,7 @@ def test_native_sandbox_resolution_protects_sources_before_proxy_startup(
         resolve_sandbox(spec, sandbox.write_roots[0])
 
 
+@pytest.mark.posix_only
 @pytest.mark.parametrize("phase", ["headers", "body"])
 def test_socket_deadline_bounds_dribbling_response(
     short_tmp_parent: Path, sandbox: SandboxPolicy, monkeypatch: pytest.MonkeyPatch, phase: str

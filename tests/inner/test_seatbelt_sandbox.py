@@ -34,6 +34,8 @@ from unittest.mock import patch
 
 import pytest
 
+pytestmark = pytest.mark.posix_only
+
 from omnigent.inner.datamodel import OSEnvSandboxSpec, OSEnvSpec
 from omnigent.inner.sandbox import SandboxPolicy, with_denied_unix_sockets
 from omnigent.inner.seatbelt_sandbox import (

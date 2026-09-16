@@ -11,6 +11,15 @@ from pathlib import Path
 
 import pytest
 
+try:
+    import databricks.sdk.config as _sdk_config_mod
+except ImportError:
+    _sdk_config_mod = None
+
+_requires_databricks_sdk = pytest.mark.skipif(
+    _sdk_config_mod is None, reason="databricks-sdk not installed"
+)
+
 
 def _run_generated_helper(
     command: str,
@@ -398,6 +407,7 @@ def test_an_explicit_fallback_still_chains_the_sdk_mint(
     assert recorded < sdk
 
 
+@_requires_databricks_sdk
 def test_the_sdk_entrypoint_prints_the_resolved_bearer(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -497,6 +507,7 @@ def test_the_sdk_entrypoint_withholds_when_no_host_is_given(
     assert capsys.readouterr().out == ""
 
 
+@_requires_databricks_sdk
 def test_profile_pinning_scrubs_the_ambient_credential_env_vars() -> None:
     """Named-profile identity guarantee: the SDK resolves env above the profile
     section, so the scrub set (built from the real SDK attribute table) must
@@ -516,6 +527,7 @@ def test_profile_pinning_scrubs_the_ambient_credential_env_vars() -> None:
     assert "DATABRICKS_CONFIG_FILE" not in names
 
 
+@_requires_databricks_sdk
 def test_the_sdk_path_bounds_and_restores_the_network_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

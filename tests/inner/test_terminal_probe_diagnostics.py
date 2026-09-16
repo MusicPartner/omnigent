@@ -55,6 +55,7 @@ def _patch_tmux(monkeypatch: pytest.MonkeyPatch, run) -> None:
     monkeypatch.setattr(terminal_mod, "_TMUX_PROBE_START_FAILURE_BACKOFF_SECONDS", 0.001)
 
 
+@pytest.mark.posix_only
 @pytest.mark.parametrize("threaded", [False, True], ids=["async", "threaded"])
 async def test_unavailable_error_retains_both_probes_before_cleanup(
     tmp_path: Path,
