@@ -1,0 +1,53 @@
+name: Windows parity integration helper
+
+on:
+  push:
+    branches:
+      - windows-parity/v0.14-integration
+
+permissions:
+  contents: write
+
+jobs:
+  merge-source:
+    if: ${{ !contains(github.event.head_commit.message, '[windows-merge]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out integration branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: windows-parity/v0.14-integration
+
+      - name: Merge original Windows branch and preserve conflict inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "MusicPartner Windows Integration"
+          git config user.email "keivan@musicpartner.se"
+          git fetch origin windows-parity/source-smota
+
+          set +e
+          git merge --no-ff --no-commit origin/windows-parity/source-smota
+          merge_status=$?
+          set -e
+
+          git diff --name-only --diff-filter=U > /tmp/windows-parity-conflicts.txt
+          echo "Git merge status: ${merge_status}"
+          echo "Conflicted paths:"
+          cat /tmp/windows-parity-conflicts.txt || true
+
+          while IFS= read -r path; do
+            [ -z "$path" ] && continue
+            if git cat-file -e "HEAD:${path}" 2>/dev/null; then
+              git checkout --ours -- "$path"
+              git add -- "$path"
+            else
+              git rm -f --ignore-unmatch -- "$path"
+            fi
+          done < /tmp/windows-parity-conflicts.txt
+
+          cp /tmp/windows-parity-conflicts.txt .windows-parity-conflicts.txt
+          git add -A
+          git commit -m "merge(windows): integrate source branch onto v0.14 [windows-merge]"
+          git push origin HEAD:windows-parity/v0.14-integration
