@@ -1,4 +1,4 @@
-name: Windows parity integration helper
+name: Windows parity integration resolver
 
 on:
   push:
@@ -9,50 +9,474 @@ permissions:
   contents: write
 
 jobs:
-  merge-source:
-    if: ${{ !contains(github.event.head_commit.message, '[windows-merge]') && !contains(github.event.head_commit.message, '[windows-resolved]') && !contains(github.event.head_commit.message, '[resolve-windows]') }}
+  resolve-v014:
+    if: ${{ contains(github.event.head_commit.message, '[resolve-windows]') }}
     runs-on: ubuntu-latest
     steps:
-      - name: Check out integration branch
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: windows-parity/v0.14-integration
 
-      - name: Merge original Windows branch and preserve conflict inventory
+      - name: Reconcile Windows parity with v0.14 architecture
         shell: bash
         run: |
           set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected snippet not found in {path}: {old[:120]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          def regex_replace(path: str, pattern: str, repl: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              new, n = re.subn(pattern, repl, text, count=1, flags=re.S)
+              if n != 1:
+                  raise SystemExit(f"expected one regex match in {path}, got {n}: {pattern[:120]!r}")
+              p.write_text(new)
+
+          # -----------------------------------------------------------------
+          # psmux capture/send bridge, adapted to v0.14's split bridge modules.
+          # -----------------------------------------------------------------
+          Path("omnigent/terminals/capture_bridge.py").write_text('''"""Capture/send WebSocket bridge used by native Windows psmux terminals."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import json
+import logging
+from collections.abc import Callable
+from typing import Any
+
+from fastapi import WebSocket
+
+from omnigent.terminals.ws_common import (
+    WS_CLOSE_TERMINAL_DETACHED,
+    WS_CLOSE_TERMINAL_NOT_FOUND,
+)
+
+_logger = logging.getLogger(__name__)
+
+
+async def bridge_capture_to_websocket(
+    websocket: WebSocket,
+    *,
+    instance: Any,
+    read_only: bool,
+    on_client_interaction: Callable[[], None] | None = None,
+    poll_interval_s: float = 0.25,
+) -> None:
+    """Bridge a capture/send terminal backend to an accepted WebSocket.
+
+    Native Windows cannot use the POSIX PTY/control-mode attach path. psmux
+    therefore streams screen snapshots through ``TerminalInstance.read`` and
+    accepts input through ``TerminalInstance.send`` while retaining the same
+    browser WebSocket protocol and close-code semantics as other terminals.
+    """
+    if on_client_interaction is not None:
+        on_client_interaction()
+    last_screen = ""
+    close_code = WS_CLOSE_TERMINAL_DETACHED
+    close_reason = "terminal detached"
+
+    async def _instance_alive() -> bool:
+        is_alive = getattr(instance, "is_alive", None)
+        if callable(is_alive):
+            return bool(await is_alive())
+        return bool(getattr(instance, "running", False))
+
+    async def _capture_loop() -> None:
+        nonlocal last_screen, close_code, close_reason
+        while await _instance_alive():
+            read = await instance.read()
+            screen = read.get("screen", "") if isinstance(read, dict) else ""
+            if screen != last_screen:
+                last_screen = screen
+                snapshot = "\\x1b[H\\x1b[2J" + screen
+                await websocket.send_bytes(snapshot.encode("utf-8", errors="replace"))
+            await asyncio.sleep(poll_interval_s)
+        close_code = WS_CLOSE_TERMINAL_NOT_FOUND
+        close_reason = "terminal session ended"
+
+    async def _input_loop() -> None:
+        nonlocal close_code, close_reason
+        while True:
+            msg = await websocket.receive()
+            if on_client_interaction is not None:
+                on_client_interaction()
+            if msg.get("type") == "websocket.disconnect":
+                close_code = WS_CLOSE_TERMINAL_DETACHED
+                close_reason = "terminal detached"
+                return
+            if msg.get("text") is not None:
+                try:
+                    ctl = json.loads(msg["text"])
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                if isinstance(ctl, dict) and ctl.get("type") == "resize":
+                    try:
+                        cols = int(ctl["cols"])
+                        rows = int(ctl["rows"])
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    resize = getattr(instance, "resize", None)
+                    if callable(resize):
+                        await resize(cols=cols, rows=rows)
+                continue
+            data = msg.get("bytes")
+            if data is None or read_only:
+                continue
+            if not await _instance_alive():
+                close_code = WS_CLOSE_TERMINAL_NOT_FOUND
+                close_reason = "terminal session ended"
+                return
+            text = data.decode("utf-8", errors="ignore")
+            if not text:
+                continue
+            text = text.replace("\\r\\n", "\\n").replace("\\r", "\\n")
+            parts = text.split("\\n")
+            for index, part in enumerate(parts):
+                keys = "Enter" if index < len(parts) - 1 else ""
+                await instance.send(part or None, keys=keys)
+
+    capture_task = asyncio.create_task(_capture_loop(), name="terminal-capture-to-ws")
+    input_task = asyncio.create_task(_input_loop(), name="terminal-ws-to-capture")
+    try:
+        done, pending = await asyncio.wait(
+            {capture_task, input_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        for task in done:
+            exc = task.exception()
+            if exc is not None:
+                _logger.warning("capture-attach: bridge task crashed: %r", exc)
+    finally:
+        if on_client_interaction is not None:
+            on_client_interaction()
+        with contextlib.suppress(RuntimeError):
+            await websocket.close(code=close_code, reason=close_reason)
+''')
+
+          # Runner-side terminal attach: keep v0.14 control-mode bridge, use
+          # capture/send only for psmux.
+          replace(
+              "omnigent/runner/app.py",
+              "from omnigent.terminals.control_bridge import bridge_tmux_control_to_websocket\n",
+              "from omnigent.terminals.capture_bridge import bridge_capture_to_websocket\n"
+              "from omnigent.terminals.control_bridge import bridge_tmux_control_to_websocket\n",
+          )
+          replace(
+              "omnigent/runner/app.py",
+              "        _COST_POPUP_REPOP_TASKS.add(_repop_task)\n"
+              "        _repop_task.add_done_callback(_COST_POPUP_REPOP_TASKS.discard)\n"
+              "        await bridge_tmux_control_to_websocket(\n",
+              "        _COST_POPUP_REPOP_TASKS.add(_repop_task)\n"
+              "        _repop_task.add_done_callback(_COST_POPUP_REPOP_TASKS.discard)\n"
+              "        if getattr(entry.instance, \"backend_name\", \"tmux\") == \"psmux\":\n"
+              "            await bridge_capture_to_websocket(\n"
+              "                websocket,\n"
+              "                instance=entry.instance,\n"
+              "                read_only=read_only,\n"
+              "                on_client_interaction=entry.instance.note_client_interaction,\n"
+              "            )\n"
+              "            return\n"
+              "        await bridge_tmux_control_to_websocket(\n",
+          )
+
+          # Server-local terminal attach fallback.
+          replace(
+              "omnigent/server/routes/terminal_attach.py",
+              "from omnigent.terminals.control_bridge import bridge_tmux_control_to_websocket\n",
+              "from omnigent.terminals.capture_bridge import bridge_capture_to_websocket\n"
+              "from omnigent.terminals.control_bridge import bridge_tmux_control_to_websocket\n",
+          )
+          replace(
+              "omnigent/server/routes/terminal_attach.py",
+              "        with telemetry.span(\n"
+              "            \"terminal.attach\",\n",
+              "        if getattr(entry.instance, \"backend_name\", \"tmux\") == \"psmux\":\n"
+              "            await bridge_capture_to_websocket(\n"
+              "                websocket, instance=entry.instance, read_only=read_only\n"
+              "            )\n"
+              "            return\n\n"
+              "        with telemetry.span(\n"
+              "            \"terminal.attach\",\n",
+          )
+
+          # Runner transport locator: preserve v0.14 host/replica routing while
+          # moving client creation behind the Windows-capable transport seam.
+          p = Path("omnigent/runner/routing.py")
+          text = p.read_text()
+          text = text.replace("import threading\n", "")
+          text = text.replace(
+              "from omnigent.runner.transports.ws_tunnel.transport import WSTunnelTransport\n"
+              "from omnigent.runtime import telemetry\n",
+              "from omnigent.runner.transport_locator import (\n"
+              "    RunnerTransportLocator,\n"
+              "    WSTunnelRunnerTransportLocator,\n"
+              ")\n",
+          )
+          old = (
+              "        host_registry: HostRegistry | None = None,\n"
+              "        host_store: HostStore | None = None,\n"
+              "    ) -> None:\n"
+          )
+          new = (
+              "        host_registry: HostRegistry | None = None,\n"
+              "        host_store: HostStore | None = None,\n"
+              "        transport_locator: RunnerTransportLocator | None = None,\n"
+              "    ) -> None:\n"
+          )
+          if old not in text:
+              raise SystemExit("RunnerRouter constructor signature changed unexpectedly")
+          text = text.replace(old, new, 1)
+          old = (
+              "        self._host_registry = host_registry\n"
+              "        self._host_store = host_store\n"
+              "        self._clients: dict[str, httpx.AsyncClient] = {}\n"
+              "        self._lock = threading.RLock()\n"
+          )
+          new = (
+              "        self._host_registry = host_registry\n"
+              "        self._host_store = host_store\n"
+              "        self._transport_locator = (\n"
+              "            transport_locator or WSTunnelRunnerTransportLocator(registry)\n"
+              "        )\n"
+          )
+          if old not in text:
+              raise SystemExit("RunnerRouter client cache block changed unexpectedly")
+          text = text.replace(old, new, 1)
+          text, n = re.subn(
+              r"    async def aclose\(self\) -> None:\n.*?(?=\n    def _routed_pinned_runner)",
+              "    async def aclose(self) -> None:\n"
+              "        \"\"\"Close clients owned by the configured runner transport locator.\"\"\"\n"
+              "        await self._transport_locator.aclose()\n",
+              text,
+              count=1,
+              flags=re.S,
+          )
+          if n != 1:
+              raise SystemExit("RunnerRouter.aclose block changed unexpectedly")
+          text, n = re.subn(
+              r"    def _client_for_runner\(self, runner_id: str\) -> httpx\.AsyncClient:\n.*?(?=\n\ndef _runner_supports_harness)",
+              "    def _client_for_runner(self, runner_id: str) -> httpx.AsyncClient:\n"
+              "        \"\"\"Return the transport-selected client for *runner_id*.\"\"\"\n"
+              "        return self._transport_locator.client_for_runner(runner_id)\n",
+              text,
+              count=1,
+              flags=re.S,
+          )
+          if n != 1:
+              raise SystemExit("RunnerRouter._client_for_runner block changed unexpectedly")
+          p.write_text(text)
+
+          # Server app: local TCP/UDS runner transport remains opt-in. Preserve
+          # v0.14 HostRegistry/HostStore wrong-replica classification.
+          replace(
+              "omnigent/server/app.py",
+              "    from omnigent.runner.routing import RunnerRouter\n"
+              "    from omnigent.runner.transports.ws_tunnel.registry import TunnelRegistry\n"
+              "    from omnigent.server.host_registry import HostRegistry, RunnerExitReports\n\n"
+              "    tunnel_registry = TunnelRegistry()\n"
+              "    host_registry = HostRegistry()\n",
+              "    from omnigent.runner.routing import RunnerRouter\n"
+              "    from omnigent.runner.transport_locator import LocalRunnerTransportLocator\n"
+              "    from omnigent.runner.transports.ws_tunnel.registry import TunnelRegistry\n"
+              "    from omnigent.server._runner_transport import (\n"
+              "        build_runner_transport_from_env,\n"
+              "        runner_transport_env_configured,\n"
+              "    )\n"
+              "    from omnigent.server.host_registry import HostRegistry, RunnerExitReports\n\n"
+              "    tunnel_registry = TunnelRegistry()\n"
+              "    host_registry = HostRegistry()\n"
+              "    local_runner_ws_factory = None\n"
+              "    runner_transport_name = \"ws-tunnel\"\n"
+              "    runner_transport_locator = None\n"
+              "    if runner_transport_env_configured():\n"
+              "        local_runner_client, local_runner_ws_factory, runner_transport_name = (\n"
+              "            build_runner_transport_from_env()\n"
+              "        )\n"
+              "        runner_transport_locator = LocalRunnerTransportLocator(local_runner_client)\n"
+              "    logging.getLogger(\"omnigent.server.runner_transport\").info(\n"
+              "        \"selected runner transport: %s\", runner_transport_name\n"
+              "    )\n",
+          )
+          replace(
+              "omnigent/server/app.py",
+              "        host_registry=host_registry,\n"
+              "        host_store=host_store,\n"
+              "    )\n",
+              "        host_registry=host_registry,\n"
+              "        host_store=host_store,\n"
+              "        transport_locator=runner_transport_locator,\n"
+              "    )\n",
+          )
+          replace(
+              "omnigent/server/app.py",
+              "        from omnigent.server._runner_ws_tunnel import (\n"
+              "            make_direct_attach_resolver,\n"
+              "            make_tunnel_ws_factory,\n"
+              "        )\n\n"
+              "        set_runner_ws_factory(make_tunnel_ws_factory(runner_router, tunnel_registry))\n"
+              "        # Companion resolver: lets the terminals API surface a runner's\n"
+              "        # advertised loopback attach endpoint so a browser on the same\n"
+              "        # machine can skip the relay entirely.\n"
+              "        set_runner_direct_attach_resolver(\n"
+              "            make_direct_attach_resolver(runner_router, tunnel_registry)\n"
+              "        )\n",
+              "        if local_runner_ws_factory is not None:\n"
+              "            set_runner_ws_factory(local_runner_ws_factory)\n"
+              "        else:\n"
+              "            from omnigent.server._runner_ws_tunnel import (\n"
+              "                make_direct_attach_resolver,\n"
+              "                make_tunnel_ws_factory,\n"
+              "            )\n\n"
+              "            set_runner_ws_factory(\n"
+              "                make_tunnel_ws_factory(runner_router, tunnel_registry)\n"
+              "            )\n"
+              "            # Preserve v0.14's same-machine direct attach optimization.\n"
+              "            set_runner_direct_attach_resolver(\n"
+              "                make_direct_attach_resolver(runner_router, tunnel_registry)\n"
+              "            )\n",
+          )
+
+          # Parser: retain v0.14's newer sandbox fields and only replace the
+          # backend allow-lists with shared fail-closed capability checks.
+          replace(
+              "omnigent/spec/parser.py",
+              "from omnigent.inner.sandbox import containment_prefix\n",
+              "from omnigent.inner.sandbox import containment_prefix\n"
+              "from omnigent.inner.sandbox_capabilities import (\n"
+              "    sandbox_credential_proxy_error,\n"
+              "    sandbox_egress_policy_error,\n"
+              "    sandbox_network_deny_error,\n"
+              ")\n",
+          )
+          replace(
+              "omnigent/spec/parser.py",
+              "    egress_rules = _parse_egress_rules(raw.get(\"egress_rules\"))\n"
+              "    from omnigent.inner.sandbox import _default_sandbox_for_platform, _resolve_sandbox_type\n",
+              "    egress_rules = _parse_egress_rules(raw.get(\"egress_rules\"))\n"
+              "    allow_network = bool(raw.get(\"allow_network\", True))\n"
+              "    from omnigent.inner.sandbox import _default_sandbox_for_platform, _resolve_sandbox_type\n",
+          )
+          regex_replace(
+              "omnigent/spec/parser.py",
+              r"    if egress_rules and sandbox_type not in \(\"linux_bwrap\", \"darwin_seatbelt\"\):\n.*?            code=ErrorCode\.INVALID_INPUT,\n        \)\n    credential_proxy = _parse_credential_proxy\(raw\.get\(\"credential_proxy\"\)\)\n    if credential_proxy is not None and sandbox_type not in \(\"linux_bwrap\", \"darwin_seatbelt\"\):\n.*?            code=ErrorCode\.INVALID_INPUT,\n        \)\n",
+              "    if not allow_network:\n"
+              "        network_error = sandbox_network_deny_error(sandbox_type)\n"
+              "        if network_error is not None:\n"
+              "            raise OmnigentError(network_error, code=ErrorCode.INVALID_INPUT)\n"
+              "    if egress_rules:\n"
+              "        egress_error = sandbox_egress_policy_error(sandbox_type)\n"
+              "        if egress_error is not None:\n"
+              "            raise OmnigentError(egress_error, code=ErrorCode.INVALID_INPUT)\n"
+              "    credential_proxy = _parse_credential_proxy(raw.get(\"credential_proxy\"))\n"
+              "    if credential_proxy is not None:\n"
+              "        credential_error = sandbox_credential_proxy_error(sandbox_type)\n"
+              "        if credential_error is not None:\n"
+              "            raise OmnigentError(credential_error, code=ErrorCode.INVALID_INPUT)\n",
+          )
+          replace(
+              "omnigent/spec/parser.py",
+              "        allow_network=bool(raw.get(\"allow_network\", True)),\n",
+              "        allow_network=allow_network,\n",
+          )
+
+          # Validator: same shared capabilities for programmatically-built specs.
+          replace(
+              "omnigent/spec/validator.py",
+              "from dataclasses import dataclass, field\n\n"
+              "from omnigent.spec.types import AgentSpec, ToolRuntime\n",
+              "from dataclasses import dataclass, field\n\n"
+              "from omnigent.inner.sandbox_capabilities import (\n"
+              "    sandbox_egress_policy_error,\n"
+              "    sandbox_network_deny_error,\n"
+              ")\n"
+              "from omnigent.spec.types import AgentSpec, ToolRuntime\n",
+          )
+          regex_replace(
+              "omnigent/spec/validator.py",
+              r"\n# Set of sandbox backends that hard-enforce network isolation.*?_EGRESS_CAPABLE_BACKENDS = frozenset\(\{\"linux_bwrap\", \"darwin_seatbelt\"\}\)\n\n",
+              "\n",
+          )
+          replace(
+              "omnigent/spec/validator.py",
+              "    egress_rules = (\n"
+              "        list(getattr(sandbox, \"egress_rules\", None) or []) if sandbox is not None else []\n"
+              "    )\n",
+              "    egress_rules = (\n"
+              "        list(getattr(sandbox, \"egress_rules\", None) or []) if sandbox is not None else []\n"
+              "    )\n"
+              "    allow_network = (\n"
+              "        bool(getattr(sandbox, \"allow_network\", True)) if sandbox is not None else True\n"
+              "    )\n",
+          )
+          regex_replace(
+              "omnigent/spec/validator.py",
+              r"    if egress_rules and sandbox_type not in _EGRESS_CAPABLE_BACKENDS:\n.*?        \)\n\n",
+              "    if not allow_network:\n"
+              "        network_error = sandbox_network_deny_error(sandbox_type)\n"
+              "        if network_error is not None:\n"
+              "            result.add(\"os_env.sandbox.allow_network\", network_error)\n\n"
+              "    if egress_rules:\n"
+              "        egress_error = sandbox_egress_policy_error(sandbox_type)\n"
+              "        if egress_error is not None:\n"
+              "            result.add(\"os_env.sandbox.egress_rules\", egress_error)\n\n",
+          )
+
+          # Windows uses npm.cmd under native CreateProcess semantics.
+          replace(
+              "tests/e2e_ui/conftest.py",
+              "        subprocess.run(\n"
+              "            [\"npm\", \"ci\", \"--legacy-peer-deps\", \"--no-audit\", \"--no-fund\"],\n"
+              "            cwd=_WEB_DIR,\n"
+              "            check=True,\n"
+              "        )\n"
+              "        subprocess.run([\"npm\", \"run\", \"build\"], cwd=_WEB_DIR, check=True)\n",
+              "        npm = \"npm.cmd\" if sys.platform == \"win32\" else \"npm\"\n"
+              "        subprocess.run(\n"
+              "            [npm, \"ci\", \"--legacy-peer-deps\", \"--no-audit\", \"--no-fund\"],\n"
+              "            cwd=_WEB_DIR,\n"
+              "            check=True,\n"
+              "        )\n"
+              "        subprocess.run([npm, \"run\", \"build\"], cwd=_WEB_DIR, check=True)\n",
+          )
+
+          # Parser regressions for Windows fail-closed network policy.
+          parser_test = Path("tests/spec/test_parser.py")
+          test_text = parser_test.read_text()
+          marker = "def test_parse_windows_jobobject_rejects_network_deny"
+          if marker not in test_text:
+              test_text += '''\n\n\ndef test_parse_windows_jobobject_rejects_network_deny(tmp_path: Path) -> None:\n    config = {\n        "spec_version": 1,\n        "name": "windows-network-deny",\n        "os_env": {\n            "type": "caller_process",\n            "sandbox": {"type": "windows_jobobject", "allow_network": False},\n        },\n    }\n    (tmp_path / "config.yaml").write_text(yaml.dump(config))\n    with pytest.raises(OmnigentError, match=r"windows_jobobject"):\n        parse(tmp_path)\n\n\ndef test_parse_windows_jobobject_rejects_egress_rules(tmp_path: Path) -> None:\n    config = {\n        "spec_version": 1,\n        "name": "windows-egress-rules",\n        "os_env": {\n            "type": "caller_process",\n            "sandbox": {\n                "type": "windows_jobobject",\n                "egress_rules": ["* api.github.com/**"],\n            },\n        },\n    }\n    (tmp_path / "config.yaml").write_text(yaml.dump(config))\n    with pytest.raises(OmnigentError, match=r"windows_jobobject"):\n        parse(tmp_path)\n'''
+              parser_test.write_text(test_text)
+
+          # Conflict inventory has served its purpose once semantic resolution lands.
+          Path(".windows-parity-conflicts.txt").unlink(missing_ok=True)
+          PY
+
+          python -m compileall -q \
+            omnigent/terminals/capture_bridge.py \
+            omnigent/runner/routing.py \
+            omnigent/server/app.py \
+            omnigent/server/routes/terminal_attach.py \
+            omnigent/spec/parser.py \
+            omnigent/spec/validator.py
+
+          git diff --check
           git config user.name "MusicPartner Windows Integration"
           git config user.email "keivan@musicpartner.se"
-          git fetch origin windows-parity/source-smota
-
-          set +e
-          git merge --no-ff --no-commit origin/windows-parity/source-smota
-          merge_status=$?
-          set -e
-
-          git diff --name-only --diff-filter=U > /tmp/windows-parity-conflicts.txt
-          echo "Git merge status: ${merge_status}"
-          echo "Conflicted paths:"
-          cat /tmp/windows-parity-conflicts.txt || true
-
-          while IFS= read -r path; do
-            [ -z "$path" ] && continue
-            if git cat-file -e "HEAD:${path}" 2>/dev/null; then
-              git checkout --ours -- "$path"
-              git add -- "$path"
-            else
-              git rm -f --ignore-unmatch -- "$path"
-            fi
-          done < /tmp/windows-parity-conflicts.txt
-
-          # GitHub Actions tokens cannot push workflow-file changes. Keep the
-          # v0.14 workflow here; its Windows-parity edits are applied separately
-          # through the GitHub connector after the source merge lands.
-          git checkout HEAD -- .github/workflows/windows.yml
-
-          cp /tmp/windows-parity-conflicts.txt .windows-parity-conflicts.txt
           git add -A
-          git commit -m "merge(windows): integrate source branch onto v0.14 [windows-merge]"
+          git commit -m "fix(windows): reconcile native support with v0.14 [windows-resolved]"
           git push origin HEAD:windows-parity/v0.14-integration
