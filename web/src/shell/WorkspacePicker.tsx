@@ -204,6 +204,11 @@ export interface WorkspaceBreadcrumbItem {
   path: string;
 }
 
+/** Separator shown between breadcrumb segments for the current host path. */
+export function workspaceBreadcrumbSeparator(path: string): "/" | "\\" {
+  return isWindowsDrivePath(path) ? separatorOf(path) : "/";
+}
+
 /** Build clickable breadcrumbs without changing the host's path syntax. */
 export function workspaceBreadcrumbItems(
   currentAbsolute: string,
@@ -247,7 +252,7 @@ export function workspaceBreadcrumbItems(
     const root = `${currentAbsolute.slice(0, 2)}${sep}`;
     const parts = currentAbsolute.slice(3).split(/[\\/]/).filter(Boolean);
     return [
-      { label: root, path: root },
+      { label: currentAbsolute.slice(0, 2), path: root },
       ...parts.map((label, index) => ({
         label,
         path: `${root}${parts.slice(0, index + 1).join(sep)}`,
@@ -641,6 +646,7 @@ export function WorkspacePicker({
     });
 
   const breadcrumbItems = workspaceBreadcrumbItems(currentAbsolute, resolvedHome);
+  const breadcrumbSeparator = workspaceBreadcrumbSeparator(currentAbsolute);
 
   function navigateTo(next: string) {
     // A click/commit supersedes any in-progress typing; let the
@@ -752,7 +758,7 @@ export function WorkspacePicker({
                   <div key={item.path || "home"} className="flex min-w-0 items-center gap-1">
                     {index > 0 && (
                       <span className="shrink-0 text-muted-foreground" aria-hidden>
-                        /
+                        {breadcrumbSeparator}
                       </span>
                     )}
                     <button
