@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from omnigent._platform import IS_WINDOWS
 from omnigent.inner.datamodel import OSEnvSandboxSpec, OSEnvSpec
 from omnigent.inner.os_env import (
     _child_shell_env,
@@ -122,6 +123,28 @@ def test_build_helper_env_active_passes_omnigent_session_marker() -> None:
     env = build_helper_env(parent, _active_policy())
 
     assert env[OMNIGENT_SESSION_ENV_VAR] == OMNIGENT_SESSION_ENV_VALUE
+
+
+@pytest.mark.parametrize("active", [False, True])
+@pytest.mark.parametrize("explicit", [False, True])
+def test_build_helper_env_desktop_session_policy(active: bool, explicit: bool) -> None:
+    parent = {
+        "PATH": "/usr/bin",
+        "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+        "XDG_RUNTIME_DIR": "/run/user/1000",
+    }
+
+    policy = _active_policy() if active else _inactive_policy()
+    if explicit:
+        policy.env_passthrough = ["DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR"]
+    env = build_helper_env(parent, policy)
+
+    assert env["PATH"] == "/usr/bin"
+    if active:
+        assert "DBUS_SESSION_BUS_ADDRESS" not in env
+        assert "XDG_RUNTIME_DIR" not in env
+    else:
+        assert env == parent
 
 
 # ---------------------------------------------------------------------------
@@ -393,8 +416,11 @@ def test_shell_command_does_not_see_omnigent_project_root(
         OSEnvSpec(type="caller_process", sandbox=OSEnvSandboxSpec(type="none"))
     )
     assert os_env is not None
+    # ``shell()`` runs the command through the platform shell (cmd.exe on
+    # Windows, /bin/sh elsewhere), and each has its own env-var syntax.
+    echo_command = "echo PP=%PYTHONPATH%" if IS_WINDOWS else "echo PP=$PYTHONPATH"
     try:
-        result = asyncio.run(os_env.shell("echo PP=$PYTHONPATH"))
+        result = asyncio.run(os_env.shell(echo_command))
     finally:
         os_env.close()
 

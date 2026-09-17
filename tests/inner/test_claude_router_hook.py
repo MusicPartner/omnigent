@@ -425,8 +425,14 @@ def test_non_loopback_advertisement_is_rejected(tmp_path: Path, url: str) -> Non
     assert subagent_router.read_router_endpoint(tmp_path) is None
 
 
+@pytest.mark.posix_only
 def test_advertisement_from_a_dead_pid_is_rejected(tmp_path: Path) -> None:
-    """A stale advertisement's port can be re-bound by another process."""
+    """A stale advertisement's port can be re-bound by another process.
+
+    The liveness probe (``os.kill(pid, 0)``) that catches this is skipped by
+    design on Windows (see ``_advertiser_alive``), where it is unreliable —
+    so a dead pid there is not rejected.
+    """
     dead_pid = 2**22 - 1
     advertise_router(tmp_path, pid=dead_pid)
     assert subagent_router.read_router_endpoint(tmp_path) is None
@@ -461,7 +467,11 @@ def test_rejected_advertisements_explain_themselves_on_stderr(
     ("url", "pid"),
     [
         ("http://10.0.0.5:9000", None),
-        ("http://127.0.0.1:9000/", 2**22 - 1),
+        pytest.param(
+            "http://127.0.0.1:9000/",
+            2**22 - 1,
+            marks=pytest.mark.posix_only,
+        ),
     ],
 )
 def test_rejection_diagnostics_never_echo_the_advertisement(

@@ -42,7 +42,6 @@ import {
   LockIcon,
   FileTextIcon,
   FolderIcon,
-  ImageIcon,
   PlusIcon,
   ShuffleIcon,
   WandSparklesIcon,
@@ -98,7 +97,8 @@ import { backgroundSessionTitlesRequestHeaders } from "@/lib/backgroundSessionTi
 import { fetchGithubBranches, fetchGithubRepos, type GithubRepo } from "@/lib/githubIntegration";
 import { randomUUID } from "@/lib/randomUUID";
 import { readSubmitWithModEnter } from "@/lib/composerSendShortcutPreferences";
-import { attachmentKey, validateAttachments } from "@/lib/attachments";
+import { validateAttachments } from "@/lib/attachments";
+import { ComposerAttachments } from "@/components/ComposerAttachments";
 import { recordOptimisticTitle } from "@/lib/optimisticTitles";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -230,8 +230,11 @@ import {
   CODEX_NATIVE_DEFAULT_APPROVAL_MODE,
   CURSOR_NATIVE_DEFAULT_EXEC_MODE,
   CURSOR_NATIVE_EXEC_MODES,
+  DEVIN_NATIVE_DEFAULT_PERMISSION_MODE,
+  DEVIN_NATIVE_PERMISSION_MODES,
 } from "@/lib/nativeHarnessModes";
 import { fetchHosts, useHostModelOptions, useHosts, type Host } from "@/hooks/useHosts";
+import { useSkills } from "@/hooks/useSkills";
 import { readArcaHostId, writeArcaHostId } from "@/lib/arcaHost";
 import {
   connectArcaHost,
@@ -316,6 +319,7 @@ function createdHarnessOptions({
   supportsApprovalMode,
   supportsCursorMode,
   supportsAgySkipPermissions,
+  supportsDevinMode,
   supportsModelPicker,
   supportsEffortPicker,
   permissionMode,
@@ -323,6 +327,7 @@ function createdHarnessOptions({
   bypassSandbox,
   cursorExecMode,
   agySkipMode,
+  devinPermissionMode,
   pickedModel,
   pickedEffort,
   smartRoutingEligible,
@@ -333,6 +338,7 @@ function createdHarnessOptions({
   supportsApprovalMode: boolean;
   supportsCursorMode: boolean;
   supportsAgySkipPermissions: boolean;
+  supportsDevinMode: boolean;
   supportsModelPicker: boolean;
   supportsEffortPicker: boolean;
   permissionMode: string;
@@ -340,6 +346,7 @@ function createdHarnessOptions({
   bypassSandbox: boolean;
   cursorExecMode: string;
   agySkipMode: string;
+  devinPermissionMode: string;
   pickedModel: string;
   pickedEffort: string;
   smartRoutingEligible: boolean;
@@ -359,6 +366,12 @@ function createdHarnessOptions({
     options.mode = cursorExecMode;
   } else if (supportsAgySkipPermissions) {
     options.mode = agySkipMode;
+  } else if (supportsDevinMode) {
+    // Devin's permission mode rides `terminal_launch_args`, not the gated
+    // `permission_mode` field, so it is remembered like any other mode knob.
+    options.mode = devinPermissionMode;
+    options.model = pickedModel;
+    options.effort = pickedEffort;
   }
 
   if (smartRoutingEligible) {
@@ -1158,22 +1171,19 @@ function SandboxRepoBranchSelect({
 }
 
 /**
- * Match a first message against an agent's bundled skills.
+ * Match a first message against the available bundled and host skills.
  *
  * Uses the in-session composer's shared command-shape guard
  * (:func:`isSlashCommandText`): the first token must read as ``/name``
  * (file paths like ``/etc/hosts`` never match), while the args after it
  * may carry anything — including paths and URLs, e.g.
  * ``"/review-pr https://github.com/..."``. The command name must
- * exactly match a bundled skill. Anything else — including
- * host-discovered skills the server can't know before a runner boots —
- * is sent as plain text, the same fall-through the in-session composer
- * uses for unknown commands.
+ * exactly match an available skill. Unknown commands are sent as plain text.
  *
  * @param text The sanitized first message, e.g. ``"/review-pr 123"``.
- * @param skills The chosen agent's bundled skills from GET /v1/agents.
+ * @param skills The chosen agent's bundled skills and the selected host's catalog.
  * @returns The skill name and argument string, or ``null`` when the
- *   text is not an invocation of a bundled skill.
+ *   text is not an invocation of an available skill.
  */
 export function matchSkillInvocation(
   text: string,
@@ -1273,6 +1283,8 @@ const EMPTY_HARNESS_TRIGGER_DETAILS: readonly { label: string; value: string }[]
 function agentHasModelSettings(agent: AvailableAgent | undefined): boolean {
   return (
     nativeAgentHasCapability(agent, "modelPicker") ||
+    // devinMode owns Devin's own Model + Effort rows (see nativeCodingAgents).
+    nativeAgentHasCapability(agent, "devinMode") ||
     nativeCodingAgentForAvailableAgent(agent)?.harness === "codex-native"
   );
 }
@@ -1287,7 +1299,8 @@ function agentHasAdvancedSettings(
     !nativeAgentHasCapability(agent, "permissionMode") &&
     !nativeAgentHasCapability(agent, "approvalMode") &&
     !nativeAgentHasCapability(agent, "cursorMode") &&
-    !nativeAgentHasCapability(agent, "skipPermissions")
+    !nativeAgentHasCapability(agent, "skipPermissions") &&
+    !nativeAgentHasCapability(agent, "devinPermission")
   );
 }
 
@@ -1506,7 +1519,7 @@ export function AgentHarnessPicker({
     }
   }, [open]);
 
-  // The landing's model-picker hotkey (⌘⇧M) bumps openNonce. Open the menu and
+  // The landing's model-picker hotkey (Ctrl+Shift+M) bumps openNonce. Open the menu and
   // drill straight into the selected harness's edit submenu (Models / Effort),
   // the same jump the row's Edit affordance performs, so the chord lands on the
   // model list rather than the harness list. Falls back to the list when the
@@ -2076,6 +2089,7 @@ interface LandingDraft {
   bypassSandbox: boolean;
   cursorExecMode: string;
   agySkipMode: string;
+  devinPermissionMode: string;
   pickedHarness: string | null;
   pickedModel: string;
   pickedEffort: string;
@@ -2422,6 +2436,11 @@ export function NewChatLandingScreen() {
     "pi-native",
     hostSelected,
   );
+  const {
+    data: hostDevinModelOptions,
+    isLoading: hostDevinModelsLoading,
+    error: hostDevinModelsError,
+  } = useHostModelOptions(selectedHostId, "devin-native", !sandboxSelected);
   // Only bridge this host's first fetch. Empty/error responses and host changes
   // must never inherit another catalog or keep retired choices alive.
   const cachedHostModels =
@@ -2463,6 +2482,14 @@ export function NewChatLandingScreen() {
   const codexModelOptions = useMemo(
     () => (sandboxSelected ? [] : (availableCodexModels ?? [])),
     [availableCodexModels, sandboxSelected],
+  );
+  // Devin model *families* (claude-opus-5, swe-2, …). Effort is a separate
+  // axis Omnigent carries as reasoning_effort and the runner recombines onto
+  // the id at launch (resolve_devin_launch_model), so the list stays short
+  // instead of enumerating every effort variant.
+  const devinModelOptions = useMemo(
+    () => (sandboxSelected ? [] : (hostDevinModelOptions ?? [])),
+    [hostDevinModelOptions, sandboxSelected],
   );
   const piModelOptions = useMemo(
     () =>
@@ -2627,6 +2654,10 @@ export function NewChatLandingScreen() {
   const [agySkipMode, setAgySkipMode] = useState<string>(
     () => restoredDraft?.agySkipMode ?? AGY_NATIVE_DEFAULT_SKIP_MODE,
   );
+  // Devin's `--permission-mode`. Only meaningful for the devin-native wrapper.
+  const [devinPermissionMode, setDevinPermissionMode] = useState<string>(
+    () => restoredDraft?.devinPermissionMode ?? DEVIN_NATIVE_DEFAULT_PERMISSION_MODE,
+  );
   // Per-session brain-harness override for bundle agents (polly / debby).
   // null = the agent spec's declared harness (no override sent). On agent
   // switch, seeded from the user's last stored pick for that agent.
@@ -2684,7 +2715,7 @@ export function NewChatLandingScreen() {
   // Advanced settings for agents with a configurable brain harness.
   const [configOpen, setConfigOpen] = useState(false);
 
-  // ⌘⇧M opens the agent/model picker here, the keyboard equivalent of the
+  // Ctrl+Shift+M opens the agent/model picker here, the keyboard equivalent of the
   // existing-chat model-picker shortcut. The picker owns model selection on the
   // landing, so the hotkey bumps a nonce the picker opens on.
   const [modelPickerOpenNonce, setModelPickerOpenNonce] = useState(0);
@@ -2719,6 +2750,7 @@ export function NewChatLandingScreen() {
     bypassSandbox,
     cursorExecMode,
     agySkipMode,
+    devinPermissionMode,
     pickedHarness,
     pickedModel,
     pickedEffort,
@@ -3118,8 +3150,10 @@ export function NewChatLandingScreen() {
   );
   const selectedNativeHarness = nativeCodingAgentForAvailableAgent(selectedAgent)?.harness ?? null;
   const supportsPermissionMode = nativeAgentHasCapability(selectedAgent, "permissionMode");
+  const supportsDevinMode = nativeAgentHasCapability(selectedAgent, "devinMode");
   const supportsApprovalMode = nativeAgentHasCapability(selectedAgent, "approvalMode");
   const supportsCursorMode = nativeAgentHasCapability(selectedAgent, "cursorMode");
+  const supportsDevinPermission = nativeAgentHasCapability(selectedAgent, "devinPermission");
   const supportsAgySkipPermissions = nativeAgentHasCapability(selectedAgent, "skipPermissions");
   const supportsModelPicker = nativeAgentHasCapability(selectedAgent, "modelPicker");
   const hideUnconfiguredHarnesses = useMemo(() => readHideUnconfiguredHarnesses(), []);
@@ -3270,6 +3304,12 @@ export function NewChatLandingScreen() {
         AGY_NATIVE_SKIP_MODES.find((m) => m.value === agySkipMode)?.label ?? agySkipMode;
       return [{ label: "Permission mode", value: skipValue }, ...routingRow];
     }
+    if (supportsDevinPermission) {
+      const devinValue =
+        DEVIN_NATIVE_PERMISSION_MODES.find((m) => m.value === devinPermissionMode)?.label ??
+        devinPermissionMode;
+      return [{ label: "Permission mode", value: devinValue }, ...routingRow];
+    }
     if (selectedAgent?.harness != null && selectedAgent.harness in brainHarnessLabelsAll) {
       const active = pickedHarness ?? selectedAgent.harness;
       return [
@@ -3284,6 +3324,8 @@ export function NewChatLandingScreen() {
     supportsApprovalMode,
     supportsCursorMode,
     supportsAgySkipPermissions,
+    supportsDevinPermission,
+    devinPermissionMode,
     supportsModelPicker,
     selectedAgent,
     brainHarnessLabelsAll,
@@ -3309,11 +3351,13 @@ export function NewChatLandingScreen() {
   );
   const pickerModelOptions: readonly NativeModelOption[] = supportsPermissionMode
     ? claudeModelOptions
-    : selectedNativeHarness === "pi-native"
-      ? piModelOptions
-      : selectedNativeHarness === "codex-native"
-        ? codexModelOptions
-        : [];
+    : selectedNativeHarness === "devin-native"
+      ? devinModelOptions
+      : selectedNativeHarness === "pi-native"
+        ? piModelOptions
+        : selectedNativeHarness === "codex-native"
+          ? codexModelOptions
+          : [];
   const [pickerModelSearch, setPickerModelSearch] = useState("");
   const pickerModelsLoading =
     !sandboxSelected &&
@@ -3324,13 +3368,17 @@ export function NewChatLandingScreen() {
         ? hostCodexModelsLoading
         : selectedNativeHarness === "pi-native"
           ? hostPiModelsLoading
-          : false);
+          : selectedNativeHarness === "devin-native"
+            ? hostDevinModelsLoading
+            : false);
   const pickerModelsError =
     selectedNativeHarness === "claude-native"
       ? hostClaudeModelsError
       : selectedNativeHarness === "codex-native"
         ? hostCodexModelsError
-        : null;
+        : selectedNativeHarness === "devin-native"
+          ? hostDevinModelsError
+          : null;
   const pickerDataLoading =
     agentsLoading ||
     (cachedPickerOptions !== null && (hostsLoading || info === "loading")) ||
@@ -3426,14 +3474,23 @@ export function NewChatLandingScreen() {
   useEffect(() => setPickerModelSearch(""), [selectedNativeHarness]);
   const pickerEffortOptions = supportsPermissionMode
     ? CLAUDE_NATIVE_EFFORTS
-    : selectedNativeHarness === "pi-native"
-      ? PI_NATIVE_EFFORTS
-      : selectedNativeHarness === "codex-native"
-        ? codexEffortLevelsForModel(
-            codexModelOptions,
-            pickedModel || codexModelOptions.find((option) => option.isDefault)?.id,
-          ).map((value) => ({ value, label: normalizeEffortLabel(value) }))
-        : [];
+    : selectedNativeHarness === "devin-native"
+      ? // Devin encodes effort as a model-variant suffix, and the rung set is
+        // PER MODEL (swe-2 exposes only medium/high/max; `swe-2-low` is a
+        // different Fusion model), so derive it from the selected model's catalog
+        // entry rather than offering a fixed ladder the model can't honor.
+        codexEffortLevelsForModel(
+          devinModelOptions,
+          pickedModel || devinModelOptions.find((option) => option.isDefault)?.id,
+        ).map((value) => ({ value, label: normalizeEffortLabel(value) }))
+      : selectedNativeHarness === "pi-native"
+        ? PI_NATIVE_EFFORTS
+        : selectedNativeHarness === "codex-native"
+          ? codexEffortLevelsForModel(
+              codexModelOptions,
+              pickedModel || codexModelOptions.find((option) => option.isDefault)?.id,
+            ).map((value) => ({ value, label: normalizeEffortLabel(value) }))
+          : [];
   const rememberPickerOptions = (harness: string, options: HarnessOptions) => {
     const previous = pickerEdits;
     setPickerEdits({
@@ -3499,6 +3556,7 @@ export function NewChatLandingScreen() {
           models={
             supportsModelPicker ||
             supportsPermissionMode ||
+            supportsDevinMode ||
             selectedNativeHarness === "codex-native"
               ? {
                   testId: "new-chat-landing-agent-models",
@@ -3616,7 +3674,9 @@ export function NewChatLandingScreen() {
             ? codexModelOptions
             : native.iconKind === "pi"
               ? piModelOptions
-              : [];
+              : native.iconKind === "devin"
+                ? devinModelOptions
+                : [];
       const model = catalog.find((option) => option.id === saved.model);
       const label = visibleModelLabel(model ? nativeModelLabel(model) : defaultModelLabel(catalog));
       const efforts = native.iconKind === "pi" ? PI_NATIVE_EFFORTS : CLAUDE_NATIVE_EFFORTS;
@@ -3639,7 +3699,9 @@ export function NewChatLandingScreen() {
           ? CURSOR_NATIVE_EXEC_MODES
           : supportsAgySkipPermissions
             ? AGY_NATIVE_SKIP_MODES
-            : [];
+            : supportsDevinPermission
+              ? DEVIN_NATIVE_PERMISSION_MODES
+              : [];
   const selectDirectMode = (mode: string) => {
     if (!selectedNativeHarness) return;
     if (supportsPermissionMode) setPermissionMode(mode);
@@ -3658,6 +3720,7 @@ export function NewChatLandingScreen() {
       setBypassSandbox(false);
     } else if (supportsCursorMode) setCursorExecMode(mode);
     else if (supportsAgySkipPermissions) setAgySkipMode(mode);
+    else if (supportsDevinPermission) setDevinPermissionMode(mode);
     rememberPickerOptions(selectedNativeHarness, { mode });
   };
   // Reset per-agent-instance run-config that must not carry across an agent
@@ -3706,9 +3769,11 @@ export function NewChatLandingScreen() {
       ? piModelOptions
       : selectedNativeHarness === "claude-native"
         ? claudeModelOptions
-        : selectedNativeHarness === "codex-native"
-          ? codexModelOptions
-          : [];
+        : selectedNativeHarness === "devin-native"
+          ? devinModelOptions
+          : selectedNativeHarness === "codex-native"
+            ? codexModelOptions
+            : [];
   const projectDefaultModelValid =
     projectDefaultModel != null && projectModelVocab.some((m) => m.id === projectDefaultModel)
       ? projectDefaultModel
@@ -3829,6 +3894,10 @@ export function NewChatLandingScreen() {
       setCursorExecMode(resolve(CURSOR_NATIVE_EXEC_MODES, CURSOR_NATIVE_DEFAULT_EXEC_MODE));
     } else if (supportsAgySkipPermissions) {
       setAgySkipMode(resolve(AGY_NATIVE_SKIP_MODES, AGY_NATIVE_DEFAULT_SKIP_MODE));
+    } else if (supportsDevinPermission) {
+      setDevinPermissionMode(
+        resolve(DEVIN_NATIVE_PERMISSION_MODES, DEVIN_NATIVE_DEFAULT_PERMISSION_MODE),
+      );
     }
     // Reseed on harness changes, when the selected host's catalog resolves,
     // and when the project's configured default model settles (its config
@@ -3884,9 +3953,7 @@ export function NewChatLandingScreen() {
     if (pickedHarness !== AUTO_NATIVE_HARNESS_ID) return;
     setPermissionMode(CLAUDE_NATIVE_DEFAULT_PERMISSION_MODE);
   }, [pickedHarness]);
-  // Native-terminal agents interpret slash commands inside their own CLI
-  // (the runner injects the text verbatim), so the landing composer must
-  // not intercept them — no skills menu, no slash_command routing.
+  // Native harnesses receive skill invocations as plain text for their CLI to interpret.
   const isNativeTerminalAgent = isNativeCodingAgent(selectedAgent);
   const selectedAgentUnconfigured = harnessUnconfiguredOnHost(
     selectedAgent?.harness,
@@ -4228,45 +4295,88 @@ export function NewChatLandingScreen() {
   const sandboxRepoValid =
     sandboxRepoSelections.every((r) => isValidSandboxRepoUrl(r.url)) && !sandboxRepoOverCap;
 
-  // Sandbox creates need no host or path workspace — the server
-  // provisions both; only the message, agent, and (optional) repo
-  // inputs gate the submit.
-  // Slash-command suggestions for the chosen agent's bundled skills.
-  // Mirrors the in-session composer's menu mechanics (open while the
-  // command name is still being typed: leading "/", no second "/", no
-  // space yet), but lists skills only — built-ins like /model need a
-  // live session. Hidden for native-terminal agents (their CLI owns
-  // slash commands) and for agents without bundled skills.
+  const skillsHarness = autoRoutingSelected
+    ? null
+    : (selectedNativeHarness ?? pickedHarness ?? selectedAgent?.harness ?? null);
+  const skillsUnavailableMessage = sandboxSelected
+    ? "Host skills will be available after the sandbox starts."
+    : selectedAgent?.id === PENDING_AGENT_ID
+      ? "Skills will be available after this session starts."
+      : !selectedHostId
+        ? "Choose a host to discover skills."
+        : selectedHost?.status !== "online"
+          ? "Skills unavailable while the host is offline."
+          : !workspaceValid
+            ? "Choose a working directory to discover skills."
+            : !skillsHarness
+              ? "Choose a harness to discover host skills."
+              : undefined;
+  const canDiscoverHostSkills = skillsUnavailableMessage === undefined;
+  const {
+    skills: hostSkills,
+    skillsStatus,
+    refetch: refreshSkills,
+  } = useSkills({
+    target:
+      selectedHostId && skillsHarness && workspaceTrimmed
+        ? {
+            hostId: selectedHostId,
+            harness: skillsHarness,
+            path: workspaceTrimmed,
+            agentId: selectedAgent?.id,
+          }
+        : null,
+    enabled: canDiscoverHostSkills,
+    starting: !sandboxSelected && (hostsLoading || agentsLoading),
+  });
+  const availableSkills = useMemo(
+    () => (skillsStatus === "ready" ? hostSkills : (selectedAgent?.skills ?? [])),
+    [skillsStatus, hostSkills, selectedAgent?.skills],
+  );
+
+  // Pre-session suggestions contain skills; built-ins such as /model need a live session.
   const [inputFocused, setInputFocused] = useState(false);
   const [slashMenuIndex, setSlashMenuIndex] = useState(-1);
-  const skillCommands = useMemo(() => {
-    if (isNativeTerminalAgent) return {};
-    const m: Record<string, string> = {};
-    for (const s of selectedAgent?.skills ?? []) m[`/${s.name}`] = s.description;
-    return m;
-  }, [selectedAgent, isNativeTerminalAgent]);
+  const skillPrefix = skillsHarness === "codex-native" ? "$" : "/";
+  const skillCommands = useMemo(
+    () =>
+      Object.fromEntries(
+        availableSkills.map((skill) => [`${skillPrefix}${skill.name}`, skill.description]),
+      ),
+    [availableSkills, skillPrefix],
+  );
   const trimmedMessage = message.trimStart();
-  const slashMenuOpen =
-    inputFocused &&
-    trimmedMessage.startsWith("/") &&
+  const skillNameOnly =
+    (trimmedMessage.startsWith("/") || trimmedMessage.startsWith(skillPrefix)) &&
     !trimmedMessage.slice(1).includes("/") &&
     !trimmedMessage.includes(" ");
-  const slashMenuQuery = slashMenuOpen ? trimmedMessage.slice(1) : "";
+  const slashMenuOpen = inputFocused && skillNameOnly;
+  const slashMenuQuery = skillNameOnly ? trimmedMessage.slice(1) : "";
   // Kept in sync with what SlashCommandMenu renders so keyboard nav
   // indexes into the same list.
-  const slashMenuMatches = slashMenuOpen
+  const slashMenuMatches = skillNameOnly
     ? rankedSlashCommandNames(skillCommands, slashMenuQuery)
     : [];
-  // Pre-select the first match whenever the filtered list changes, so
-  // Tab/Enter complete the top item without arrowing down first (same
-  // reset pattern as the in-session composer).
-  const prevSlashMatchesRef = useRef<string[]>([]);
+  const pendingSkillCompletion =
+    skillNameOnly && skillsStatus === "loading" && slashMenuMatches.length === 0;
+  // New queries select the first match; async arrivals retain the selected name.
+  // Track the previous render in state so discarded renders cannot consume an update.
+  const [previousSlashMatches, setPreviousSlashMatches] = useState<{
+    query: string;
+    names: string[];
+  }>({ query: "", names: [] });
   if (
-    slashMenuMatches.length !== prevSlashMatchesRef.current.length ||
-    slashMenuMatches.some((m, i) => m !== prevSlashMatchesRef.current[i])
+    slashMenuQuery !== previousSlashMatches.query ||
+    slashMenuMatches.length !== previousSlashMatches.names.length ||
+    slashMenuMatches.some((m, i) => m !== previousSlashMatches.names[i])
   ) {
-    prevSlashMatchesRef.current = slashMenuMatches;
-    setSlashMenuIndex(slashMenuMatches.length > 0 ? 0 : -1);
+    const previousName = previousSlashMatches.names[slashMenuIndex];
+    const retainedIndex =
+      previousSlashMatches.query === slashMenuQuery && previousName
+        ? slashMenuMatches.indexOf(previousName)
+        : -1;
+    setPreviousSlashMatches({ query: slashMenuQuery, names: slashMenuMatches });
+    setSlashMenuIndex(retainedIndex >= 0 ? retainedIndex : slashMenuMatches.length > 0 ? 0 : -1);
   }
 
   // Selecting a skill fills "/name " and leaves the caret ready for the
@@ -4455,9 +4565,10 @@ export function NewChatLandingScreen() {
   }, [pickerLoading, pickerSelectionError, pickerEdits]);
 
   const canSubmit =
-    message.trim().length > 0 &&
+    (message.trim().length > 0 || files.length > 0) &&
     !pickerLoading &&
     !workspaceLoading &&
+    !pendingSkillCompletion &&
     pickerSelectionError === null &&
     selectedAgent != null &&
     (sandboxSelected ? sandboxRepoValid : selectedHost?.status === "online" && workspaceValid) &&
@@ -4469,25 +4580,27 @@ export function NewChatLandingScreen() {
   // actionable (submitting, or mid-create).
   const submitDisabledReason = canSubmit
     ? null
-    : pickerLoading || workspaceLoading
-      ? "Loading session configuration…"
-      : pickerSelectionError
-        ? pickerSelectionError
-        : sandboxSelected && sandboxRepoOverCap
-          ? `This sandbox provider clones at most ${maxSandboxRepos} ${
-              maxSandboxRepos === 1 ? "repository" : "repositories"
-            } — remove the extras`
-          : sandboxSelected && !sandboxRepoValid
-            ? "Please enter a valid repository URL"
-            : !sandboxSelected && selectedHostId && selectedHost?.status !== "online"
-              ? "Selected host is unavailable. Reconnect it or choose another host."
-              : !sandboxSelected && (!selectedHostId || !workspaceValid)
-                ? "Please choose a host and working directory"
-                : configuredAgentUnavailable && selectedAgent == null
-                  ? "This project's configured agent is unavailable — pick an agent to continue"
-                  : message.trim().length === 0
-                    ? "Enter a message to get started"
-                    : null;
+    : pendingSkillCompletion
+      ? "Loading skills…"
+      : pickerLoading || workspaceLoading
+        ? "Loading session configuration…"
+        : pickerSelectionError
+          ? pickerSelectionError
+          : sandboxSelected && sandboxRepoOverCap
+            ? `This sandbox provider clones at most ${maxSandboxRepos} ${
+                maxSandboxRepos === 1 ? "repository" : "repositories"
+              } — remove the extras`
+            : sandboxSelected && !sandboxRepoValid
+              ? "Please enter a valid repository URL"
+              : !sandboxSelected && selectedHostId && selectedHost?.status !== "online"
+                ? "Selected host is unavailable. Reconnect it or choose another host."
+                : !sandboxSelected && (!selectedHostId || !workspaceValid)
+                  ? "Please choose a host and working directory"
+                  : configuredAgentUnavailable && selectedAgent == null
+                    ? "This project's configured agent is unavailable — pick an agent to continue"
+                    : message.trim().length === 0 && files.length === 0
+                      ? "Enter a message to get started"
+                      : null;
 
   // Names the picked provider, else the server's default label.
   const selectedSandboxLabel =
@@ -4859,6 +4972,7 @@ export function NewChatLandingScreen() {
       const agentSupportsApprovalMode = nativeAgentHasCapability(agent, "approvalMode");
       const agentSupportsCursorMode = nativeAgentHasCapability(agent, "cursorMode");
       const agentSupportsAgySkip = nativeAgentHasCapability(agent, "skipPermissions");
+      const agentSupportsDevinPermission = nativeAgentHasCapability(agent, "devinPermission");
       const agentSupportsModelPicker = nativeAgentHasCapability(agent, "modelPicker");
       // Smart Routing — server-side. The fully-auto harness always routes
       // (harness + model), so send "on" to keep the persisted state consistent
@@ -4893,7 +5007,13 @@ export function NewChatLandingScreen() {
       const normalizedModelOverride =
         !smartRoutingHarnessSelected &&
         !routingOwnsModel &&
-        (agentSupportsModelPicker || nativeAgent?.harness === "codex-native") &&
+        // devin's Model+Effort live under its own `devinMode` capability (not
+        // `modelPicker`), so — like codex-native — pin the pick by harness or
+        // the New-Chat selection never reaches `_auto_create_devin_terminal`
+        // and Devin launches on its own config default.
+        (agentSupportsModelPicker ||
+          nativeAgent?.harness === "codex-native" ||
+          nativeAgent?.harness === "devin-native") &&
         pickedModel
           ? pickedModel
           : null;
@@ -4902,7 +5022,8 @@ export function NewChatLandingScreen() {
         !routingOwnsModel &&
         (agentSupportsPermissionMode ||
           selectedNativeHarness === "pi-native" ||
-          nativeAgent?.harness === "codex-native") &&
+          nativeAgent?.harness === "codex-native" ||
+          nativeAgent?.harness === "devin-native") &&
         pickedEffort
           ? pickedEffort
           : null;
@@ -5116,7 +5237,12 @@ export function NewChatLandingScreen() {
                     ? (CURSOR_NATIVE_EXEC_MODES.find((m) => m.value === cursorExecMode)?.args ?? [])
                     : agentSupportsAgySkip && agySkipMode !== AGY_NATIVE_DEFAULT_SKIP_MODE
                       ? (AGY_NATIVE_SKIP_MODES.find((m) => m.value === agySkipMode)?.args ?? [])
-                      : undefined,
+                      : agentSupportsDevinPermission &&
+                          devinPermissionMode !== DEVIN_NATIVE_DEFAULT_PERMISSION_MODE
+                        ? (DEVIN_NATIVE_PERMISSION_MODES.find(
+                            (m) => m.value === devinPermissionMode,
+                          )?.args ?? [])
+                        : undefined,
             // Model + reasoning effort, persisted on the session row before
             // the runner launches. Claude, Codex, and Pi read model_override at
             // terminal launch; an unselected ("") knob is omitted so the
@@ -5189,6 +5315,7 @@ export function NewChatLandingScreen() {
         const launchedOptions = createdHarnessOptions({
           harness: selectedNativeHarness,
           supportsPermissionMode: agentSupportsPermissionMode,
+          supportsDevinMode,
           supportsApprovalMode: agentSupportsApprovalMode,
           supportsCursorMode: agentSupportsCursorMode,
           supportsAgySkipPermissions: agentSupportsAgySkip,
@@ -5200,6 +5327,7 @@ export function NewChatLandingScreen() {
           bypassSandbox,
           cursorExecMode,
           agySkipMode,
+          devinPermissionMode,
           pickedModel,
           pickedEffort,
           smartRoutingEligible: effectiveAgentId !== PENDING_AGENT_ID && smartRoutingEligible,
@@ -5247,13 +5375,10 @@ export function NewChatLandingScreen() {
       // next time. Recorded only on a successful create, so a harness the user
       // merely browsed past never earns a primary slot.
       if (selectedNativeHarness !== null) addRecentHarness(selectedNativeHarness);
-      // A first message matching one of the agent's bundled skills is sent as a
-      // structured `slash_command` (server resolves the skill) rather than the
-      // literal "/name". Native terminal agents keep plain text — their CLI owns
-      // slash commands.
+      // SDK invocations resolve on the runner after create; native CLIs receive plain text.
       const skill = isNativeTerminalAgent
         ? null
-        : matchSkillInvocation(initialPrompt, agent?.skills ?? []);
+        : matchSkillInvocation(initialPrompt, availableSkills);
       // Scope the recall entry to the new session id so ArrowUp surfaces it in
       // the freshly-opened chat. Sanitized text so recall reproduces what was sent.
       appendPromptHistoryEntry(initialPrompt, data.id);
@@ -5713,6 +5838,24 @@ export function NewChatLandingScreen() {
                   // and takes priority over submission.
                   if (!shouldPreferSendOverCompletion && handleMentionKeyDown(e)) return;
 
+                  if (slashMenuOpen && e.key === "Escape") {
+                    e.preventDefault();
+                    setMessage("");
+                    setSlashMenuIndex(-1);
+                    return;
+                  }
+                  // Keep a partial skill name in the composer until there is a completion.
+                  if (
+                    slashMenuOpen &&
+                    skillsStatus === "loading" &&
+                    slashMenuMatches.length === 0 &&
+                    !shouldPreferSendOverCompletion &&
+                    (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && !isMobileViewport))
+                  ) {
+                    e.preventDefault();
+                    return;
+                  }
+
                   // While the skills menu is open, ArrowUp/Down navigate it and
                   // Enter/Tab complete the highlighted item — these take
                   // priority over submission (same UX as the in-session
@@ -5735,14 +5878,6 @@ export function NewChatLandingScreen() {
                     ) {
                       e.preventDefault();
                       applySlashSelection(slashMenuMatches[slashMenuIndex]!);
-                      return;
-                    }
-                    if (e.key === "Escape") {
-                      e.preventDefault();
-                      // Dismiss the menu by clearing the draft so the user can
-                      // start fresh.
-                      setMessage("");
-                      setSlashMenuIndex(-1);
                       return;
                     }
                   }
@@ -5782,6 +5917,9 @@ export function NewChatLandingScreen() {
                         activeIndex={slashMenuIndex}
                         onSelect={applySlashSelection}
                         commands={skillCommands}
+                        skillsStatus={skillsStatus}
+                        skillsUnavailableMessage={skillsUnavailableMessage}
+                        onRetrySkills={() => void refreshSkills()}
                       />
                     )}
                     {/* "@"-file-mention browser — native terminal agents with a workspace */}
@@ -5861,34 +5999,8 @@ export function NewChatLandingScreen() {
                         ))}
                       </div>
                     )}
-                    {/* File chips — shown below the textarea when files are attached. */}
-                    {files.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 px-4 pb-2">
-                        {files.map((file, i) => (
-                          <span
-                            key={attachmentKey(file)}
-                            className="flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-sm text-muted-foreground"
-                          >
-                            {file.type.startsWith("image/") ? (
-                              <ImageIcon className="size-3 shrink-0" />
-                            ) : (
-                              <FileTextIcon className="size-3 shrink-0" />
-                            )}
-                            <span className="max-w-[140px] truncate">
-                              {file.name || "image.png"}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => removeFile(i)}
-                              className="ml-0.5 rounded-full hover:text-foreground"
-                              aria-label={`Remove ${file.name || "image.png"}`}
-                            >
-                              <XIcon className="size-3" />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                    {/* Pending attachments — image thumbnails (click to view) + file rows. */}
+                    <ComposerAttachments files={files} onRemove={removeFile} />
                     {/* Rejected-attachment feedback: unsupported type or too large */}
                     {attachmentError !== null && (
                       <div

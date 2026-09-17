@@ -1566,6 +1566,7 @@ async def test_run_turn_native_tool_auto_mode_skips_elicitation(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.posix_only
 async def test_ensure_session_writes_hooks_json(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Any,

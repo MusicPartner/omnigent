@@ -249,6 +249,7 @@ class TestBridge:
         assert "HARNESS_CURSOR_NATIVE_REQUEST_SESSION_ID" not in env
         assert list(env) == [BRIDGE_DIR_ENV_VAR]
 
+    @pytest.mark.posix_only
     def test_tmux_target_round_trip(self, tmp_path: Path) -> None:
         write_tmux_target(tmp_path, socket_path=Path("/tmp/x/tmux.sock"), tmux_target="main")
         info = read_tmux_info(tmp_path)

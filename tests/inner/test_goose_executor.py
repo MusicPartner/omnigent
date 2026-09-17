@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -1174,7 +1175,7 @@ def test_sandbox_launch_path_wraps_active_policy(monkeypatch, tmp_path) -> None:
     assert captured["target"] == "/usr/bin/goose"
     policy = captured["policy"]
     # goose's config dir is a write root so it can start inside the jail.
-    assert any(str(p).endswith(".config/goose") for p in policy.write_roots)
+    assert any(Path(p).parts[-2:] == (".config", "goose") for p in policy.write_roots)
     assert policy.spawn_env_allowlist is not None
     assert "PATH" in policy.spawn_env_allowlist
     assert "GOOSE_PROVIDER" in policy.spawn_env_allowlist

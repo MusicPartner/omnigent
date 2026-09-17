@@ -13,6 +13,8 @@ import pytest
 
 from omnigent.inner.egress.relay import start_relay
 
+pytestmark = pytest.mark.posix_only
+
 
 def _pick_free_port() -> int:
     """Return a free ephemeral TCP port. Hardcoded ports collide with TIME_WAIT."""

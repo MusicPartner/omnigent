@@ -237,6 +237,20 @@ def test_sandbox_policy_round_trips_spawn_env_allowlist() -> None:
     assert SandboxPolicy.from_jsonable(_noop_policy().to_jsonable()).spawn_env_allowlist is None
 
 
+def test_credential_source_paths_survive_serialization_and_cloning(tmp_path: pathlib.Path) -> None:
+    from omnigent.inner.sandbox import with_additional_read_roots, with_additional_write_roots
+
+    policy = _noop_policy()
+    protected = (tmp_path / "token.sock").resolve()
+    policy.credential_source_paths = [protected]
+    decoded = SandboxPolicy.from_jsonable(policy.to_jsonable())
+    cloned = with_additional_read_roots(decoded, [tmp_path / "tools"])
+    cloned = with_additional_write_roots(cloned, [tmp_path / "scratch"])
+    assert cloned.credential_source_paths == [protected]
+    assert cloned.credential_source_paths is not decoded.credential_source_paths
+    assert SandboxPolicy.from_jsonable({}).credential_source_paths is None
+
+
 def test_sandbox_policy_round_trips_deny_unix_socket_paths() -> None:
     """``deny_unix_socket_paths`` survives the launcher wire encoding.
 
@@ -527,3 +541,42 @@ def test_exec_launcher_rejects_an_unnameable_interpreter(monkeypatch) -> None:
     monkeypatch.setattr(sys, "executable", "")
     with pytest.raises(OSError, match=re.escape("sys.executable is empty")):
         create_exec_launcher("/bin/true", _noop_policy())
+
+
+def test_exec_launcher_on_windows_emits_a_runnable_cmd_script(monkeypatch) -> None:
+    """On Windows the launcher must be a ``.cmd`` batch file, not a ``.py``.
+
+    ``CreateProcess`` (what every spawner here uses) never consults file
+    associations, so a bare ``.py`` fails with WinError 193; ``.cmd`` is
+    handed to ``cmd.exe`` natively. The inline source embeds a literal
+    ``%(message)s`` (the logging format string), which a batch file would
+    otherwise treat as a variable reference — it must come back doubled.
+
+    ``_project_root`` is stubbed out because it instantiates a bare
+    ``pathlib.Path`` from ``__file__``, which itself branches on
+    ``os.name`` to pick ``WindowsPath`` vs. ``PosixPath`` — faking
+    ``os.name`` for the launcher's own check would otherwise make that
+    unrelated call raise ``NotImplementedError`` on this platform. For
+    the same reason, the produced path is read back with plain ``open``
+    rather than ``pathlib.Path`` — this is a real POSIX path on the test
+    host, but ``pathlib`` would otherwise treat it as a ``WindowsPath``.
+    """
+    import omnigent.inner.sandbox as sandbox_module
+
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr(sandbox_module, "_project_root", lambda: r"C:\fake\project")
+    wrapper_path = create_exec_launcher(sys.executable, _noop_policy())
+    try:
+        with open(wrapper_path, encoding="utf-8", newline="") as fh:
+            script = fh.read()
+        assert wrapper_path.endswith(".cmd"), wrapper_path
+        assert script.startswith("@echo off\r\n"), script
+        # The inline source's literal ``format='%(message)s'`` must come
+        # back doubled so cmd.exe doesn't expand it as a variable.
+        assert "format='%(message)s'" not in script, script
+        assert "format='%%(message)s'" in script, script
+        assert f'"{sys.executable}" -c "' in script, script
+        assert script.rstrip("\r\n").endswith("%*"), script
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(wrapper_path)

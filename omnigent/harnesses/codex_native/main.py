@@ -100,6 +100,7 @@ from omnigent.native.native_terminal import (
 from omnigent.native.native_terminal import (
     terminal_attach_url as _attach_url,
 )
+from omnigent.runtime.tool_result_replay import sanitize_replayed_image_blocks
 from omnigent.util.json_types import JsonObject as _JsonObject
 
 _logger = logging.getLogger(__name__)
@@ -417,7 +418,7 @@ def run_codex_native(
     extra_args: tuple[str, ...] | None = None,
     codex_args: tuple[str, ...] | None = None,
     resume_picker: bool = False,
-    command: str = _DEFAULT_CODEX_COMMAND,
+    command: str | None = _DEFAULT_CODEX_COMMAND,
     model: str | None = None,
     prompt: str | None = None,
     auto_open_conversation: bool = False,
@@ -442,9 +443,9 @@ def run_codex_native(
     codex_args = _normalize_extra_args(
         extra_args=extra_args, legacy_args=codex_args, legacy_param="codex_args"
     )
-    resolved_command = command.strip()
+    resolved_command = command.strip() if isinstance(command, str) else ""
     if not resolved_command:
-        raise click.ClickException("Codex command must not be empty.")
+        resolved_command = _DEFAULT_CODEX_COMMAND
     _preflight_local_tools()
     if server is None:
         raise click.ClickException(
@@ -2223,10 +2224,20 @@ def _codex_rollout_records_from_session_items(
         # replacement_history replaces them.
         if item.get("type") == "compaction":
             compacted_msgs = item.get("compacted_messages")
-            if compacted_msgs:
+            if isinstance(compacted_msgs, list) and compacted_msgs:
                 compacted_payload: _JsonObject = {
                     "message": item.get("summary", ""),
-                    "replacement_history": compacted_msgs,
+                    "replacement_history": [
+                        {
+                            **message,
+                            "content": sanitize_replayed_image_blocks(message["content"]),
+                        }
+                        if isinstance(message, dict)
+                        and message.get("type") == "message"
+                        and "content" in message
+                        else message
+                        for message in compacted_msgs
+                    ],
                 }
                 compacted_record: _JsonObject = {
                     "timestamp": timestamp,

@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from omnigent.inner.datamodel import OSEnvSandboxSpec, OSEnvSpec
@@ -91,6 +93,7 @@ class TestCopyTree(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.posix_only
 class TestForkedOSEnvironment(unittest.TestCase):
     """Test the fork mode end-to-end through the helper process."""
 

@@ -66,6 +66,7 @@ from omnigent.runner.resource_registry import (
     CLAUDE_NATIVE_TERMINAL_ROLE,
     CODEX_NATIVE_TERMINAL_ROLE,
     CURSOR_NATIVE_TERMINAL_ROLE,
+    DEVIN_NATIVE_TERMINAL_ROLE,
     GOOSE_NATIVE_TERMINAL_ROLE,
     HERMES_NATIVE_TERMINAL_ROLE,
     KIMI_NATIVE_TERMINAL_ROLE,
@@ -161,8 +162,8 @@ def _publish_tmux_target_for_bridge(
 # forwarder on terminal re-create (else both mirror, double-posting items).
 _AUTO_FORWARDER_TASKS: dict[str, asyncio.Task[object]] = {}
 
-# Bound how long terminal (re)creation waits for a cancelled forwarder.
-_AUTO_FORWARDER_CANCEL_TIMEOUT_S = 10.0
+# Include the child's 10-second termination grace and forced-exit cleanup.
+_AUTO_FORWARDER_CANCEL_TIMEOUT_S = 15.0
 
 # Delegated runner bearers last 30 minutes and refresh five minutes before
 # expiry. A one-minute cadence allows several retries without giving the child
@@ -253,6 +254,24 @@ async def teardown_all_codex_native_app_servers() -> None:
     for session_id in list(_AUTO_CODEX_APP_SERVERS):
         with contextlib.suppress(Exception):
             await teardown_codex_native_app_server(session_id)
+
+
+async def teardown_opencode_native_server(session_id: str) -> None:
+    """Cancel the forwarder and close any remaining server for this session."""
+    if session_id not in _AUTO_OPENCODE_SERVERS:
+        return
+    await _cancel_auto_forwarder_task(session_id)
+    leftover_server = _AUTO_OPENCODE_SERVERS.pop(session_id, None)
+    if leftover_server is not None:
+        with contextlib.suppress(Exception):
+            await leftover_server.close()
+
+
+async def teardown_all_opencode_native_servers() -> None:
+    """Close all registered OpenCode servers during runner shutdown, best effort."""
+    for session_id in list(_AUTO_OPENCODE_SERVERS):
+        with contextlib.suppress(Exception):
+            await teardown_opencode_native_server(session_id)
 
 
 def _register_auto_forwarder_task(session_id: str, task: asyncio.Task[object]) -> None:
@@ -1550,9 +1569,12 @@ async def _auto_create_opencode_terminal(
                 workspace=workspace,
             ),
         )
-    except Exception:
-        await server.close()
+    except BaseException:
+        # Include cancellation; remove ownership before closing so a close failure
+        # cannot leave a stale entry or replace the startup error.
         _AUTO_OPENCODE_SERVERS.pop(session_id, None)
+        with contextlib.suppress(Exception):
+            await server.close()
         raise
 
     # Start the SSE forwarder in the background so session creation never
@@ -1619,10 +1641,12 @@ async def _auto_create_opencode_terminal(
                 "resource": session_resource_view_to_dict(terminal_view),
             },
         )
-    except Exception:
+    except BaseException:
+        # Terminal startup failure or cancellation must also release the server.
         await _cancel_auto_forwarder_task(session_id)
-        await server.close()
         _AUTO_OPENCODE_SERVERS.pop(session_id, None)
+        with contextlib.suppress(Exception):
+            await server.close()
         raise
 
     _logger.info(
@@ -3393,6 +3417,203 @@ async def _auto_create_kiro_terminal(
     return terminal_view
 
 
+async def _auto_create_devin_terminal(
+    session_id: str,
+    resource_registry: SessionResourceRegistry,
+    publish_event: Callable[[str, _JsonObject], None],
+    *,
+    server_client: httpx.AsyncClient | None,
+    ensure_comment_relay: _EnsureCommentRelay | None = None,
+    agent_spec: AgentSpec | ResolvedSpec | None = None,
+) -> SessionResourceView:
+    """Auto-create the Devin TUI terminal for a devin-native session.
+
+    Writes the session-scoped Devin config (which registers Omnigent's
+    lifecycle hooks and so is what makes policy, elicitation and the transcript
+    mirror work), launches the TUI in a runner-owned tmux pane, then starts the
+    hook forwarder.
+
+    :param agent_spec: The session's resolved agent spec. A custom agent's
+        ``instructions`` are delivered to Devin as an always-on Windsurf rule in
+        the workspace (Devin's only per-turn system-prompt channel).
+    """
+    from omnigent.harnesses.devin_native.bridge import (
+        DEVIN_NATIVE_ENV_UNSET,
+        build_devin_native_terminal_env,
+        export_path,
+        prepare_bridge_dir,
+        session_config_path,
+        write_agent_instructions_preamble,
+        write_devin_agent_rule,
+        write_devin_mcp_config,
+        write_devin_workspace_hint,
+        write_fork_preamble,
+        write_hook_wrapper,
+        write_tmux_target,
+    )
+    from omnigent.harnesses.devin_native.main import build_devin_launch, resolve_devin_launch_model
+    from omnigent.inner.datamodel import OSEnvSpec, TerminalEnvSpec
+
+    # ``_pi_native_launch_config`` is a generic session-snapshot reader
+    # (workspace + terminal_launch_args + model_override); reused here, not
+    # Pi-specific.
+    launch_config = await _pi_native_launch_config(
+        session_id=session_id,
+        server_client=server_client,
+    )
+    workspace_path = launch_config.workspace
+    if not workspace_path.exists():
+        raise RuntimeError(f"Devin workspace does not exist for session {session_id!r}.")
+    workspace = str(workspace_path)
+    bridge_dir = prepare_bridge_dir(session_id)
+
+    # Deliver a custom agent's instructions as an always-on Windsurf rule (the
+    # only channel Devin applies to every turn); a plain agent clears any stale
+    # rule a prior custom-agent launch left in this workspace. Where that rule
+    # would not be session-scoped — a home-directory workspace Devin reads from
+    # every cwd, or one another agent's live rule already owns — the instructions
+    # ride the first message instead, which is weaker but stays in this session.
+    raw_instructions = _native_startup_raw_instructions_from_spec(agent_spec)
+    rule_is_live = write_devin_agent_rule(workspace_path, raw_instructions, session_id=session_id)
+    if raw_instructions and not rule_is_live:
+        write_agent_instructions_preamble(bridge_dir, raw_instructions)
+    elif rule_is_live:
+        # Record the workspace so the SessionEnd hook can remove this rule when
+        # the session ends, rather than leaving it to load into a later Devin run.
+        write_devin_workspace_hint(bridge_dir, workspace_path)
+
+    # Register Omnigent's MCP relay before the TUI starts — Devin reads its MCP
+    # servers at launch, from a project-local file (its user config carries none).
+    write_devin_mcp_config(workspace_path, bridge_dir)
+
+    # Replay prior turns as a preamble on the first injected message whenever
+    # there is history but no Devin session to reattach to: a forked clone, or a
+    # conversation whose `--resume` id is absent (an ACP-era row, or one predating
+    # the native wrap). Devin's own store is read-only to us, so text replay is the
+    # only carry-over available. Costs one items GET on a launch without a resume
+    # id; the assistant-turn check keeps a brand-new session from replaying its own
+    # pending prompt. Best-effort — a failure just starts without the context.
+    if server_client is not None and (
+        launch_config.fork_carry_history or not launch_config.external_session_id
+    ):
+        try:
+            from omnigent.harnesses.claude_native.main import (
+                _fetch_all_session_items_for_claude_resume,
+            )
+
+            carried_items = await _fetch_all_session_items_for_claude_resume(
+                server_client, session_id
+            )
+            if launch_config.fork_carry_history or _devin_has_replayable_history(carried_items):
+                write_fork_preamble(bridge_dir, _cursor_fork_history_preamble(carried_items))
+        except Exception:  # noqa: BLE001 — context carry-over is best-effort
+            _logger.warning(
+                "devin-native: could not carry prior history for %s",
+                session_id,
+                exc_info=True,
+            )
+
+    from omnigent.runner._entry import _make_auth_token_factory, _RunnerDatabricksAuth
+
+    server_url = _required_runner_env("RUNNER_SERVER_URL")
+    _runner_auth = _RunnerDatabricksAuth(_make_auth_token_factory())
+
+    # The hook wrapper carries a one-shot Omnigent bearer, so it must be written
+    # before the TUI starts — Devin reads its hook config once at launch.
+    hook_command = write_hook_wrapper(bridge_dir, server_url=server_url, session_id=session_id)
+    from omnigent.harnesses.devin_native.bridge import write_devin_session_config
+
+    # Devin has no --effort flag: a (model, effort) pick from the New Chat dialog
+    # composes into one variant id here, the same way the CLI's --model/--effort
+    # pair does, so both entry points land on the same Devin model.
+    launch_model = await asyncio.to_thread(
+        resolve_devin_launch_model,
+        launch_config.model_override,
+        launch_config.reasoning_effort,
+    )
+    write_devin_session_config(
+        bridge_dir,
+        hook_command=str(hook_command),
+        model=launch_model,
+    )
+
+    devin_launch = build_devin_launch(
+        launch_config.terminal_launch_args or [],
+        bridge_dir=bridge_dir,
+        config_path=session_config_path(bridge_dir),
+        export_file=export_path(bridge_dir),
+        model=launch_model,
+        resume_id=launch_config.external_session_id,
+    )
+    terminal_view = await resource_registry.launch_required_terminal(
+        session_id=session_id,
+        terminal_name="devin",
+        session_key="main",
+        resource_role=DEVIN_NATIVE_TERMINAL_ROLE,
+        spec=TerminalEnvSpec(
+            os_env=OSEnvSpec(type="caller_process", cwd=workspace),
+            command=devin_launch.executable,
+            args=devin_launch.argv[1:],
+            env=build_devin_native_terminal_env(session_id),
+            env_unset=list(DEVIN_NATIVE_ENV_UNSET),
+            inherit_env=False,
+            scrollback=100_000,
+            tmux_allow_passthrough=True,
+            tmux_start_on_attach=False,
+        ),
+    )
+    terminal_registry = resource_registry.terminal_registry
+    if terminal_registry is not None:
+        instance = terminal_registry.get(session_id, "devin", "main")
+        if instance is not None and instance.running:
+            write_tmux_target(
+                bridge_dir,
+                socket_path=instance.socket_path,
+                tmux_target=instance.tmux_target,
+                requires_forwarder_ready=launch_config.external_session_id is not None,
+            )
+    publish_event(
+        session_id,
+        {
+            "type": "session.resource.created",
+            "resource": session_resource_view_to_dict(terminal_view),
+        },
+    )
+
+    # Start the Omnigent builtin-tool relay so Devin's MCP-declared Omnigent
+    # tools route back through the session's policy/elicitation gate.
+    if server_client is not None and ensure_comment_relay is not None:
+        await ensure_comment_relay(
+            session_id,
+            explicit_bridge_dir=bridge_dir,
+            await_notify=False,
+        )
+
+    from omnigent.harnesses.devin_native.forwarder import supervise_devin_forwarder
+
+    _forwarder_task = asyncio.create_task(
+        supervise_devin_forwarder(
+            base_url=server_url,
+            headers={},
+            session_id=session_id,
+            bridge_dir=bridge_dir,
+            agent_name="devin-native-ui",
+            auth=_runner_auth,
+            # A cold resume replays the prior hook log; skip to its end so
+            # history is not re-published as new conversation items.
+            start_at_end=launch_config.external_session_id is not None,
+        ),
+        name=f"devin-forwarder-{session_id}",
+    )
+    _register_auto_forwarder_task(session_id, _forwarder_task)
+    _logger.info(
+        "Auto-created devin terminal + hook forwarder for session %s; task=%s",
+        session_id,
+        _forwarder_task.get_name(),
+    )
+    return terminal_view
+
+
 async def _persist_qwen_external_session_id(
     server_client: httpx.AsyncClient | None,
     session_id: str,
@@ -4635,6 +4856,10 @@ async def _auto_create_codex_terminal(
             resolve_harness_args,
             resolve_harness_config,
         )
+        from omnigent.harnesses.codex_native.bridge import (  # noqa: FlagLocalImports
+            CODEX_NATIVE_CONFIGURED_COMMAND_STARTUP_TIMEOUT_SECONDS,
+            write_bridge_startup_timeout,
+        )
 
         _codex_harness_cfg = load_effective_config()
         # Config-only command resolve: the managed host provisions
@@ -4644,11 +4869,41 @@ async def _auto_create_codex_terminal(
         # overrides are deliberately not consulted on this managed-host path.
         _, _codex_overrides = resolve_harness_config(_codex_harness_cfg)
         _codex_cmd_override = (_codex_overrides.get("codex-native") or {}).get("command")
-        codex_command = (
+        configured_codex_command = (
             _codex_cmd_override.strip()
             if isinstance(_codex_cmd_override, str) and _codex_cmd_override.strip()
-            else app_server.codex_path
+            else None
         )
+        codex_command = configured_codex_command or app_server.codex_path
+        thread_start_timeout_seconds = (
+            CODEX_NATIVE_CONFIGURED_COMMAND_STARTUP_TIMEOUT_SECONDS
+            if configured_codex_command is not None and not _codex_launch.login_required
+            else None
+        )
+        if configured_codex_command is not None:
+            if launch_config.external_session_id is not None:
+                _logger.info(
+                    "Codex resume: bridge state is preloaded before configured "
+                    "command %r starts; no bridge-state wait extension is needed "
+                    "(session %s)",
+                    configured_codex_command,
+                    session_id,
+                )
+            elif _codex_launch.login_required:
+                _logger.info(
+                    "Codex startup: configured command %r requires interactive "
+                    "login; preserving the unbounded sign-in wait (session %s)",
+                    configured_codex_command,
+                    session_id,
+                )
+            elif thread_start_timeout_seconds is not None:
+                _logger.info(
+                    "Codex startup: configured command %r gets a %.0fs "
+                    "thread-start budget (session %s)",
+                    configured_codex_command,
+                    thread_start_timeout_seconds,
+                    session_id,
+                )
         codex_launch_args = resolve_harness_args(
             "codex-native", tuple(codex_remote_args), cfg=_codex_harness_cfg
         )
@@ -4699,6 +4954,27 @@ async def _auto_create_codex_terminal(
         _AUTO_CODEX_APP_SERVERS.pop(session_id, None)
         raise
 
+    # Known-thread resumes publish bridge state before the terminal starts;
+    # only fresh discovery needs to extend the executor's state wait.
+    if launch_config.external_session_id is None and thread_start_timeout_seconds is not None:
+        try:
+            write_bridge_startup_timeout(bridge_dir, thread_start_timeout_seconds)
+        except OSError:
+            # The marker only extends the executor's legacy wait. A write
+            # failure must not strand the terminal before its forwarder owns
+            # it, and the forwarder must not keep waiting past the executor's
+            # legacy deadline that the marker can no longer extend: fall both
+            # sides back to the legacy timeout so the forwarder's precise
+            # startup error lands while the executor is still reporting.
+            thread_start_timeout_seconds = None
+            _logger.warning(
+                "Could not publish Codex startup timeout for session %s; "
+                "falling back to the legacy startup timeout for the executor "
+                "and the forwarder",
+                session_id,
+                exc_info=True,
+            )
+
     # Adopt the thread the fresh TUI creates and run the forwarder in the
     # background, so session creation never blocks on TUI startup.
     _forwarder_task = asyncio.create_task(
@@ -4712,6 +4988,7 @@ async def _auto_create_codex_terminal(
                 event_client=event_client,
                 routing_summary=_codex_launch.summary,
                 login_required=_codex_launch.login_required,
+                thread_start_timeout_seconds=thread_start_timeout_seconds,
                 subagent_router=_codex_router,
                 turn_router=_codex_turn_router,
             )
@@ -4771,6 +5048,7 @@ async def _codex_discover_thread_and_forward(
     event_client: CodexAppServerClient,
     routing_summary: str,
     login_required: bool = False,
+    thread_start_timeout_seconds: float | None = None,
     subagent_router: SubagentRouter | None = None,
     turn_router: TurnRouter | None = None,
 ) -> None:
@@ -4807,6 +5085,9 @@ async def _codex_discover_thread_and_forward(
         the thread-start timeout), while thread discovery keeps listening
         so an interactive sign-in from the terminal still recovers the
         session.
+    :param thread_start_timeout_seconds: Configured-command thread-start
+        allowance. ``None`` preserves the forwarder's ordinary 30-second
+        default.
     :param subagent_router: Router this terminal launch started, torn down
         in the ``finally``. Passed so a late teardown cannot close the
         endpoint a re-created terminal has since installed.
@@ -4814,6 +5095,7 @@ async def _codex_discover_thread_and_forward(
         started, torn down alongside the subagent one.
     """
     from omnigent.harnesses.codex_native.bridge import (
+        CODEX_NATIVE_DIRECT_THREAD_START_TIMEOUT_SECONDS,
         CodexNativeBridgeState,
         clear_bridge_startup_error,
         write_bridge_startup_error,
@@ -4858,6 +5140,11 @@ async def _codex_discover_thread_and_forward(
                 # No deadline: the turn-facing failure is already recorded,
                 # so this wait only serves a possible interactive sign-in.
                 thread_id = await wait_for_thread_started(event_client, timeout=None)
+            elif thread_start_timeout_seconds is not None:
+                thread_id = await wait_for_thread_started(
+                    event_client,
+                    timeout=thread_start_timeout_seconds,
+                )
             else:
                 thread_id = await wait_for_thread_started(event_client)
         except (TimeoutError, RuntimeError) as exc:
@@ -4870,11 +5157,15 @@ async def _codex_discover_thread_and_forward(
                 session_id,
             )
             # Bridge state is never written here; leave the real cause for the executor (#59).
-            cause = (
-                "startup timed out"
-                if isinstance(exc, TimeoutError)
-                else "event stream ended before a thread was created"
-            )
+            if isinstance(exc, TimeoutError):
+                timeout_seconds = (
+                    thread_start_timeout_seconds
+                    if thread_start_timeout_seconds is not None
+                    else CODEX_NATIVE_DIRECT_THREAD_START_TIMEOUT_SECONDS
+                )
+                cause = f"startup timed out after {timeout_seconds:g}s"
+            else:
+                cause = "event stream ended before a thread was created"
             write_bridge_startup_error(
                 bridge_dir,
                 f"Codex app-server never started a thread ({cause}: "
@@ -6030,6 +6321,26 @@ def _cursor_message_item_text(content: object) -> str:
 #: replayed history reads as close to that as a single text block allows:
 #: capitalized speaker labels, blank-line-separated turns.
 _CURSOR_FORK_ROLE_LABELS = {"user": "You", "assistant": "Assistant"}
+
+
+def _devin_has_replayable_history(items: list[_JsonObject]) -> bool:
+    """Whether *items* hold a finished exchange worth replaying to Devin.
+
+    A launch with no Devin session to reattach to covers two very different
+    cases: a brand-new session, whose items may already include the prompt being
+    dispatched (replaying that would prepend the message to itself), and a session
+    with real history and no resumable id — an ACP-era row, say. An assistant turn
+    is what separates them.
+
+    :param items: Committed Omnigent items, chronological.
+    :returns: ``True`` when at least one assistant message carries text.
+    """
+    return any(
+        item.get("type") == "message"
+        and item.get("role") == "assistant"
+        and _cursor_message_item_text(item.get("content"))
+        for item in items
+    )
 
 
 def _cursor_fork_history_preamble(items: list[_JsonObject]) -> str:
@@ -8073,6 +8384,18 @@ async def _launch_kiro(ctx: NativeLaunchContext) -> SessionResourceView:
         ctx.publish_event,
         server_client=ctx.server_client,
         ensure_comment_relay=ctx.ensure_comment_relay,
+    )
+
+
+async def _launch_devin(ctx: NativeLaunchContext) -> SessionResourceView:
+    """Adapter: build the devin-native terminal from a launch context."""
+    return await _auto_create_devin_terminal(
+        ctx.session_id,
+        ctx.resource_registry,
+        ctx.publish_event,
+        server_client=ctx.server_client,
+        ensure_comment_relay=ctx.ensure_comment_relay,
+        agent_spec=ctx.agent_spec,
     )
 
 

@@ -29,7 +29,7 @@ from typing import Protocol, TypedDict
 
 import psutil  # type: ignore[import-untyped]
 
-from omnigent._platform import IS_LINUX, IS_POSIX
+from omnigent._platform import IS_LINUX, IS_POSIX, IS_WINDOWS
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,9 @@ def malloc_tuning_env() -> dict[str, str]:
 _killpg_fn = getattr(os, "killpg", None)
 _getpgid_fn = getattr(os, "getpgid", None)
 _SIGKILL = getattr(signal, "SIGKILL", signal.SIGTERM)
+# CTRL_BREAK_EVENT only exists on Windows; None elsewhere so this module still
+# imports on POSIX.
+_CTRL_BREAK_EVENT = getattr(signal, "CTRL_BREAK_EVENT", None)
 _CREATE_NEW_PROCESS_GROUP = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
 
 
@@ -179,10 +182,17 @@ def terminate_tree(process: _ProcessLike | None, *, grace: float = 0.0) -> None:
     """
     Gracefully stop ``process`` and all of its descendants.
 
-    Sends ``SIGTERM`` (POSIX) / ``terminate()`` (Windows ``TerminateProcess``)
-    to the whole tree. On POSIX the process-group fast path is tried first;
-    otherwise (and on Windows) the tree is walked with :mod:`psutil`. Already
-    exited processes are no-ops. All "process gone / not permitted" errors are
+    Sends ``SIGTERM`` (POSIX) to the whole tree via the process-group fast
+    path, or falls back to :mod:`psutil` walking the descendants. On Windows,
+    ``psutil``'s ``terminate()`` is ``TerminateProcess`` — an unconditional
+    hard kill that gives the child no chance to run ASGI lifespan/shutdown
+    cleanup — so this instead delivers ``CTRL_BREAK_EVENT`` to the child's
+    process group (it was spawned with ``CREATE_NEW_PROCESS_GROUP`` via
+    :func:`spawn_kwargs`), which Windows Python surfaces as ``SIGBREAK``; a
+    child that installs a ``SIGBREAK`` handler (see
+    ``omnigent.runtime.harnesses._runner``) can use it to run the same
+    graceful-shutdown path SIGTERM triggers on POSIX. Already exited
+    processes are no-ops. All "process gone / not permitted" errors are
     swallowed — teardown is best-effort.
 
     :param process: A ``Popen``/``asyncio`` process handle, or ``None``.
@@ -200,6 +210,20 @@ def terminate_tree(process: _ProcessLike | None, *, grace: float = 0.0) -> None:
         if grace:
             _wait_gone(pid, grace)
         return
+
+    if IS_WINDOWS and _CTRL_BREAK_EVENT is not None:
+        try:
+            os.kill(pid, _CTRL_BREAK_EVENT)
+        except Exception:  # noqa: BLE001 — pid isn't a real console process
+            # group (e.g. never spawned with CREATE_NEW_PROCESS_GROUP, or
+            # already gone) — fall through to the psutil-based fallback
+            # below instead of giving up, so a delivery failure doesn't
+            # silently skip termination entirely.
+            pass
+        else:
+            if grace:
+                _wait_gone(pid, grace)
+            return
 
     procs = _walk_descendants(pid)
     for proc in procs:

@@ -6,6 +6,7 @@ import datetime
 import ssl
 from pathlib import Path
 
+import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -69,6 +70,7 @@ def test_ensure_ca_bundle_includes_system_and_custom_ca(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.posix_only
 def test_ensure_ca_key_permissions(tmp_path: Path) -> None:
     """The CA private key file has restrictive permissions (0600)."""
     _cert_path, key_path = ensure_ca(cache_dir=tmp_path)

@@ -51,6 +51,8 @@ from omnigent.inner.seatbelt_sandbox import (
     _symlink_hop_literals,
 )
 
+pytestmark = pytest.mark.posix_only
+
 # ---------------------------------------------------------------------------
 # Test helpers
 # ---------------------------------------------------------------------------

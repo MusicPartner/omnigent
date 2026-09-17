@@ -59,6 +59,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, TypeAlias
 
+from omnigent._platform import IS_WINDOWS
 from omnigent.inner import _proc
 from omnigent.inner._acp_omnigent_mcp import OmnigentAcpMcp
 from omnigent.inner.acp_extension import NO_ACP_EXTENSION, AcpExtension
@@ -144,6 +145,13 @@ _UPDATE_CONFIG_OPTION = "config_option_update"
 _AGENT_METHOD_SET_CONFIG_OPTION = "session/set_config_option"
 _CONFIG_OPTION_MODEL = "model"
 
+# ACP ``session/set_model`` — the model-selection API an agent advertises by
+# returning a ``models`` object from ``session/new`` (``availableModels`` plus
+# ``currentModelId``) instead of exposing a ``model`` config option. Cline speaks
+# this shape and never sends ``config_option_update``, so an agent selected this
+# way is unreachable through ``session/set_config_option`` alone.
+_AGENT_METHOD_SET_MODEL = "session/set_model"
+
 # ACP tool-call lifecycle statuses (the terminal ones close a tool card).
 _TOOL_STATUS_COMPLETED = "completed"
 _TOOL_STATUS_FAILED = "failed"
@@ -183,10 +191,16 @@ class AcpAgentConfig:
     :param command: The command to launch, e.g. ``"gemini --experimental-acp"``.
         Split with :func:`shlex.split` into an argv and exec'd directly (never
         via a shell), so quoting works but ``$VAR`` / pipes / redirects do not.
+        Split in non-POSIX mode on Windows: POSIX mode treats ``\\`` as an
+        escape character, which mangles a Windows path's drive/backslash
+        separators (``C:\\Users\\...`` becomes ``C:Users...``).
     :param name: Human label for logs / elicitation cards (e.g. ``"Gemini CLI"``).
-    :param model: Optional model id. Only sent to the agent when
-        :attr:`send_model_in_session_new` is set; otherwise inert (the agent
-        takes its model from its own config or from flags in ``command``).
+    :param model: Optional model id, applied to the live session when a turn
+        carries no per-turn pick — via ``session/set_model`` for agents that
+        advertise a model catalog in ``session/new``, else via the ``model``
+        session config option. With :attr:`send_model_in_session_new` it is
+        also sent in ``session/new`` itself. Unset means the agent keeps the
+        model from its own config or from flags in ``command``.
     :param session_id_mode: ``"server"`` — the agent assigns the session id and
         we adopt it (Goose); ``"client"`` — we generate the id and send it
         (Qwen). Defaults to ``"server"``, the ACP-idiomatic shape.
@@ -242,6 +256,19 @@ class _AcpRequestError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+def _strip_wrapping_quotes(token: str) -> str:
+    """Strip a single matching pair of quotes ``shlex.split(posix=False)`` left in place.
+
+    Non-POSIX splitting preserves backslashes (needed for Windows paths) but,
+    unlike POSIX mode, does not consume the quote characters themselves, so a
+    quoted argument like ``"@scope/pkg"`` would otherwise reach the spawned
+    process literally including the quotes.
+    """
+    if len(token) >= 2 and token[0] == token[-1] and token[0] in ("'", '"'):
+        return token[1:-1]
+    return token
 
 
 def _looks_like_missing_file(message: str) -> bool:
@@ -367,7 +394,7 @@ class AcpExecutor(Executor):
             sandbox (bwrap/seatbelt) at spawn — see :meth:`_sandbox_launch_path`.
         :param extension: Vendor behavior for the agent being driven, injected by
             that vendor's harness wrap (e.g.
-            :mod:`omnigent.inner.devin.harness`). The default is protocol-only,
+            a vendor wrap). The default is protocol-only,
             so the generic ``acp`` harness reads no vendor field.
         """
         self._config = config
@@ -391,7 +418,15 @@ class AcpExecutor(Executor):
         self._model_switch_supported: bool = True
 
         # Parsed argv; the first token is the binary we resolve / sandbox.
-        self._argv: list[str] = shlex.split(config.command)
+        # POSIX-mode shlex treats backslash as an escape character, which
+        # would mangle a Windows path's separators, so split in non-POSIX
+        # mode there instead. Non-POSIX mode leaves the quote characters in
+        # each token, so strip a single matching pair of wrapping quotes
+        # afterwards -- this keeps backslashes intact while still honoring
+        # a quoted argument like ``npx -y "@scope/pkg"``.
+        self._argv: list[str] = shlex.split(config.command, posix=not IS_WINDOWS)
+        if IS_WINDOWS:
+            self._argv = [_strip_wrapping_quotes(tok) for tok in self._argv]
         if not self._argv:
             raise ValueError("AcpAgentConfig.command is empty")
 
@@ -422,6 +457,10 @@ class AcpExecutor(Executor):
         # actually reports that authentication is required.
         self._auth_advertisement: _AcpJsonObject = {}
         self._system_prompt_sent: bool = False
+        # Model ids the agent listed in ``session/new.models.availableModels``.
+        # Non-empty means the agent selects models through ``session/set_model``
+        # rather than a ``model`` session config option.
+        self._session_model_ids: set[str] = set()
 
         # ACP toolCallId → tool name / rawInput from the originating tool_call, so
         # a later tool_call_update can close the right tool card, and a permission
@@ -845,7 +884,33 @@ class AcpExecutor(Executor):
         # server unable to attribute per-model token usage for the turn.
         if isinstance(result, dict):
             self._note_config_options(result.get("configOptions"))
+            self._note_session_models(result.get("models"))
         return self._session_id
+
+    def _note_session_models(self, models: object) -> None:
+        """Record the model catalog an agent returns from ``session/new``.
+
+        Agents advertise model selection one of two ways: a ``model`` session
+        config option (see :meth:`_note_config_options`), or a ``models`` object
+        here carrying ``availableModels`` and ``currentModelId``. Agents using the
+        latter never emit ``config_option_update``, so without this their model
+        stays on the agent's own default and a ``/model`` pick is silently
+        dropped — which also leaves the agent billing whatever it defaulted to.
+
+        :param models: The ``models`` value from ``session/new``'s result.
+        """
+        if not isinstance(models, dict):
+            return
+        available = models.get("availableModels")
+        if isinstance(available, list):
+            for entry in available:
+                if isinstance(entry, dict):
+                    model_id = entry.get("modelId")
+                    if isinstance(model_id, str) and model_id:
+                        self._session_model_ids.add(model_id)
+        current = models.get("currentModelId")
+        if isinstance(current, str) and current:
+            self._active_model = current
 
     def _session_mcp_servers(self) -> list[_AcpJsonObject]:
         """Build ``session/new.mcpServers`` and snapshot the bridge aliases.
@@ -1529,7 +1594,18 @@ class AcpExecutor(Executor):
         :param session_id: The live ACP session to reconfigure.
         :param model: Requested model id, or ``None`` to leave it alone.
         """
+        # A turn carries a model only when the user picked one; fall back to the
+        # agent's configured ``model:`` so a configured id is actually applied
+        # instead of leaving the agent on its own default.
+        model = model or self._config.model
         if not model or model == self._active_model or not self._model_switch_supported:
+            return
+        # An agent that returned a model catalog from ``session/new`` selects
+        # models with ``session/set_model`` and never advertises a ``model``
+        # config option, so the config-option path below would bail out and leave
+        # it on its own default. Take the catalog route first when we have one.
+        if self._session_model_ids:
+            await self._set_model_via_catalog(session_id, model)
             return
         # Before the first ``config_option_update`` we don't know what's settable;
         # attempting is harmless because a rejection just latches the feature off.
@@ -1571,6 +1647,44 @@ class AcpExecutor(Executor):
             self._active_model = model
         logger.info(
             "acp[%s] model set to %s (transcript kept)", self._config.name, self._active_model
+        )
+
+    async def _set_model_via_catalog(self, session_id: str, model: str) -> None:
+        """Warm-switch the model with ``session/set_model``.
+
+        Used for agents that advertise a catalog in ``session/new`` rather than a
+        ``model`` config option. Like the config-option path this preserves the
+        transcript, never fails the turn, and latches the feature off on
+        rejection.
+
+        The requested id is *not* checked against ``availableModels``: that list
+        is what the agent offers interactively, and an id outside it can still be
+        valid — Cline accepts its subscription-scoped ``cline-pass/*`` ids, which
+        it does not enumerate. An unusable id comes back as an RPC error, which
+        is the authoritative answer.
+
+        :param session_id: The live ACP session to reconfigure.
+        :param model: Requested model id.
+        """
+        response = await self._rpc(
+            _AGENT_METHOD_SET_MODEL, {"sessionId": session_id, "modelId": model}
+        )
+        if "error" in response:
+            self._model_switch_supported = False
+            logger.warning(
+                "acp[%s] %s to %s rejected (%s); continuing on the current model",
+                self._config.name,
+                _AGENT_METHOD_SET_MODEL,
+                model,
+                response["error"].get("message", response["error"]),
+            )
+            return
+        self._active_model = model
+        logger.info(
+            "acp[%s] model set to %s via %s (transcript kept)",
+            self._config.name,
+            model,
+            _AGENT_METHOD_SET_MODEL,
         )
 
     async def run_turn(
