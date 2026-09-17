@@ -19,6 +19,8 @@
 name: Docker build
 
 on:
+  # Lets contributors validate the image from a branch without opening a PR.
+  workflow_dispatch:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     # Only build when something that lands in the image changes. Mirrors the
@@ -68,7 +70,9 @@ jobs:
       - name: Detect Cloudflare container changes
         id: cloudflare
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # A manual dispatch has no PR base. Diffing its selected commit against
+          # itself leaves the PR-only Cloudflare dry-run disabled.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
         run: |
           changed=false
           while IFS= read -r file; do
