@@ -247,17 +247,21 @@ def is_absolute_request(path: str) -> bool:
     """Whether a client-supplied path names an absolute location.
 
     The filesystem routes accept either a workspace-relative path (the
-    historical contract) or an absolute one. A path is absolute exactly
-    when it starts with ``/`` — the same rule the filesystem itself uses.
-    ``~`` is deliberately NOT expanded here: the environment metadata
-    already reports ``home``, so the caller expands it and sends a real
-    path rather than relying on whose home the runner would guess.
+    historical contract) or an absolute one, using the same rule
+    :func:`_validate_path` uses to reject an absolute path passed through the
+    relative route: ``os.path.isabs``. On POSIX that is exactly "starts with
+    ``/``"; on Windows it also recognizes a drive-letter path (``C:\\...``)
+    or a UNC path, so a native absolute path is routed the same way
+    regardless of host OS. ``~`` is deliberately NOT expanded here: the
+    environment metadata already reports ``home``, so the caller expands it
+    and sends a real path rather than relying on whose home the runner
+    would guess.
 
     :param path: Client-supplied path string, e.g. ``"src/app.py"`` or
         ``"/etc/hosts"``.
     :returns: ``True`` for absolute paths.
     """
-    return path.startswith("/")
+    return os.path.isabs(path)
 
 
 def resolve_browse_target(
@@ -297,9 +301,17 @@ def resolve_browse_target(
         raise InvalidPath("Path contains NUL bytes")
     # An unconfined environment's reach IS the filesystem root — stating it as
     # a root keeps every return below a containment check, rather than having
-    # one branch hand back an unchecked path.
+    # one branch hand back an unchecked path. The anchor is derived from
+    # *absolute_path* itself (``/`` on POSIX; the drive or UNC share, e.g.
+    # ``C:\``, on Windows) rather than hardcoded to ``/`` -- a fixed POSIX
+    # root would never contain a Windows drive-letter path, so every
+    # unconfined request would be wrongly rejected as unreachable.
+    root_anchor = Path(absolute_path).anchor or os.sep
     allowed = (
-        [*roots, ReachableRoot(path=Path("/"), access="write", origin="unconfined", kind="tree")]
+        [
+            *roots,
+            ReachableRoot(path=Path(root_anchor), access="write", origin="unconfined", kind="tree"),
+        ]
         if unconfined
         else roots
     )

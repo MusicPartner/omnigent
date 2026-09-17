@@ -1219,11 +1219,21 @@ def create_exec_launcher(target_path: str, sandbox: SandboxPolicy) -> str:
         )
 
     if os.name == "nt":
-        # Windows resolves ``.py`` through PATHEXT; keep the ``#!`` line so
-        # the ``py`` launcher (a common .py association) picks the *current*
-        # interpreter rather than the machine default.
-        fd, path = tempfile.mkstemp(prefix="omnigent-sandbox-", suffix=".py")
-        script = f"#!{interpreter}\n{inline}\n"
+        # A ``.py`` file cannot be launched directly by CreateProcess (the
+        # API behind ``subprocess.Popen``/``execve``-style spawners run
+        # without a shell) -- file-extension associations are a shell
+        # (ShellExecute) concept that CreateProcess never consults, so a
+        # bare ``.py`` here fails with WinError 193 ("not a valid Win32
+        # application"). ``.bat``/``.cmd`` are the one exception:
+        # CreateProcess hands them to ``cmd.exe`` natively. Emit a batch
+        # launcher that re-invokes the current interpreter inline, mirroring
+        # the ``exec ... "$@"`` shape of the POSIX branch below.
+        fd, path = tempfile.mkstemp(prefix="omnigent-sandbox-", suffix=".cmd")
+        # A bare ``%`` in a batch file is expanded as a variable reference
+        # even inside a quoted argument; double it so the embedded source
+        # round-trips unchanged.
+        escaped_inline = inline.replace("%", "%%")
+        script = f'@echo off\r\n"{interpreter}" -c "{escaped_inline}" %*\r\n'
     else:
         # ``/bin/sh`` is the only interpreter guaranteed to be a native
         # executable. Naming ``sys.executable`` in a shebang instead

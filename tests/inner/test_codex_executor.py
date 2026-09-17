@@ -6,6 +6,7 @@ import contextlib
 import json
 import os
 import stat
+import sys
 import tempfile
 import unittest
 from dataclasses import dataclass
@@ -3254,8 +3255,9 @@ async def test_embedded_codex_materializes_provider_auth_outside_argv(
             auth_command,
         ]
         assert config["model_providers"]["omnigent_provider"]["wire_api"] == "responses"
-        assert stat.S_IMODE(codex_home.stat().st_mode) == 0o700
-        assert stat.S_IMODE(config_path.stat().st_mode) == 0o600
+        if sys.platform != "win32":
+            assert stat.S_IMODE(codex_home.stat().st_mode) == 0o700
+            assert stat.S_IMODE(config_path.stat().st_mode) == 0o600
         await session.close()
 
     assert not codex_home.exists()
@@ -3649,6 +3651,7 @@ def test_app_server_start_uses_real_home_for_private_inherited_codex_home(
     """
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     inherited = home / ".omnigent" / "codex-native" / "abc123" / "codex-home"
     inherited.mkdir(parents=True)
     monkeypatch.setenv("CODEX_HOME", str(inherited))
