@@ -493,6 +493,12 @@ class _HelperProcessClient:
                 # ``oa_cred_*`` tokens) into the scratch dir and point the
                 # tool at them. No real secret is written to the sandbox.
                 _write_credential_proxy_files(env, credential_runtime.sandbox_files, self._tmpdir)
+        elif IS_WINDOWS:
+            # Windows `subprocess` rejects `pass_fds`, so the config below is
+            # always delivered via a short-lived file rather than an
+            # inherited pipe fd — even with no sandbox active, the helper
+            # still needs somewhere private to write and read it from.
+            self._tmpdir = create_private_tmpdir()
 
         # Start L7 egress proxy if rules are configured. The proxy
         # listens on a Unix socket in the scratch tmpdir; the helper

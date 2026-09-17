@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from omnigent._platform import IS_WINDOWS
 from omnigent.inner.datamodel import OSEnvSandboxSpec, OSEnvSpec
 from omnigent.inner.os_env import (
     _child_shell_env,
@@ -415,8 +416,11 @@ def test_shell_command_does_not_see_omnigent_project_root(
         OSEnvSpec(type="caller_process", sandbox=OSEnvSandboxSpec(type="none"))
     )
     assert os_env is not None
+    # ``shell()`` runs the command through the platform shell (cmd.exe on
+    # Windows, /bin/sh elsewhere), and each has its own env-var syntax.
+    echo_command = "echo PP=%PYTHONPATH%" if IS_WINDOWS else "echo PP=$PYTHONPATH"
     try:
-        result = asyncio.run(os_env.shell("echo PP=$PYTHONPATH"))
+        result = asyncio.run(os_env.shell(echo_command))
     finally:
         os_env.close()
 

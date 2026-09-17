@@ -299,6 +299,26 @@ class _HardExitServer(uvicorn.Server):
         super().handle_exit(sig, frame)
 
 
+# Windows-only; absent (None) on POSIX so this module still imports there.
+_SIGBREAK = getattr(signal, "SIGBREAK", None)
+
+
+def _install_windows_graceful_shutdown(server: _HardExitServer) -> None:
+    """Route ``CTRL_BREAK_EVENT`` into the same shutdown path as SIGTERM.
+
+    Uvicorn only installs handlers for SIGINT/SIGTERM (see
+    ``uvicorn.server.HANDLED_SIGNALS``), and Windows has no cross-process
+    SIGTERM: ``process_manager``'s tree teardown can only deliver
+    ``CTRL_BREAK_EVENT`` to this process's group, which Windows Python
+    surfaces as ``SIGBREAK``. Without this, the parent's "graceful" shutdown
+    attempt is a hard ``TerminateProcess`` in disguise — the ASGI lifespan
+    never runs and ``on_shutdown`` hooks never fire. A no-op on POSIX, where
+    ``SIGBREAK`` does not exist.
+    """
+    if _SIGBREAK is not None:
+        signal.signal(_SIGBREAK, server.handle_exit)
+
+
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     """
     Parse the runner's required CLI arguments.
@@ -463,7 +483,9 @@ def main(argv: list[str] | None = None) -> None:
             _set_pdeathsig()
         _start_parent_watchdog(args.parent_pid)
     config = _create_uvicorn_config(app, args.socket, args.bind)
-    _HardExitServer(config).run()
+    server = _HardExitServer(config)
+    _install_windows_graceful_shutdown(server)
+    server.run()
 
 
 if __name__ == "__main__":
