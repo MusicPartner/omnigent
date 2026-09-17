@@ -130,7 +130,7 @@ jobs:
           -p no:cacheprovider -q
 
       - name: Broader Windows unit sweep
-        continue-on-error: true
+
         run: >-
           uv run pytest tests/inner tests/runtime/harnesses
           -m "not posix_only"
