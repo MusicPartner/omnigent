@@ -152,18 +152,36 @@ class PsmuxTerminalInstance(TerminalInstance):
         if "screen" not in result or not self.running:
             return result
         try:
+            styled_capture_args = [
+                "capture-pane",
+                "-t",
+                self.tmux_target,
+                "-p",
+                "-e",
+            ]
+            if scrollback > 0:
+                styled_capture_args.extend(["-S", f"-{scrollback}"])
+            styled_screen = await self._tmux_output(*styled_capture_args)
+            result["screen"] = styled_screen
+        except RuntimeError:
+            # Keep the plain capture from the base implementation when an
+            # older psmux does not support styled captures.
+            pass
+        try:
             cursor = await self._tmux_output(
                 "display-message",
                 "-p",
                 "-t",
                 self.tmux_target,
-                "#{cursor_x},#{cursor_y},#{cursor_flag}",
+                "#{cursor_x},#{cursor_y}",
             )
-            x, y, visible = cursor.strip().split(",", maxsplit=2)
+            x, y = cursor.strip().split(",", maxsplit=1)
             result.update(
                 cursor_x=int(x),
                 cursor_y=int(y),
-                cursor_visible=visible == "1",
+                # psmux currently always formats cursor_flag as "0", even
+                # when its native terminal visibly renders the cursor.
+                cursor_visible=True,
             )
         except (RuntimeError, ValueError):
             pass

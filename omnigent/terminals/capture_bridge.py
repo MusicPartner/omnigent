@@ -29,6 +29,10 @@ def _screen_snapshot_bytes(
 ) -> bytes:
     """Encode a captured grid and restore its cursor state in xterm."""
     rows = screen.replace("\r\n", "\n").replace("\r", "\n")
+    # capture-pane emits one newline after its final row. Replaying it would
+    # scroll a full-height browser terminal before the cursor is restored.
+    if rows.endswith("\n"):
+        rows = rows[:-1]
     normalized = rows.replace("\n", "\r\n")
     snapshot = "\x1b[H\x1b[2J" + normalized
     if cursor_x is not None and cursor_y is not None:

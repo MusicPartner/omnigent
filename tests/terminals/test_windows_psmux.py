@@ -9,8 +9,8 @@ import pytest
 
 from omnigent.inner.datamodel import OSEnvSandboxSpec, OSEnvSpec, TerminalEnvSpec
 from omnigent.terminals import TerminalRegistry
-from omnigent.terminals.backend import PsmuxTerminalMuxBackend
-from omnigent.terminals.capture_bridge import bridge_capture_to_websocket
+from omnigent.terminals.backend import PsmuxTerminalInstance, PsmuxTerminalMuxBackend
+from omnigent.terminals.capture_bridge import _screen_snapshot_bytes, bridge_capture_to_websocket
 from omnigent.terminals.ws_common import (
     WS_CLOSE_TERMINAL_DETACHED,
     WS_CLOSE_TERMINAL_NOT_FOUND,
@@ -81,6 +81,98 @@ async def test_windows_psmux_retains_dead_pane_output(tmp_path: Path) -> None:
         assert "retained-output" in str(read.get("screen", ""))
     finally:
         await reg.shutdown()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows psmux test")
+@pytest.mark.skipif(shutil.which("psmux") is None, reason="psmux not installed")
+async def test_windows_psmux_read_retains_ansi_styles_and_cursor(tmp_path: Path) -> None:
+    reg = TerminalRegistry(backend=PsmuxTerminalMuxBackend())
+    spec = TerminalEnvSpec(
+        command=sys.executable,
+        args=[
+            "-c",
+            (
+                "import sys,time; "
+                "sys.stdout.write('\\x1b[38;2;182;191;255mSELECTED\\x1b[0m\\n'); "
+                "sys.stdout.flush(); time.sleep(30)"
+            ),
+        ],
+        os_env=OSEnvSpec(
+            type="caller_process",
+            cwd=str(tmp_path),
+            sandbox=OSEnvSandboxSpec(type="none"),
+        ),
+    )
+    instance = await reg.launch("conv_psmux_ansi", "shell", "s1", spec)
+    try:
+        read: dict[str, object] = {}
+        for _ in range(75):
+            await asyncio.sleep(0.1)
+            read = await instance.read()
+            if "SELECTED" in str(read.get("screen", "")):
+                break
+        screen = str(read.get("screen", ""))
+        assert "SELECTED" in screen
+        assert "38;2;182;191;255" in screen
+        assert read["cursor_visible"] is True
+    finally:
+        await reg.shutdown()
+
+
+async def test_psmux_read_preserves_styles_and_keeps_cursor_visible(tmp_path: Path) -> None:
+    instance = PsmuxTerminalInstance(
+        name="shell",
+        session_key="s1",
+        socket_path=tmp_path / "psmux.sock",
+        private_dir=tmp_path,
+        command="cmd.exe",
+    )
+    instance.running = True
+    calls: list[tuple[str, ...]] = []
+
+    async def tmux_output(*args: str) -> str:
+        calls.append(args)
+        if args[0] == "capture-pane":
+            return "\x1b[38;2;182;191;255m/status\x1b[0m" if "-e" in args else "/status"
+        if args[0] == "display-message":
+            return "4,1"
+        raise AssertionError(f"unexpected psmux command: {args}")
+
+    instance._tmux_output = tmux_output  # type: ignore[method-assign]
+
+    read = await instance.read()
+
+    assert read["screen"] == "\x1b[38;2;182;191;255m/status\x1b[0m"
+    assert read["cursor_x"] == 4
+    assert read["cursor_y"] == 1
+    assert read["cursor_visible"] is True
+    assert ("capture-pane", "-t", instance.tmux_target, "-p", "-e") in calls
+
+
+def test_capture_snapshot_preserves_ansi_styles_and_shows_cursor() -> None:
+    snapshot = _screen_snapshot_bytes(
+        "\x1b[38;2;182;191;255m/status\x1b[0m",
+        cursor_x=4,
+        cursor_y=1,
+        cursor_visible=True,
+    )
+
+    assert b"\x1b[38;2;182;191;255m/status\x1b[0m" in snapshot
+    assert snapshot.endswith(b"\x1b[2;5H\x1b[?25h")
+
+
+def test_capture_snapshot_does_not_scroll_a_full_height_pane() -> None:
+    rows = "".join(f"row{row}\n" for row in range(1, 25))
+    snapshot = _screen_snapshot_bytes(
+        rows,
+        cursor_x=5,
+        cursor_y=23,
+        cursor_visible=True,
+    )
+
+    assert snapshot.count(b"\r\n") == 23
+    assert b"row24\r\n\x1b[24;6H" not in snapshot
+    assert snapshot.endswith(b"row24\x1b[24;6H\x1b[?25h")
 
 
 def test_psmux_backend_rejects_outside_cwd_override(
