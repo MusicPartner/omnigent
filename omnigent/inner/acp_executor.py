@@ -258,6 +258,19 @@ class _AcpRequestError(Exception):
         self.message = message
 
 
+def _strip_wrapping_quotes(token: str) -> str:
+    """Strip a single matching pair of quotes ``shlex.split(posix=False)`` left in place.
+
+    Non-POSIX splitting preserves backslashes (needed for Windows paths) but,
+    unlike POSIX mode, does not consume the quote characters themselves, so a
+    quoted argument like ``"@scope/pkg"`` would otherwise reach the spawned
+    process literally including the quotes.
+    """
+    if len(token) >= 2 and token[0] == token[-1] and token[0] in ("'", '"'):
+        return token[1:-1]
+    return token
+
+
 def _looks_like_missing_file(message: str) -> bool:
     """Heuristic: does an os_env error message indicate a missing path?
 
@@ -407,8 +420,13 @@ class AcpExecutor(Executor):
         # Parsed argv; the first token is the binary we resolve / sandbox.
         # POSIX-mode shlex treats backslash as an escape character, which
         # would mangle a Windows path's separators, so split in non-POSIX
-        # mode there instead.
+        # mode there instead. Non-POSIX mode leaves the quote characters in
+        # each token, so strip a single matching pair of wrapping quotes
+        # afterwards -- this keeps backslashes intact while still honoring
+        # a quoted argument like ``npx -y "@scope/pkg"``.
         self._argv: list[str] = shlex.split(config.command, posix=not IS_WINDOWS)
+        if IS_WINDOWS:
+            self._argv = [_strip_wrapping_quotes(tok) for tok in self._argv]
         if not self._argv:
             raise ValueError("AcpAgentConfig.command is empty")
 

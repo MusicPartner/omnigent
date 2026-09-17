@@ -962,11 +962,13 @@ def create_os_environment(spec: OSEnvSpec | None) -> OSEnvironment | None:
             "os_env.start_in_scratch requires an active sandbox; "
             f"resolved sandbox type {sandbox.backend_type!r} is inactive"
         )
-    shell_path = shutil.which("bash") or shutil.which("sh")
-    if shell_path is None:
-        # No POSIX shell on PATH. On Windows fall back to cmd.exe; elsewhere
-        # keep the historical /bin/sh default.
-        shell_path = os.environ.get("COMSPEC", "cmd.exe") if IS_WINDOWS else "/bin/sh"
+    if IS_WINDOWS:
+        # Windows always has cmd.exe, and agent-authored commands use its
+        # ``%VAR%``/native syntax -- a Git-for-Windows ``bash`` on PATH must
+        # not silently take over and misinterpret them.
+        shell_path = os.environ.get("COMSPEC", "cmd.exe")
+    else:
+        shell_path = shutil.which("bash") or shutil.which("sh") or "/bin/sh"
     egress_rules = spec.sandbox.egress_rules if spec.sandbox else None
     egress_allow_private = (
         spec.sandbox.egress_allow_private_destinations if spec.sandbox else False

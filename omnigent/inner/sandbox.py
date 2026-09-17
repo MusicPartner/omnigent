@@ -1243,7 +1243,10 @@ def create_exec_launcher(target_path: str, sandbox: SandboxPolicy) -> str:
         fd, path = tempfile.mkstemp(prefix="omnigent-sandbox-", suffix=".sh")
         script = f'#!/bin/sh\nexec {shlex.quote(interpreter)} -c {shlex.quote(inline)} "$@"\n'
 
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    # ``newline=""`` disables text-mode newline translation: the ``.cmd``
+    # branch already embeds literal ``\r\n``, and on real Windows the
+    # default translation would double it into ``\r\r\n``.
+    with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
         fh.write(script)
     os.chmod(path, 0o755)
     return path

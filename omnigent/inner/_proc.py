@@ -212,11 +212,18 @@ def terminate_tree(process: _ProcessLike | None, *, grace: float = 0.0) -> None:
         return
 
     if IS_WINDOWS and _CTRL_BREAK_EVENT is not None:
-        with suppress(Exception):
+        try:
             os.kill(pid, _CTRL_BREAK_EVENT)
-        if grace:
-            _wait_gone(pid, grace)
-        return
+        except Exception:  # noqa: BLE001 — pid isn't a real console process
+            # group (e.g. never spawned with CREATE_NEW_PROCESS_GROUP, or
+            # already gone) — fall through to the psutil-based fallback
+            # below instead of giving up, so a delivery failure doesn't
+            # silently skip termination entirely.
+            pass
+        else:
+            if grace:
+                _wait_gone(pid, grace)
+            return
 
     procs = _walk_descendants(pid)
     for proc in procs:
