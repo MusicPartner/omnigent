@@ -265,6 +265,7 @@ def test_the_catalog_probe_runs_off_the_event_loop(
 @pytest.mark.parametrize(
     "stdout",
     [
+        None,
         # Not JSON at all — a codex that printed a banner or an error.
         "not json",
         # JSON, but not an object.
@@ -281,7 +282,7 @@ def test_the_catalog_probe_runs_off_the_event_loop(
 def test_a_malformed_probe_result_keeps_the_bundled_catalog(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    stdout: str,
+    stdout: str | None,
 ) -> None:
     """``model_catalog_json`` replaces codex's catalog, so a bad probe must not
     become that file — the session keeps codex's bundled one (fail open)."""
@@ -290,7 +291,7 @@ def test_a_malformed_probe_result_keeps_the_bundled_catalog(
         returncode = 0
         stderr = ""
 
-        def __init__(self, out: str) -> None:
+        def __init__(self, out: str | None) -> None:
             self.stdout = out
 
     monkeypatch.setattr(codex_executor, "_MODEL_CATALOG_CACHE", {})

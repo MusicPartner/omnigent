@@ -418,7 +418,7 @@ def run_codex_native(
     extra_args: tuple[str, ...] | None = None,
     codex_args: tuple[str, ...] | None = None,
     resume_picker: bool = False,
-    command: str = _DEFAULT_CODEX_COMMAND,
+    command: str | None = _DEFAULT_CODEX_COMMAND,
     model: str | None = None,
     prompt: str | None = None,
     auto_open_conversation: bool = False,
@@ -443,9 +443,9 @@ def run_codex_native(
     codex_args = _normalize_extra_args(
         extra_args=extra_args, legacy_args=codex_args, legacy_param="codex_args"
     )
-    resolved_command = command.strip()
+    resolved_command = command.strip() if isinstance(command, str) else ""
     if not resolved_command:
-        raise click.ClickException("Codex command must not be empty.")
+        resolved_command = _DEFAULT_CODEX_COMMAND
     _preflight_local_tools()
     if server is None:
         raise click.ClickException(

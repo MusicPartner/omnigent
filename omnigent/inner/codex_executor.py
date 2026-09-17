@@ -1683,13 +1683,21 @@ def _probe_codex_model_catalog(
         logger.warning("could not read the codex model catalog (%s)", exc)
         return None
     if completed.returncode != 0:
+        stderr = completed.stderr if isinstance(completed.stderr, str) else ""
+        stdout = completed.stdout if isinstance(completed.stdout, str) else ""
         logger.warning(
-            "codex debug models exited %s: %s", completed.returncode, completed.stderr[:200]
+            "codex debug models exited %s: %s",
+            completed.returncode,
+            (stderr or stdout or "<no output>")[:200],
         )
         return None
+    stdout = completed.stdout if isinstance(completed.stdout, str) else ""
+    if not stdout.strip():
+        logger.warning("codex debug models returned no stdout")
+        return None
     try:
-        catalog = json.loads(completed.stdout)
-    except ValueError as exc:
+        catalog = json.loads(stdout)
+    except (TypeError, ValueError) as exc:
         logger.warning("could not parse the codex model catalog (%s)", exc)
         return None
     if not _valid_model_catalog(catalog):

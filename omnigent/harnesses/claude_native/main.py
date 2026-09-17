@@ -1455,7 +1455,7 @@ def run_claude_native(
     claude_args: tuple[str, ...] | None = None,
     resume_picker: bool = False,
     prompt: str | None = None,
-    command: str = _DEFAULT_CLAUDE_COMMAND,
+    command: str | None = _DEFAULT_CLAUDE_COMMAND,
     use_claude_config: bool = False,
     auto_open_conversation: bool = False,
     startup_profiler: StartupProfiler | None = None,
@@ -1503,9 +1503,9 @@ def run_claude_native(
         env_var=_CLAUDE_STARTUP_PROFILE_ENV_VAR,
     )
     startup_profiler.mark("native launch entered")
-    resolved_command = command.strip()
+    resolved_command = command.strip() if isinstance(command, str) else ""
     if not resolved_command:
-        raise click.ClickException("Claude command must not be empty.")
+        resolved_command = _DEFAULT_CLAUDE_COMMAND
     startup_profiler.mark("checking local tools")
     _preflight_local_tools(resolved_command)
     startup_profiler.mark("local tools ready")
@@ -3040,7 +3040,7 @@ def _bedrock_config_for_native_claude(entry: ProviderEntry) -> ClaudeNativeUcode
                 f"\nstderr: {stderr.strip()}" if stderr else "",
             )
             return None
-        token = result.stdout.strip()
+        token = result.stdout.strip() if isinstance(result.stdout, str) else ""
     if not token:
         _logger.warning(
             "native-claude: bedrock provider %r has no usable credential "
