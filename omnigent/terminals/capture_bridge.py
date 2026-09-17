@@ -20,6 +20,24 @@ from omnigent.terminals.ws_common import (
 _logger = logging.getLogger(__name__)
 
 
+def _screen_snapshot_bytes(
+    screen: str,
+    *,
+    cursor_x: int | None = None,
+    cursor_y: int | None = None,
+    cursor_visible: bool | None = None,
+) -> bytes:
+    """Encode a captured grid and restore its cursor state in xterm."""
+    rows = screen.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = rows.replace("\n", "\r\n")
+    snapshot = "\x1b[H\x1b[2J" + normalized
+    if cursor_x is not None and cursor_y is not None:
+        snapshot += f"\x1b[{cursor_y + 1};{cursor_x + 1}H"
+    if cursor_visible is not None:
+        snapshot += "\x1b[?25h" if cursor_visible else "\x1b[?25l"
+    return snapshot.encode("utf-8", errors="replace")
+
+
 async def bridge_capture_to_websocket(
     websocket: WebSocket,
     *,
@@ -31,7 +49,7 @@ async def bridge_capture_to_websocket(
     """Bridge a capture/send terminal backend to an accepted WebSocket."""
     if on_client_interaction is not None:
         on_client_interaction()
-    last_screen = ""
+    last_snapshot: tuple[str, int | None, int | None, bool | None] | None = None
     close_code = WS_CLOSE_TERMINAL_DETACHED
     close_reason = "terminal detached"
 
@@ -45,14 +63,31 @@ async def bridge_capture_to_websocket(
         return bool(getattr(instance, "running", False))
 
     async def _capture_loop() -> None:
-        nonlocal last_screen, close_code, close_reason
+        nonlocal last_snapshot, close_code, close_reason
         while await _instance_alive():
             read = await instance.read()
             screen = read.get("screen", "") if isinstance(read, dict) else ""
-            if screen != last_screen:
-                last_screen = screen
-                snapshot = "\x1b[H\x1b[2J" + screen
-                await websocket.send_bytes(snapshot.encode("utf-8", errors="replace"))
+            cursor_x = read.get("cursor_x") if isinstance(read, dict) else None
+            cursor_y = read.get("cursor_y") if isinstance(read, dict) else None
+            cursor_visible = read.get("cursor_visible") if isinstance(read, dict) else None
+            cursor_x = (
+                cursor_x if isinstance(cursor_x, int) and not isinstance(cursor_x, bool) else None
+            )
+            cursor_y = (
+                cursor_y if isinstance(cursor_y, int) and not isinstance(cursor_y, bool) else None
+            )
+            cursor_visible = cursor_visible if isinstance(cursor_visible, bool) else None
+            snapshot = (screen, cursor_x, cursor_y, cursor_visible)
+            if snapshot != last_snapshot:
+                last_snapshot = snapshot
+                await websocket.send_bytes(
+                    _screen_snapshot_bytes(
+                        screen,
+                        cursor_x=cursor_x,
+                        cursor_y=cursor_y,
+                        cursor_visible=cursor_visible,
+                    )
+                )
             await asyncio.sleep(poll_interval_s)
         close_code = WS_CLOSE_TERMINAL_NOT_FOUND
         close_reason = "terminal session ended"

@@ -143,6 +143,7 @@ _TOOL_RELAY_FILE = "tool_relay.json"
 # on every relay start, so hooks survive runner restarts (new port).
 _TOOL_RELAY_ENV_FILE = "tool_relay.env"
 _TMUX_FILE = "tmux.json"
+_PROMPT_READY_FILE = "prompt-ready"
 _PERMISSION_HOOK_FILE = "permission_hook.json"
 _CONTEXT_FILE = "context.json"
 _USER_CLAUDE_SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
@@ -317,6 +318,11 @@ _OCCUPIED_INPUT_DISMISS_RETRY_INTERVAL_S = 0.75
 SWITCH_MODEL_DIALOG_HINT = "Switch model?"
 EFFORT_DIALOG_HINT = "Change effort level?"
 _CONFIRM_DIALOG_HINTS = (SWITCH_MODEL_DIALOG_HINT, EFFORT_DIALOG_HINT)
+# Claude 2.1.266 can still show this gate even when its legacy
+# ``projects[workspace].hasTrustDialogAccepted`` state was pre-seeded.
+_WORKSPACE_TRUST_HINT = "Quick safety check: Is this a project you created or one you trust?"
+_WORKSPACE_TRUST_NO = "No, exit"
+_WORKSPACE_TRUST_YES = "Yes, I trust this folder"
 # Footer rows the ctrl+r prompt-history search renders directly under the
 # input box's closing rule since Claude Code 2.1.212, where the search rides
 # the framed composer as its filter field instead of drawing its own overlay.
@@ -3630,7 +3636,35 @@ def write_tmux_target(
     }
     if pid is not None:
         payload["pid"] = pid
+    # A replacement pane must prove readiness again before recovery code is
+    # allowed to send Escape at a composer-less screen.
+    with contextlib.suppress(OSError):
+        (bridge_dir / _PROMPT_READY_FILE).unlink(missing_ok=True)
     _write_json_file(bridge_dir / _TMUX_FILE, payload)
+
+
+def _prepare_prompt_for_injection(
+    bridge_dir: Path,
+    socket_path: str,
+    tmux_target: str,
+    *,
+    timeout_s: float,
+) -> None:
+    """Wait for first boot before allowing occupied-input recovery."""
+    ready_marker = bridge_dir / _PROMPT_READY_FILE
+    established = ready_marker.exists()
+    if established:
+        _restore_occupied_input(socket_path, tmux_target)
+    _wait_for_claude_prompt_ready(
+        socket_path,
+        tmux_target,
+        timeout_s=timeout_s,
+        accept_workspace_trust=not established,
+    )
+    try:
+        ready_marker.touch(exist_ok=True)
+    except OSError:
+        _logger.debug("Could not record Claude prompt readiness", exc_info=True)
 
 
 def inject_user_message(
@@ -3701,11 +3735,12 @@ def inject_user_message(
     # A surface left occupying the composer swallows everything typed
     # below — and hides the input box, wedging the readiness gate — so
     # reclaim the input box before waiting on it.
-    _restore_occupied_input(info["socket_path"], info["tmux_target"])
-    # tmux.json only means the tmux session exists; Claude Code's input
-    # box mounts a few seconds later. Block until the prompt renders so
-    # the first message isn't typed into a still-booting TUI and dropped.
-    _wait_for_claude_prompt_ready(
+    # On a fresh pane, wait for a real composer before any recovery Escape:
+    # a partially painted startup screen also lacks a composer, but Escape can
+    # cancel Claude's startup entirely. Established panes retain the occupied
+    # input recovery used for history search, dialogs and shell mode.
+    _prepare_prompt_for_injection(
+        bridge_dir,
         info["socket_path"],
         info["tmux_target"],
         timeout_s=timeout_s,
@@ -4110,7 +4145,12 @@ def inject_slash_command(
     tmux_target = info["tmux_target"]
     # Same reclaim as inject_user_message: a surface left occupying the
     # composer would swallow the C-u and the typed command.
-    _restore_occupied_input(socket_path, tmux_target)
+    _prepare_prompt_for_injection(
+        bridge_dir,
+        socket_path,
+        tmux_target,
+        timeout_s=timeout_s,
+    )
     # ``C-u`` clears any draft the user is mid-typing; otherwise the
     # paste below concatenates with their text and Enter submits
     # ``<their-draft>/effort high`` as a turn. Unlike Escape it does
@@ -5179,6 +5219,7 @@ def _wait_for_claude_prompt_ready(
     tmux_target: str,
     *,
     timeout_s: float,
+    accept_workspace_trust: bool = False,
 ) -> None:
     """
     Block until Claude Code's TUI input box is ready for keystrokes.
@@ -5203,6 +5244,9 @@ def _wait_for_claude_prompt_ready(
         unanswered liveness probe extends the wait to
         :data:`_TMUX_READY_SLOW_BOOT_TIMEOUT_S`; a dead pane or rejected
         query ends the wait at the next liveness check.
+    :param accept_workspace_trust: Confirm Claude's exact first-launch trust
+        dialog. The workspace was explicitly selected for this host session;
+        this does not affect tool permission prompts.
     :returns: None.
     :raises ClaudePromptTimeout: If the prompt never renders in time
         (Claude failed to boot, or a slow boot outlasted even the hard
@@ -5235,6 +5279,11 @@ def _wait_for_claude_prompt_ready(
             last_nonempty = pane
         else:
             empty_polls += 1
+        if accept_workspace_trust and _accept_workspace_trust_prompt(
+            pane, socket_path, tmux_target
+        ):
+            time.sleep(_CLAUDE_READY_POLL_INTERVAL_S)
+            continue
         if _claude_prompt_rendered(pane):
             return
         now = time.monotonic()
@@ -5257,6 +5306,22 @@ def _wait_for_claude_prompt_ready(
         f"{empty_polls} empty captures). The message was not delivered."
         + _format_terminal_failure_tail(last_nonempty)
     )
+
+
+def _accept_workspace_trust_prompt(pane: str, socket_path: str, tmux_target: str) -> bool:
+    """Accept Claude's exact startup trust gate for the selected workspace."""
+    if not all(
+        hint in pane for hint in (_WORKSPACE_TRUST_HINT, _WORKSPACE_TRUST_NO, _WORKSPACE_TRUST_YES)
+    ):
+        return False
+    lines = [line.strip() for line in pane.splitlines()]
+    if any(line.startswith(f"❯ {_WORKSPACE_TRUST_NO}") for line in lines):
+        _run_tmux(socket_path, "send-keys", "-t", tmux_target, "Down")
+    elif not any(line.startswith(f"❯ {_WORKSPACE_TRUST_YES}") for line in lines):
+        return False
+    _logger.info("claude-native: confirming workspace selected for this session")
+    _run_tmux(socket_path, "send-keys", "-t", tmux_target, "Enter")
+    return True
 
 
 def _paste_payload_bytes(text: str) -> bytes:

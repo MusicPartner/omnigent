@@ -22,6 +22,7 @@ import {
   resolveWorkspacePath,
   useResolvedHostHome,
   WorkspacePicker,
+  workspaceBreadcrumbItems,
 } from "./WorkspacePicker";
 import {
   useCreateHostDirectory,
@@ -247,6 +248,31 @@ describe("basename", () => {
 
   it("keeps a POSIX backslash inside the basename", () => {
     expect(basename("/tmp/a\\b")).toBe("a\\b");
+  });
+});
+
+describe("workspaceBreadcrumbItems", () => {
+  it("keeps a backslash Windows drive path native and segment-addressable", () => {
+    expect(workspaceBreadcrumbItems("C:\\Temp\\Share", null)).toEqual([
+      { label: "C:\\", path: "C:\\" },
+      { label: "Temp", path: "C:\\Temp" },
+      { label: "Share", path: "C:\\Temp\\Share" },
+    ]);
+  });
+
+  it("keeps forward-slash Windows drive paths in their original syntax", () => {
+    expect(workspaceBreadcrumbItems("C:/Temp/Share", null)).toEqual([
+      { label: "C:/", path: "C:/" },
+      { label: "Temp", path: "C:/Temp" },
+      { label: "Share", path: "C:/Temp/Share" },
+    ]);
+  });
+
+  it("recognizes Windows home descendants case-insensitively", () => {
+    expect(workspaceBreadcrumbItems("C:\\Users\\Alice\\repo", "c:\\users\\alice")).toEqual([
+      { label: "alice", path: "c:\\users\\alice" },
+      { label: "repo", path: "c:\\users\\alice\\repo" },
+    ]);
   });
 });
 

@@ -4352,9 +4352,45 @@ def test_find_codex_cli_delegates_to_shared_resolver(monkeypatch):
         captured["env_var"] = env_var
         return "/opt/homebrew/bin/codex"
 
+    monkeypatch.setattr(ce, "IS_WINDOWS", False)
     monkeypatch.setattr(ce, "resolve_cli_binary", fake_resolve)
     assert ce._find_codex_cli() == "/opt/homebrew/bin/codex"
     assert captured == {"name": "codex", "env_var": "OMNIGENT_CODEX_PATH"}
+
+
+def test_find_codex_cli_uses_native_binary_behind_windows_npm_shim(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Windows must bypass cmd.exe so structured ``-c`` values stay one argv item."""
+    from omnigent.inner import codex_executor as ce
+
+    shim = tmp_path / "npm" / "codex.cmd"
+    native = (
+        shim.parent
+        / "node_modules"
+        / "@openai"
+        / "codex"
+        / "node_modules"
+        / "@openai"
+        / "codex-win32-x64"
+        / "vendor"
+        / "x86_64-pc-windows-msvc"
+        / "bin"
+        / "codex.exe"
+    )
+    shim.parent.mkdir(parents=True)
+    shim.write_text("@echo off\n", encoding="utf-8")
+    native.parent.mkdir(parents=True)
+    native.write_bytes(b"native")
+
+    monkeypatch.setattr(ce, "IS_WINDOWS", True)
+    monkeypatch.setattr(
+        ce,
+        "resolve_cli_binary",
+        lambda name, **_kwargs: str(shim) if name == "codex" else None,
+    )
+
+    assert ce._find_codex_cli() == str(native)
 
 
 class TestCodexAppServerSessionReadOnlyCwd(unittest.TestCase):

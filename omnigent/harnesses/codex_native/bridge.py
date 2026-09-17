@@ -290,10 +290,11 @@ def codex_mcp_config_overrides(
             "serve-mcp",
             "--bridge-dir",
             str(bridge_dir),
-        ]
+        ],
+        separators=(",", ":"),
     )
     return [
-        f'mcp_servers.omnigent.command="{python}"',
+        f"mcp_servers.omnigent.command={json.dumps(python)}",
         f"mcp_servers.omnigent.args={args_toml}",
     ]
 

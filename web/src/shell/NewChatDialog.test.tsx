@@ -471,8 +471,8 @@ describe("resolveThisMachineHostId", () => {
 
 // Workspace validation contract — pins the same shape the server
 // validator enforces (per designs/SESSION_WORKSPACE_SELECTION.md):
-// tilde-prefixed and relative paths are rejected; only
-// fully-absolute paths starting with `/` are accepted. If this
+// tilde-prefixed and relative paths are rejected; fully-absolute
+// POSIX and Windows drive paths are accepted. If this
 // drifts out of sync with the server, the submit button would
 // either let through requests the server rejects (opaque 400) or
 // block requests the server would accept (button stuck disabled).
@@ -486,6 +486,13 @@ describe("isValidWorkspace", () => {
     // because trimming logic could mis-classify a single-char input.
     expect(isValidWorkspace("/")).toBe(true);
   });
+
+  it.each(["C:\\Users\\corey\\projects\\myapp", "C:/Users/corey/projects/myapp"])(
+    "accepts Windows drive path %s",
+    (path) => {
+      expect(isValidWorkspace(path)).toBe(true);
+    },
+  );
 
   it("trims whitespace before checking", () => {
     // Browsers paste with stray whitespace; trim must run before
@@ -534,6 +541,9 @@ describe("normalizeWorkspacePath", () => {
     // Root is preserved, not collapsed away.
     ["/", "/"],
     ["///", "/"],
+    ["C:\\Users\\Corey\\repo\\", "c:/users/corey/repo"],
+    ["C:/Users/Corey/repo/", "c:/users/corey/repo"],
+    ["C:\\", "c:/"],
     // Blank → null (no path) — must NOT become "/", or an empty input would
     // spuriously match a session whose workspace is the root.
     ["", null],
@@ -3949,6 +3959,24 @@ describe("NewChatLandingScreen", () => {
     // (e.g. dropped the workspace gate), the blank cases above would have
     // enabled too.
     expect(submit.disabled).toBe(false);
+  });
+
+  it("enables Codex submit with a Windows workspace", async () => {
+    localStorage.setItem(
+      RECENT_KEY,
+      JSON.stringify({ host_1: ["C:\\Users\\corey\\projects\\repo"] }),
+    );
+    renderLanding();
+    selectAgent("a2");
+    await waitFor(() =>
+      expect(screen.getByTestId("new-chat-landing-workspace-chip")).toHaveTextContent("repo"),
+    );
+
+    fireEvent.change(screen.getByTestId("new-chat-landing-input"), {
+      target: { value: "inspect the Windows repo" },
+    });
+
+    await waitFor(() => expect(screen.getByTestId("new-chat-landing-submit")).toBeEnabled());
   });
 
   it("keeps the disabled reason tooltip on the new-chat submit button", async () => {

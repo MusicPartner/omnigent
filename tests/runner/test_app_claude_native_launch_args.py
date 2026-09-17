@@ -12,6 +12,8 @@ passed. See designs/NATIVE_RUNNER_SERVER_LAUNCH.md.
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -221,6 +223,8 @@ def test_claude_terminal_env_unset_without_helper_keeps_key() -> None:
     launches in every auth mode.
     """
     expected = ["DATABRICKS_CONFIG_PROFILE", "CLAUDECODE"]
+    if sys.platform == "win32" and not os.environ.get("CLAUDE_CONFIG_DIR"):
+        expected.append("CLAUDE_CONFIG_DIR")
     own_login_env_unset = _claude_terminal_env_unset(None)
     assert own_login_env_unset == expected
     assert "ANTHROPIC_API_KEY" not in own_login_env_unset

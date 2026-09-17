@@ -1559,8 +1559,8 @@ def create_hosts_router(
         Used by the Web UI's new-session worktree picker to show the
         worktrees a session can start in directly. Owner-scoped exactly
         like the filesystem browse endpoints; NOT scoped to a session.
-        A path that is not a git repository is reported as 400 so the
-        picker can quietly fall back to "no worktrees".
+        A path that is not a git repository returns an empty list so browsing
+        an ordinary directory does not surface an expected HTTP error.
 
         :param request: FastAPI request (for auth).
         :param host_id: Host identifier, e.g. ``"host_a1b2c3d4..."``.
@@ -1570,7 +1570,7 @@ def create_hosts_router(
             is_main, detached}, ...]}`` (main first).
         :raises HTTPException: 404 if host not found, 403 if not owned
             by caller, 409 if host is offline/unresponsive, 400 on path
-            validation or a non-git path.
+            validation.
         """
         from omnigent.server.routes._host_worktree import (
             WorktreeHostUnavailableError,
@@ -1606,9 +1606,10 @@ def create_hosts_router(
         except WorktreeHostUnavailableError as exc:
             raise HTTPException(status_code=409, detail=exc.message) from exc
         except WorktreeProxyError as exc:
-            # Not a git repo / git failure — user-correctable; the picker
-            # treats this as "no worktrees here".
-            raise HTTPException(status_code=400, detail=exc.message) from exc
+            # An ordinary directory has no worktrees. This is the common picker
+            # path, not a malformed request, so keep it out of the error lane.
+            _logger.debug("worktree listing unavailable for %r: %s", path, exc.message)
+            worktrees = []
 
         return {"object": "list", "data": worktrees}
 

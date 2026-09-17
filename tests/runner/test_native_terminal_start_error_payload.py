@@ -66,6 +66,8 @@ def test_other_causes_keep_generic_startup_failure_code() -> None:
     assert payload["code"] == _NATIVE_TERMINAL_START_FAILED_CODE
     assert payload["code"] == "native_terminal_start_failed"
     assert "agent is no longer available" not in payload["message"]
+    assert "not supported on Windows" not in payload["message"]
+    assert "see the runner log" in payload["message"]
 
 
 def test_unrelated_omnigent_error_is_not_treated_as_missing_agent() -> None:

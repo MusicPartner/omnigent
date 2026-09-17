@@ -31,6 +31,21 @@ _PROXY_ENV: Final = {
 
 
 @pytest.mark.parametrize("server_url", [None, _REMOTE_SERVER_URL])
+def test_host_daemon_env_forces_utf8_stdio(
+    monkeypatch: pytest.MonkeyPatch,
+    server_url: str | None,
+) -> None:
+    """Detached host logs can render Unicode status glyphs on Windows."""
+    monkeypatch.setenv("PYTHONUTF8", "0")
+    monkeypatch.setenv("PYTHONIOENCODING", "cp1252")
+
+    env = _build_host_daemon_env(server_url=server_url)
+
+    assert env["PYTHONUTF8"] == "1"
+    assert "PYTHONIOENCODING" not in env
+
+
+@pytest.mark.parametrize("server_url", [None, _REMOTE_SERVER_URL])
 def test_runner_can_read_keyring_from_cli_desktop_session(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

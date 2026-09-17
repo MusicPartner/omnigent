@@ -3576,6 +3576,10 @@ def _build_host_daemon_env(
 
     env.pop(DISPATCH_TRACEPARENT_ENV_VAR, None)
     env.pop(DISPATCH_TRACESTATE_ENV_VAR, None)
+    # Detached Windows processes choose the ANSI code page for redirected
+    # stdio. The host prints Unicode status glyphs into its log, so select
+    # UTF-8 before the child interpreter starts.
+    env["PYTHONUTF8"] = "1"
     return env
 
 

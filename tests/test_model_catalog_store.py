@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -29,6 +30,24 @@ def _isolated_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def test_write_then_read_round_trips_verbatim() -> None:
     store.write_catalog("claude-native", "abc123", _ROWS)
     assert store.read_catalog("claude-native", "abc123") == _ROWS
+
+
+def test_write_catalog_fails_fast_when_temp_file_is_not_writable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows must not retry an access-denied temporary file indefinitely."""
+    attempts = 0
+
+    def _deny_open(*args: object, **kwargs: object) -> int:
+        nonlocal attempts
+        attempts += 1
+        raise PermissionError("catalog directory is not writable")
+
+    monkeypatch.setattr(store.os, "open", _deny_open)
+
+    store.write_catalog("claude-native", "abc123", _ROWS)
+
+    assert attempts == 1
 
 
 def test_fingerprint_mismatch_is_a_miss_never_a_close_hit() -> None:
@@ -91,6 +110,26 @@ async def test_ensure_catalog_fresh_hit_never_probes() -> None:
 
     assert await store.ensure_catalog("claude-native", "abc123", _probe) == _ROWS
     assert probes == []
+
+
+async def test_ensure_catalog_persists_off_the_event_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A slow filesystem must not block host tunnel requests or heartbeats."""
+    event_loop_thread = threading.get_ident()
+    write_threads: list[int] = []
+
+    def _write_catalog(harness: str, fingerprint: str, rows: list[dict[str, object]]) -> None:
+        write_threads.append(threading.get_ident())
+
+    async def _probe() -> list[dict[str, object]]:
+        return _ROWS
+
+    monkeypatch.setattr(store, "write_catalog", _write_catalog)
+
+    assert await store.ensure_catalog("claude-native", "abc123", _probe) == _ROWS
+    assert len(write_threads) == 1
+    assert write_threads[0] != event_loop_thread
 
 
 async def test_ensure_catalog_stale_hit_serves_now_and_refreshes_in_background() -> None:

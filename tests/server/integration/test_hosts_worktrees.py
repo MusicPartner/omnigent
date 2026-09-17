@@ -210,10 +210,10 @@ async def test_list_worktrees_returns_data(
     assert payload["data"][1]["is_main"] is False
 
 
-async def test_list_worktrees_non_git_path_400(
+async def test_list_worktrees_non_git_path_returns_empty_list(
     wt_setup: tuple[FastAPI, HostRegistry, ApplicationCommunicator, dict[str, dict[str, Any]]],
 ) -> None:
-    """A non-git path (host reports failed) maps to 400 so the picker shows nothing."""
+    """A non-git path is a successful empty result for the directory picker."""
     app, _reg, _comm, _replies = wt_setup
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # No reply registered → the drain replies "failed: not a git repository".
@@ -221,7 +221,8 @@ async def test_list_worktrees_non_git_path_400(
             f"/v1/hosts/{_HOST_ID}/worktrees",
             params={"path": "/tmp/not-a-repo"},
         )
-    assert resp.status_code == 400, resp.text
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"object": "list", "data": []}
 
 
 async def test_list_worktrees_missing_path_param_422(

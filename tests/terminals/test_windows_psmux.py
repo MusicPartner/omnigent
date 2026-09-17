@@ -40,6 +40,9 @@ async def test_windows_psmux_backend_launch_send_read_close(tmp_path: Path) -> N
             if "ready" in str(read.get("screen", "")):
                 break
         assert "ready" in str(read.get("screen", ""))
+        assert isinstance(read.get("cursor_x"), int)
+        assert isinstance(read.get("cursor_y"), int)
+        assert isinstance(read.get("cursor_visible"), bool)
         sent = await instance.send("Write-Output hi", keys="Enter")
         assert sent == {"status": "sent"}
         for _ in range(75):
@@ -48,6 +51,34 @@ async def test_windows_psmux_backend_launch_send_read_close(tmp_path: Path) -> N
             if "hi" in str(read.get("screen", "")):
                 break
         assert "hi" in str(read.get("screen", ""))
+    finally:
+        await reg.shutdown()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows psmux test")
+@pytest.mark.skipif(shutil.which("psmux") is None, reason="psmux not installed")
+async def test_windows_psmux_retains_dead_pane_output(tmp_path: Path) -> None:
+    """A managed CLI exit keeps its final screen available for diagnosis."""
+    reg = TerminalRegistry(backend=PsmuxTerminalMuxBackend())
+    spec = TerminalEnvSpec(
+        command="powershell.exe",
+        args=["-NoProfile", "-Command", "Write-Output retained-output"],
+        os_env=OSEnvSpec(
+            type="caller_process",
+            cwd=str(tmp_path),
+            sandbox=OSEnvSandboxSpec(type="none"),
+        ),
+        keep_alive_after_exit=True,
+    )
+    try:
+        instance = await reg.launch("conv_psmux_retained", "shell", "s1", spec)
+        read: dict[str, object] = {}
+        for _ in range(50):
+            await asyncio.sleep(0.1)
+            read = await instance.read()
+            if "retained-output" in str(read.get("screen", "")):
+                break
+        assert "retained-output" in str(read.get("screen", ""))
     finally:
         await reg.shutdown()
 
@@ -142,6 +173,43 @@ async def test_windows_psmux_backend_strips_runner_auth_secrets(
         await reg.shutdown()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows psmux test")
+@pytest.mark.skipif(shutil.which("psmux") is None, reason="psmux not installed")
+async def test_windows_psmux_honors_env_unset_after_pane_creation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pane startup cannot reintroduce an explicitly excluded variable."""
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    output_path = tmp_path / "unset-result.txt"
+    quoted_output = str(output_path).replace("'", "''")
+    command = (
+        "if (-not (Test-Path -LiteralPath Env:CLAUDE_CONFIG_DIR)) { "
+        f"Set-Content -LiteralPath '{quoted_output}' -Value unset }} "
+        f"else {{ Set-Content -LiteralPath '{quoted_output}' -Value set }}"
+    )
+    reg = TerminalRegistry(backend=PsmuxTerminalMuxBackend())
+    spec = TerminalEnvSpec(
+        command="powershell.exe",
+        args=["-NoProfile", "-Command", command],
+        env_unset=["CLAUDE_CONFIG_DIR"],
+        os_env=OSEnvSpec(
+            type="caller_process",
+            cwd=str(tmp_path),
+            sandbox=OSEnvSandboxSpec(type="none"),
+        ),
+        keep_alive_after_exit=True,
+    )
+    try:
+        await reg.launch("conv_psmux_unset", "shell", "s1", spec)
+        for _ in range(50):
+            if output_path.exists():
+                break
+            await asyncio.sleep(0.1)
+        assert output_path.read_text().strip() == "unset"
+    finally:
+        await reg.shutdown()
+
+
 async def test_capture_bridge_streams_read_and_forwards_input() -> None:
     class FakeInstance:
         running = True
@@ -151,7 +219,12 @@ async def test_capture_bridge_streams_read_and_forwards_input() -> None:
             self.resizes: list[tuple[int, int]] = []
 
         async def read(self) -> dict[str, object]:
-            return {"screen": "ready"}
+            return {
+                "screen": "first\nsecond",
+                "cursor_x": 4,
+                "cursor_y": 1,
+                "cursor_visible": False,
+            }
 
         async def send(self, text: str | None = None, *, keys: str = "Enter") -> dict[str, str]:
             self.sent.append((text, keys))
@@ -192,7 +265,7 @@ async def test_capture_bridge_streams_read_and_forwards_input() -> None:
         poll_interval_s=0,
     )
     assert ws.sent_bytes[0].startswith(b"\x1b[H\x1b[2J")
-    assert b"ready" in ws.sent_bytes[0]
+    assert ws.sent_bytes[0] == b"\x1b[H\x1b[2Jfirst\r\nsecond\x1b[2;5H\x1b[?25l"
     assert ("echo hi", "Enter") in instance.sent
     assert (100, 40) in instance.resizes
     assert ws.closed is True

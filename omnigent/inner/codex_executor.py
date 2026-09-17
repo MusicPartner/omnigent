@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, TypeAlias, cast
 
-from omnigent._platform import resolve_cli_binary
+from omnigent._platform import IS_WINDOWS, resolve_cli_binary
 from omnigent.inner.agent_env import clean_agent_env, declared_passthrough
 from omnigent.llms._usage_observer import notify_from_dict as _notify_usage_from_dict
 from omnigent.models import model_catalog
@@ -513,8 +513,29 @@ _CODEX_PATH_ENV = "OMNIGENT_CODEX_PATH"
 
 
 def _find_codex_cli() -> str | None:
-    """Resolve the ``codex`` CLI binary (override → ``PATH`` → global dirs)."""
-    return resolve_cli_binary("codex", env_var=_CODEX_PATH_ENV)
+    """Resolve Codex, preferring the native binary behind npm shims on Windows."""
+    resolved = resolve_cli_binary("codex", env_var=_CODEX_PATH_ENV)
+    if not IS_WINDOWS or resolved is None:
+        return resolved
+
+    path = Path(resolved)
+    if path.suffix.lower() not in {".cmd", ".bat"}:
+        return resolved
+
+    # Passing TOML/JSON-valued ``-c`` arguments through an npm batch shim lets
+    # cmd.exe split their embedded spaces. The npm package ships the real Rust
+    # binary below the shim; invoke it directly so argv reaches Codex unchanged.
+    package_root = path.parent / "node_modules" / "@openai" / "codex"
+    try:
+        native_candidates = sorted(package_root.glob("**/vendor/**/codex.exe"))
+    except OSError:
+        native_candidates = []
+    for candidate in native_candidates:
+        if candidate.is_file():
+            return str(candidate)
+
+    native_on_path = resolve_cli_binary("codex.exe")
+    return native_on_path or resolved
 
 
 async def _codex_cli_version(codex_path: str) -> tuple[int, int, int] | None:

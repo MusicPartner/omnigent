@@ -22,8 +22,8 @@ import json
 import logging
 import os
 import shutil
-import tempfile
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -158,16 +158,17 @@ def write_catalog(harness: str, fingerprint: str, rows: list[dict[str, Any]]) ->
         "written_at": time.time(),
         "models": rows,
     }
+    tmp_path = path.parent / f".{path.name}.{uuid.uuid4().hex}.tmp"
     try:
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        handle, tmp_name = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+        handle = os.open(tmp_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         try:
-            with os.fdopen(handle, "w") as tmp:
+            with os.fdopen(handle, "w", encoding="utf-8") as tmp:
                 json.dump(payload, tmp, separators=(",", ":"))
-            os.replace(tmp_name, path)
+            os.replace(tmp_path, path)
         except BaseException:
             with contextlib.suppress(OSError):
-                os.unlink(tmp_name)
+                tmp_path.unlink()
             raise
     except OSError:
         _logger.warning("could not persist the %s model catalog", harness, exc_info=True)
@@ -212,7 +213,7 @@ async def ensure_catalog(
             finally:
                 _inflight.pop(key, None)
             if rows:
-                write_catalog(harness, fingerprint, rows)
+                await asyncio.to_thread(write_catalog, harness, fingerprint, rows)
             return rows
 
         task = asyncio.create_task(_run(), name=f"model-catalog-{harness}")
@@ -244,7 +245,7 @@ def _refresh_in_background(
         try:
             rows = await resolve()
             if rows:
-                write_catalog(harness, fingerprint, rows)
+                await asyncio.to_thread(write_catalog, harness, fingerprint, rows)
             return rows
         except Exception:  # noqa: BLE001 — stale rows keep serving
             _logger.warning("background %s catalog refresh failed", harness, exc_info=True)

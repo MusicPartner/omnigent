@@ -23,6 +23,22 @@ from omnigent.inner.terminal import (
 )
 from omnigent.runner.identity import strip_runner_auth_secrets
 
+_PSMUX_CLEAN_ENV_SCRIPT = """\
+$unsetCount = [int]$args[0]
+for ($index = 0; $index -lt $unsetCount; $index++) {
+    Remove-Item -LiteralPath "Env:$($args[$index + 1])" -ErrorAction SilentlyContinue
+}
+$commandIndex = $unsetCount + 1
+$command = $args[$commandIndex]
+$commandArgs = if ($commandIndex + 1 -lt $args.Count) {
+    @($args[($commandIndex + 1)..($args.Count - 1)])
+} else {
+    @()
+}
+& $command @commandArgs
+exit $LASTEXITCODE
+"""
+
 
 class TerminalMuxBackend(Protocol):
     """Create terminal instances for a registry-managed multiplexer backend."""
@@ -72,17 +88,46 @@ class PsmuxTerminalInstance(TerminalInstance):
             env.pop(key, None)
         env = strip_runner_auth_secrets(env)
 
-        proc = await asyncio.create_subprocess_exec(
-            *self._tmux_base_cmd(),
+        executable = shutil.which(self.command) or self.command
+        command_args = [executable, *self.args]
+        if self.env_unset:
+            wrapper_path = self.private_dir / "clean-env.ps1"
+            wrapper_path.write_text(_PSMUX_CLEAN_ENV_SCRIPT, encoding="utf-8")
+            powershell = shutil.which("pwsh") or shutil.which("powershell.exe") or "pwsh.exe"
+            command_args = [
+                powershell,
+                "-NoProfile",
+                "-File",
+                str(wrapper_path),
+                str(len(self.env_unset)),
+                *self.env_unset,
+                *command_args,
+            ]
+        launch = [
             "new-session",
             "-d",
             "-s",
             self.tmux_target,
+            "-x",
+            "80",
+            "-y",
+            "24",
             "-c",
             effective_cwd,
             "--",
-            shutil.which(self.command) or self.command,
-            *self.args,
+            *command_args,
+        ]
+        base_cmd = self._tmux_base_cmd()
+        if self.keep_alive_after_exit:
+            # psmux does not accept tmux's multi-command ``;`` argv. Load the
+            # option at server startup so even an immediately exiting CLI
+            # leaves its final pane available for diagnostics.
+            config_path = self.private_dir / "psmux.conf"
+            config_path.write_text("set-option -gq remain-on-exit on\n", encoding="utf-8")
+            base_cmd = ["psmux", "-f", str(config_path), "-S", str(self.socket_path)]
+        proc = await asyncio.create_subprocess_exec(
+            *base_cmd,
+            *launch,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
             env=env,
@@ -100,6 +145,29 @@ class PsmuxTerminalInstance(TerminalInstance):
         if not self.running:
             raise RuntimeError("Terminal is not running")
         await self._tmux("resize-window", "-t", self.tmux_target, "-x", str(cols), "-y", str(rows))
+
+    async def read(self, scrollback: int = 0) -> dict[str, object]:
+        """Capture the screen together with psmux's cursor state."""
+        result = await super().read(scrollback)
+        if "screen" not in result or not self.running:
+            return result
+        try:
+            cursor = await self._tmux_output(
+                "display-message",
+                "-p",
+                "-t",
+                self.tmux_target,
+                "#{cursor_x},#{cursor_y},#{cursor_flag}",
+            )
+            x, y, visible = cursor.strip().split(",", maxsplit=2)
+            result.update(
+                cursor_x=int(x),
+                cursor_y=int(y),
+                cursor_visible=visible == "1",
+            )
+        except (RuntimeError, ValueError):
+            pass
+        return result
 
 
 class TmuxTerminalMuxBackend:

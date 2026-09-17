@@ -54,12 +54,16 @@ def test_codex_mcp_config_overrides_isolate_the_bridge_interpreter(tmp_path: Pat
 
     prefix = "mcp_servers.omnigent.args="
     raw = next(o[len(prefix) :] for o in overrides if o.startswith(prefix))
+    assert ", " not in raw
     assert json.loads(raw)[:4] == [
         "-I",
         "-m",
         "omnigent.harnesses.claude_native.bridge",
         "serve-mcp",
     ]
+    command_prefix = "mcp_servers.omnigent.command="
+    command = next(o[len(command_prefix) :] for o in overrides if o.startswith(command_prefix))
+    assert json.loads(command) == os.fspath(Path(os.sys.executable))
 
 
 def _seed_active_turn(bridge_dir: Path, active_turn_id: str | None) -> None:

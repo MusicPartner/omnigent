@@ -6533,6 +6533,10 @@ def _claude_terminal_env_unset(
         ``["DATABRICKS_CONFIG_PROFILE", "CLAUDECODE", "ANTHROPIC_API_KEY"]``.
     """
     env_unset = ["DATABRICKS_CONFIG_PROFILE", "CLAUDECODE"]
+    if IS_WINDOWS and not os.environ.get("CLAUDE_CONFIG_DIR"):
+        # psmux 3.3.8 turns this absent variable into an empty string in panes.
+        # Claude treats empty as an override and stops finding ~/.claude auth.
+        env_unset.append("CLAUDE_CONFIG_DIR")
     if claude_config is not None and claude_config.api_key_helper:
         env_unset.append("ANTHROPIC_API_KEY")
     return env_unset
@@ -6645,14 +6649,6 @@ def _native_terminal_start_error_payload(exc: BaseException, runtime_name: str) 
             "Claude Code is Windows-native, but Omnigent is running under WSL. "
             "Install @anthropic-ai/claude-code from WSL so a WSL-native `claude` "
             "binary wins PATH resolution, then retry."
-        )
-    elif IS_WINDOWS:
-        # Native terminals are tmux/PTY-based and disabled on Windows by design.
-        # Give the client an actionable message instead of a log pointer.
-        message = (
-            f"Native {runtime_name} terminal (tmux/PTY) is not supported on "
-            "Windows. Use an SDK-based harness (e.g. claude-sdk, cursor, "
-            "copilot, or codex) for this agent, or run it on Linux/macOS."
         )
     else:
         log_reference = process_log_reference("runner")

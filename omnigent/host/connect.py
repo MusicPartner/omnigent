@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol, SupportsIndex, SupportsInt, cast
 
+import click
 import httpx
 import websockets.asyncio.client
 from websockets.exceptions import ConnectionClosed, InvalidStatus, InvalidURI
@@ -2508,6 +2509,15 @@ class HostProcess:
             except OSError:
                 continue
             if S_ISDIR(st.st_mode):
+                # Windows exposes legacy compatibility junctions such as
+                # ``My Documents`` even when traversal is explicitly denied.
+                # Do not advertise those as selectable workspace directories.
+                if os.path.isjunction(de.path):
+                    try:
+                        with os.scandir(de.path):
+                            pass
+                    except OSError:
+                        continue
                 entry_type = "directory"
                 size: int | None = None
             elif S_ISREG(st.st_mode):
@@ -2519,7 +2529,11 @@ class HostProcess:
             entries.append(
                 HostListDirEntry(
                     name=de.name,
-                    path=de.path,
+                    # ``DirEntry.path`` preserves the spelling of the input
+                    # prefix. On Windows a URL path arrives as ``C:/...`` and
+                    # scandir then appends ``\\name``, leaking a mixed path
+                    # back into the picker. Return the host-native spelling.
+                    path=os.path.normpath(de.path),
                     type=entry_type,
                     bytes=size,
                     modified_at=int(st.st_mtime),
@@ -3044,6 +3058,16 @@ class HostProcess:
                 from omnigent.harnesses.devin_native.main import list_devin_cli_model_options
 
                 devin_models = await asyncio.to_thread(list_devin_cli_model_options)
+            except click.ClickException as exc:
+                # A host without Devin installed is a normal capability state,
+                # not a broken gateway request. The harness readiness badge
+                # guides setup; the model picker simply has no rows yet.
+                _logger.info("Devin model catalog unavailable: %s", exc.format_message())
+                return HostModelOptionsResultFrame(
+                    request_id=frame.request_id,
+                    status="ok",
+                    models=[],
+                )
             except Exception:
                 _logger.exception("Failed to resolve pre-launch Devin model options")
                 return HostModelOptionsResultFrame(

@@ -3711,6 +3711,7 @@ def test_inject_user_message_pastes_content_then_submits(
         socket_path=Path("/tmp/example/tmux.sock"),
         tmux_target="claude:0.0",
     )
+    (bridge_dir / claude_native_bridge._PROMPT_READY_FILE).touch()
 
     captured: list[list[str]] = []
     loaded_payloads: list[bytes] = []
@@ -4264,6 +4265,87 @@ def test_inject_user_message_waits_for_claude_prompt_before_typing(
     assert load[3] == "load-buffer"
     assert paste[3] == "paste-buffer"
     assert submit[-1] == "Enter"
+
+
+def test_first_injection_does_not_escape_a_partially_rendered_startup_screen(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A composer-less startup frame is not an established-pane overlay."""
+    bridge_dir = tmp_path / "bridge"
+    write_tmux_target(
+        bridge_dir,
+        socket_path=Path("/tmp/example/tmux.sock"),
+        tmux_target="claude:0.0",
+    )
+    panes = ["Claude Code starting…", "Claude Code starting…", _composer_pane()]
+    sent: list[str] = []
+    tui = {"pane": _composer_pane()}
+
+    def _fake_run(cmd: list[str], **kwargs: object) -> SimpleNamespace:
+        del kwargs
+        if "capture-pane" in cmd:
+            pane = panes.pop(0) if panes else tui["pane"]
+            return SimpleNamespace(returncode=0, stdout=pane, stderr="")
+        sent.append(cmd[-1])
+        if "paste-buffer" in cmd:
+            tui["pane"] = _composer_pane("hello")
+        if cmd[-1] == "Enter":
+            tui["pane"] = _composer_pane()
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+    monkeypatch.setattr(
+        "omnigent.harnesses.claude_native.bridge._CLAUDE_READY_POLL_INTERVAL_S", 0.0
+    )
+    inject_user_message(bridge_dir, content="hello")
+
+    assert "Escape" not in sent
+    assert (bridge_dir / claude_native_bridge._PROMPT_READY_FILE).exists()
+
+
+def test_first_injection_confirms_the_exact_workspace_trust_prompt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The host-selected workspace gate is accepted without a blind Escape."""
+    bridge_dir = tmp_path / "bridge"
+    write_tmux_target(
+        bridge_dir,
+        socket_path=Path("/tmp/example/tmux.sock"),
+        tmux_target="claude:0.0",
+    )
+    trust = "\n".join(
+        [
+            "Quick safety check: Is this a project you created or one you trust?",
+            "❯ No, exit",
+            "  Yes, I trust this folder",
+        ]
+    )
+    tui = {"pane": trust}
+    sent: list[str] = []
+
+    def _fake_run(cmd: list[str], **kwargs: object) -> SimpleNamespace:
+        del kwargs
+        if "capture-pane" in cmd:
+            return SimpleNamespace(returncode=0, stdout=tui["pane"], stderr="")
+        sent.append(cmd[-1])
+        if cmd[-1] == "Enter" and tui["pane"] == trust:
+            tui["pane"] = _composer_pane()
+        elif "paste-buffer" in cmd:
+            tui["pane"] = _composer_pane("hello")
+        elif cmd[-1] == "Enter":
+            tui["pane"] = _composer_pane()
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+    monkeypatch.setattr(
+        "omnigent.harnesses.claude_native.bridge._CLAUDE_READY_POLL_INTERVAL_S", 0.0
+    )
+    inject_user_message(bridge_dir, content="hello")
+
+    assert sent[:2] == ["Down", "Enter"]
+    assert "Escape" not in sent
 
 
 def test_inject_user_message_raises_when_prompt_never_renders(
@@ -9175,6 +9257,7 @@ def _picker_bridge_dir(tmp_path: Path) -> Path:
         socket_path=Path("/tmp/example/tmux.sock"),
         tmux_target="claude:0.0",
     )
+    (bridge_dir / claude_native_bridge._PROMPT_READY_FILE).touch()
     return bridge_dir
 
 
@@ -9776,6 +9859,7 @@ def test_inject_user_message_restores_an_occupied_input_box_first(
         socket_path=Path("/tmp/example/tmux.sock"),
         tmux_target="claude:0.0",
     )
+    (bridge_dir / claude_native_bridge._PROMPT_READY_FILE).touch()
 
     captured: list[list[str]] = []
     # The surface covers the pane until Escape dismisses it; afterwards
@@ -9964,6 +10048,7 @@ def test_inject_user_message_retries_a_swallowed_occupied_input_escape(
         socket_path=Path("/tmp/example/tmux.sock"),
         tmux_target="claude:0.0",
     )
+    (bridge_dir / claude_native_bridge._PROMPT_READY_FILE).touch()
 
     escapes = {"n": 0}
     tui = {"pane": _REVERSE_SEARCH_PANE}
