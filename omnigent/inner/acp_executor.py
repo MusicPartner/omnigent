@@ -59,6 +59,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, TypeAlias
 
+from omnigent._platform import IS_WINDOWS
 from omnigent.inner import _proc
 from omnigent.inner._acp_omnigent_mcp import OmnigentAcpMcp
 from omnigent.inner.acp_extension import NO_ACP_EXTENSION, AcpExtension
@@ -190,6 +191,9 @@ class AcpAgentConfig:
     :param command: The command to launch, e.g. ``"gemini --experimental-acp"``.
         Split with :func:`shlex.split` into an argv and exec'd directly (never
         via a shell), so quoting works but ``$VAR`` / pipes / redirects do not.
+        Split in non-POSIX mode on Windows: POSIX mode treats ``\\`` as an
+        escape character, which mangles a Windows path's drive/backslash
+        separators (``C:\\Users\\...`` becomes ``C:Users...``).
     :param name: Human label for logs / elicitation cards (e.g. ``"Gemini CLI"``).
     :param model: Optional model id, applied to the live session when a turn
         carries no per-turn pick — via ``session/set_model`` for agents that
@@ -401,7 +405,10 @@ class AcpExecutor(Executor):
         self._model_switch_supported: bool = True
 
         # Parsed argv; the first token is the binary we resolve / sandbox.
-        self._argv: list[str] = shlex.split(config.command)
+        # POSIX-mode shlex treats backslash as an escape character, which
+        # would mangle a Windows path's separators, so split in non-POSIX
+        # mode there instead.
+        self._argv: list[str] = shlex.split(config.command, posix=not IS_WINDOWS)
         if not self._argv:
             raise ValueError("AcpAgentConfig.command is empty")
 

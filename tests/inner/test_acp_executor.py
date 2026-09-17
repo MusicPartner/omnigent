@@ -63,6 +63,20 @@ def test_quoted_command_argv() -> None:
     assert ex._argv == ["npx", "-y", "@zed-industries/claude-code-acp"]
 
 
+def test_command_argv_preserves_windows_path_backslashes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """On Windows, ``shlex.split`` must not treat ``\\`` as an escape char.
+
+    POSIX-mode splitting (the default) strips backslashes, turning
+    ``C:\\Users\\me\\agent.py`` into ``C:Usersmeagent.py`` -- a corrupted path
+    that made the real Windows agent binary/script unresolvable and the
+    subprocess exit immediately (observed as "ACP subprocess closed stdout").
+    """
+    monkeypatch.setattr(acp_executor_module, "IS_WINDOWS", True)
+    command = r"C:\Users\me\python.exe C:\Users\me\agent.py"
+    ex = AcpExecutor(AcpAgentConfig(command=command))
+    assert ex._argv == [r"C:\Users\me\python.exe", r"C:\Users\me\agent.py"]
+
+
 def test_empty_command_rejected() -> None:
     with pytest.raises(ValueError):
         AcpExecutor(AcpAgentConfig(command="   "))
