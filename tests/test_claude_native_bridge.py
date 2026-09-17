@@ -8817,6 +8817,28 @@ def test_claude_pane_alive_distinguishes_dead_pane_from_unanswered_probe(
     assert claude_native_bridge._claude_pane_alive("/tmp/sock", "claude:0.0") is None
 
 
+def test_tmux_commands_decode_utf8_output_on_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Decode psmux's UTF-8 box drawing output independently of the locale."""
+    calls: list[dict[str, Any]] = []
+
+    def fake_run(cmd: list[str], **kwargs: Any) -> SimpleNamespace:
+        del cmd
+        calls.append(kwargs)
+        return SimpleNamespace(returncode=0, stdout="────────────────\n0\n", stderr="")
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    claude_native_bridge._run_tmux("/tmp/sock", "send-keys", "Enter")
+    assert "────────────────" in claude_native_bridge._capture_pane("/tmp/sock", "main")
+    assert claude_native_bridge._claude_pane_alive("/tmp/sock", "main") is False
+
+    assert len(calls) == 3
+    assert all(call["encoding"] == "utf-8" for call in calls)
+    assert all(call["errors"] == "replace" for call in calls)
+
+
 def test_wait_for_claude_prompt_ready_survives_unanswered_liveness_probe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
