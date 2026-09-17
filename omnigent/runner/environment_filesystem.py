@@ -310,7 +310,9 @@ def resolve_browse_target(
     allowed = (
         [
             *roots,
-            ReachableRoot(path=Path(root_anchor), access="write", origin="unconfined", kind="tree"),
+            ReachableRoot(
+                path=Path(root_anchor), access="write", origin="unconfined", kind="tree"
+            ),
         ]
         if unconfined
         else roots

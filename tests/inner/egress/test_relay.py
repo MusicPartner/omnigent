@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.posix_only
-
 from omnigent.inner.egress.relay import start_relay
+
+pytestmark = pytest.mark.posix_only
 
 
 def _pick_free_port() -> int:

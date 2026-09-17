@@ -1372,6 +1372,7 @@ class HarnessProcessManager:
             stdout=None,
             stderr=None,
             env=effective_env,
+            **_proc.spawn_kwargs(),
         )
 
     async def _close_entry(self, entry: _SubprocessEntry) -> None:

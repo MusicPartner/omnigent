@@ -27,15 +27,12 @@ from omnigent.inner.executor import (
     TurnComplete,
 )
 
-
 _HOME_ENV_VARS = ("HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH")
 
 
 def _cleared_env_preserving_home() -> dict[str, str]:
     """Clear ambient env while keeping enough home config for ``Path.home()``."""
-    return {
-        key: value for key in _HOME_ENV_VARS if (value := os.environ.get(key)) is not None
-    }
+    return {key: value for key in _HOME_ENV_VARS if (value := os.environ.get(key)) is not None}
 
 
 def _run(coro):
