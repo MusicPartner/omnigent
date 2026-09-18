@@ -15,10 +15,13 @@ import base64
 import os
 import re
 import stat
+import subprocess
+import sys
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, Literal, ParamSpec
 
+from omnigent._platform import IS_WINDOWS
 from omnigent.entities.environment_filesystem import (
     DeleteFilesystemResult,
     DirectoryNotEmpty,
@@ -68,6 +71,30 @@ def _shell_quote(s: str) -> str:
     :returns: Single-quoted shell-safe string.
     """
     return "'" + s.replace("'", "'\\''") + "'"
+
+
+def _python_shell_command(script: str) -> str:
+    """Build a shell command that runs *script* with the runner's Python.
+
+    Native Windows does not guarantee a ``python3`` command. In particular,
+    the Windows App execution alias can resolve it to a non-runnable stub.
+    Use the interpreter that is already running the runner there, and quote
+    the complete argv with Windows command-line rules for ``cmd.exe``.
+    POSIX sandboxes keep using ``python3`` so the interpreter remains the one
+    provided inside the sandbox rather than the parent process environment.
+
+    :param script: Python source passed to ``python -c``.
+    :returns: A command string for :meth:`OSEnvironment.shell`.
+    """
+    if IS_WINDOWS:
+        encoded = base64.b64encode(script.encode("utf-8")).decode("ascii")
+        bootstrap = (
+            "exec(compile(__import__('base64').b64decode('"
+            + encoded
+            + "'),'omnigent-filesystem','exec'))"
+        )
+        return subprocess.list2cmdline([sys.executable, "-c", bootstrap])
+    return f"python3 -c {_shell_quote(script)}"
 
 
 def _glob_to_regex(pattern: str) -> str:
@@ -594,7 +621,7 @@ class CallerProcessFilesystem:
         )
         result = await _run_os_env_async(
             self._os_env.shell,
-            f"python3 -c {_shell_quote(_script)}",
+            _python_shell_command(_script),
         )
         if "error" in result:
             raise FilesystemPathNotFound(f"Directory {path!r} not found or not accessible")
@@ -818,7 +845,7 @@ print(json.dumps({'r': results, 't': truncated}))
         _script = _header + "\n" + _body
         result = await _run_os_env_async(
             self._os_env.shell,
-            f"python3 -c {_shell_quote(_script)}",
+            _python_shell_command(_script),
         )
         if "error" in result:
             raise FilesystemPathNotFound(f"Root directory not accessible: {result['error']}")
@@ -1045,7 +1072,7 @@ print(json.dumps({'r': results, 't': truncated}))
         )
         result = await _run_os_env_async(
             self._os_env.shell,
-            f"python3 -c {_shell_quote(_script)}",
+            _python_shell_command(_script),
         )
         if "error" in result or result.get("exit_code", 1) != 0:
             return None
@@ -1231,7 +1258,7 @@ print(json.dumps({'r': results, 't': truncated}))
         )
         result = await _run_os_env_async(
             self._os_env.shell,
-            f"python3 -c {_shell_quote(_script)}",
+            _python_shell_command(_script),
         )
         if "error" in result or result.get("exit_code", 1) != 0:
             raise FilesystemPathNotFound(f"Path {validated!r} not found")
@@ -1263,7 +1290,7 @@ print(json.dumps({'r': results, 't': truncated}))
         )
         check = await _run_os_env_async(
             self._os_env.shell,
-            f"python3 -c {_shell_quote(_script)}",
+            _python_shell_command(_script),
         )
         count = int(check.get("stdout", "0").strip() or "0")
         return count > 0

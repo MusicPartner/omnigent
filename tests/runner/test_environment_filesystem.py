@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import shutil
 import subprocess
@@ -19,9 +20,41 @@ from omnigent.entities.environment_filesystem import FilesystemPathNotFound
 from omnigent.inner.datamodel import OSEnvSandboxSpec, OSEnvSpec
 from omnigent.inner.os_env import create_os_environment
 from omnigent.runner import create_runner_app
+from omnigent.runner import environment_filesystem as environment_filesystem_module
 from omnigent.runner.environment_filesystem import CallerProcessFilesystem
 from omnigent.runner.resource_registry import SessionResourceRegistry
 from tests.runner.helpers import NullServerClient
+
+
+def test_python_shell_command_uses_runner_interpreter_on_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows filesystem probes must not depend on the ``python3`` alias."""
+    monkeypatch.setattr(environment_filesystem_module, "IS_WINDOWS", True)
+    monkeypatch.setattr(
+        environment_filesystem_module.sys,
+        "executable",
+        r"C:\Users\test\.venv\Scripts\python.exe",
+    )
+
+    command = environment_filesystem_module._python_shell_command(
+        "print('filesystem probe')",
+    )
+
+    encoded = base64.b64encode(b"print('filesystem probe')").decode("ascii")
+    bootstrap = (
+        "exec(compile(__import__('base64').b64decode('"
+        + encoded
+        + "'),'omnigent-filesystem','exec'))"
+    )
+    assert command == subprocess.list2cmdline(
+        [
+            r"C:\Users\test\.venv\Scripts\python.exe",
+            "-c",
+            bootstrap,
+        ]
+    )
+    assert "python3" not in command
 
 
 @pytest.fixture
