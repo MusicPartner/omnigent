@@ -87,6 +87,20 @@ _CONFIG_GEAR = '[data-testid="composer-config-gear"]'
 _CONFIG_MODAL = '[data-testid="composer-agent-menu"]'
 
 
+def _effort_display_label(effort: str) -> str:
+    """Match the composer label for a raw Codex effort value."""
+
+    if effort.casefold() == "xhigh":
+        return "xHigh"
+    return effort[:1].upper() + effort[1:]
+
+
+def _effort_wire_value(value: str) -> str:
+    """Compare raw config values with display text without case noise."""
+
+    return value.casefold()
+
+
 def _read_config_effort(session_id: str) -> str | None:
     """Read ``model_reasoning_effort`` from the session's Codex ``config.toml``.
 
@@ -200,10 +214,8 @@ def test_codex_terminal_effort_change_reaches_composer(
     gear.click()
     expect(page.locator(_CONFIG_MODAL)).to_be_visible(timeout=15_000)
     effort_control = page.locator(_EFFORT_GEAR)
-    # The effort row is catalog-gated: a launch model the codex catalog does
-    # not list (this fixture pins a mock-provider model) renders no effort
-    # control until the in-TUI ``/model`` lands the session on a catalog model.
-    # The baseline is whatever the composer shows now -- possibly nothing.
+    # The effort row is catalog-gated, so the baseline is whatever the
+    # composer shows before the in-TUI ``/model`` change -- possibly nothing.
     baseline_composer_effort = (
         (effort_control.inner_text() or "").strip() if effort_control.is_visible() else ""
     )
@@ -254,8 +266,10 @@ def test_codex_terminal_effort_change_reaches_composer(
     # The composer must reflect the effort the user set in the
     # terminal. While the bug is live it stays on the launch effort, so this
     # times out; after the fix it shows the terminal's new effort.
-    expect(effort_control).to_contain_text(new_config_effort, timeout=30_000)
-    assert new_config_effort != baseline_composer_effort, (
+    expect(effort_control).to_contain_text(
+        _effort_display_label(new_config_effort), timeout=30_000
+    )
+    assert _effort_wire_value(new_config_effort) != _effort_wire_value(baseline_composer_effort), (
         "test setup: the terminal effort change must move off the composer's "
         f"baseline effort ({baseline_composer_effort!r}) to prove the mirror"
     )
@@ -383,7 +397,7 @@ def test_composer_effort_pick_survives_terminal_turns(
     _open_config_modal(page)
     effort_control = page.locator(_EFFORT_GEAR)
     expect(effort_control).to_be_visible(timeout=15_000)
-    expect(effort_control).to_contain_text(terminal_effort, timeout=30_000)
+    expect(effort_control).to_contain_text(_effort_display_label(terminal_effort), timeout=30_000)
 
     # --- 2. Pick a DIFFERENT effort in the composer gear and Save. -----------
     effort_control.click()
@@ -413,7 +427,9 @@ def test_composer_effort_pick_survives_terminal_turns(
 
     # The pick works: reopening the gear shows the composer-picked effort.
     _open_config_modal(page)
-    expect(page.locator(_EFFORT_GEAR)).to_contain_text(picked, timeout=30_000)
+    expect(page.locator(_EFFORT_GEAR)).to_contain_text(
+        _effort_display_label(picked), timeout=30_000
+    )
     page.keyboard.press("Escape")
     expect(page.locator(_CONFIG_MODAL)).to_be_hidden(timeout=15_000)
 
@@ -427,6 +443,6 @@ def test_composer_effort_pick_survives_terminal_turns(
     _open_config_modal(page)
     effort_control = page.locator(_EFFORT_GEAR)
     expect(effort_control).to_be_visible(timeout=15_000)
-    expect(effort_control).to_contain_text(picked, timeout=30_000)
+    expect(effort_control).to_contain_text(_effort_display_label(picked), timeout=30_000)
     # And the terminal's own source of truth still agrees with the composer.
     assert _read_config_effort(session_id) == picked
