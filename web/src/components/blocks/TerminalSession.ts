@@ -188,6 +188,8 @@ export type TerminalInputListener = () => void;
 
 /** Kitty Keyboard Protocol / CSI-u encoding for Shift+Enter. */
 export const SHIFT_ENTER_CSI_U = "\x1b[13;2u";
+/** Raw Escape byte, sent explicitly so browser/xterm key handling cannot drop it. */
+export const TERMINAL_ESCAPE = "\x1b";
 
 /** Readline line-editing bytes for the macOS Cmd key mappings below. */
 export const CMD_BACKSPACE_LINE_KILL = "\x15"; // Ctrl-U: kill to line start
@@ -224,6 +226,12 @@ export function terminalKeyEventPayload(event: KeyboardEvent): string | null {
   // handling (keyCode 229 is the legacy composition signal).
   if (event.isComposing || event.keyCode === 229) {
     return null;
+  }
+  // Keep Escape on the same explicit path as the synthesized shortcuts. Some
+  // browser/xterm combinations handle the key as a browser command instead
+  // of emitting xterm's normal onData event, which leaves TUI menus stuck.
+  if (event.key === "Escape" || event.key === "Esc" || event.keyCode === 27) {
+    return TERMINAL_ESCAPE;
   }
   if (
     event.key === "Enter" &&

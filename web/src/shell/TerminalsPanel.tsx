@@ -127,7 +127,12 @@ export function TerminalsPanel({
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      // The terminal owns Escape for TUI menus and cancellation. Dismissing
+      // the panel here would unmount xterm before the key reaches the pane.
+      const target = e.target;
+      if (target instanceof Element && target.closest(".xterm") !== null) return;
+      onClose();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

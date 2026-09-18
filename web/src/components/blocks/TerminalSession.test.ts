@@ -10,6 +10,7 @@ import { Terminal } from "@xterm/xterm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   SHIFT_ENTER_CSI_U,
+  TERMINAL_ESCAPE,
   TerminalSession,
   WHEEL_REPORTS_MAX_PER_EVENT,
   applyTerminalCopy,
@@ -219,6 +220,14 @@ describe("terminalKeyEventPayload", () => {
     // the old Alt+Enter fallback, not Kitty/CSI-u support.
     expect(payload).toBe(SHIFT_ENTER_CSI_U);
     expect(payload).toBe("\x1b[13;2u");
+  });
+
+  it.each([
+    { name: "standard key", key: "Escape", keyCode: 0 },
+    { name: "legacy key name", key: "Esc", keyCode: 0 },
+    { name: "legacy keyCode", key: "", keyCode: 27 },
+  ])("encodes Escape explicitly ($name)", ({ key, keyCode }) => {
+    expect(terminalKeyEventPayload(keyEvent({ key, keyCode }))).toBe(TERMINAL_ESCAPE);
   });
 
   it("maps macOS Cmd line shortcuts to their readline control bytes", () => {
@@ -671,6 +680,26 @@ describe("TerminalSession", () => {
     socket.open();
 
     expect(focusSpy).toHaveBeenCalled();
+    session.dispose();
+  });
+
+  it("forwards Escape from xterm as one raw terminal byte", () => {
+    const { socket, session, container } = makeSession();
+    socket.open();
+    const helper = container.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
+    expect(helper).not.toBeNull();
+
+    helper?.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Escape",
+        code: "Escape",
+        keyCode: 27,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    expect(socket.sent).toContainEqual(new Uint8Array([27]));
     session.dispose();
   });
 
