@@ -22,10 +22,12 @@ array is always valid regardless of what section preceded it.
 from __future__ import annotations
 
 import contextlib
+import json
 import os
-import shlex
 import sys
 from pathlib import Path
+
+from omnigent.native.shell import shell_join
 
 #: Env var Kimi Code reads to locate its data dir (config.toml + oauth + …).
 KIMI_CODE_HOME_ENV_VAR = "KIMI_CODE_HOME"
@@ -71,13 +73,13 @@ def render_kimi_hooks_toml(*, bridge_dir: Path, python_executable: str | None = 
     # approval card never publishes. ``-I`` drops cwd + PYTHONPATH + user-site
     # from the path, importing only the interpreter's own omnigent. Mirrors
     # claude-native's ``python -I -m omnigent.harnesses.claude_native.hook``.
-    base = f"{shlex.quote(python)} -I -m omnigent.harnesses.kimi_native.hook"
-    bridge = shlex.quote(str(bridge_dir))
+    base = shell_join([python, "-I", "-m", "omnigent.harnesses.kimi_native.hook"])
+    bridge = shell_join([str(bridge_dir)])
     pre = f"{base} evaluate-policy --bridge-dir {bridge}"
     perm = f"{base} permission-request --bridge-dir {bridge}"
-    # No ``matcher`` → matches every tool. Commands are TOML basic strings;
-    # shlex.quote yields single-quoted POSIX tokens, which contain no double
-    # quotes or backslashes, so they embed in a "..." TOML string verbatim.
+    # No ``matcher`` → matches every tool. JSON strings use the same escaping
+    # rules as TOML basic strings, so this remains valid when Windows quoting
+    # adds double quotes around a spaced native path.
     #
     # ``timeout`` is required: kimi's DEFAULT_HOOK_TIMEOUT_SECONDS is 30s, which
     # would kill the permission hook while it long-polls the web verdict (so the
@@ -89,12 +91,12 @@ def render_kimi_hooks_toml(*, bridge_dir: Path, python_executable: str | None = 
         "# --- Omnigent native hooks (auto-generated; do not edit) ---\n"
         "[[hooks]]\n"
         'event = "PreToolUse"\n'
-        f'command = "{pre}"\n'
+        f"command = {json.dumps(pre)}\n"
         "timeout = 600\n"
         "\n"
         "[[hooks]]\n"
         'event = "PermissionRequest"\n'
-        f'command = "{perm}"\n'
+        f"command = {json.dumps(perm)}\n"
         "timeout = 600\n"
     )
 

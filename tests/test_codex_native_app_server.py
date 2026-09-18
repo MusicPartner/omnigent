@@ -1789,7 +1789,7 @@ def test_user_prompt_submit_carries_the_route_turn_hook(tmp_path: Path) -> None:
     commands = [h for entry in hooks["UserPromptSubmit"] for h in entry["hooks"]]
     routing = [h for h in commands if "route-turn" in h["command"]]
     assert len(routing) == 1
-    assert f"--bridge-dir {bridge_dir}" in routing[0]["command"]
+    assert f"--bridge-dir {bridge_dir.as_posix()}" in routing[0]["command"]
     assert "--harness codex-native" in routing[0]["command"]
     assert routing[0]["timeout"] == HARNESS_HOOK_TIMEOUT_S
     # Trust is filtered by module, so route-turn must ride the policy one.
@@ -2523,7 +2523,9 @@ async def test_trust_step_trusts_user_hooks_only_when_trust_all_enabled(
         assert set(trusted) == expected
 
 
-async def test_policy_hook_command_runs_python_isolated() -> None:
+async def test_policy_hook_command_runs_python_isolated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The policy hook command passes ``-I`` before ``-m``.
 
     Same silent fail-open as the routing hooks: codex runs hooks with the
@@ -2534,9 +2536,29 @@ async def test_policy_hook_command_runs_python_isolated() -> None:
     import shlex
 
     from omnigent.harnesses.codex_native.app_server import _codex_policy_hook_command
+    from omnigent.native import shell as native_shell
 
+    monkeypatch.setattr(native_shell, "IS_WINDOWS", False)
     argv = shlex.split(_codex_policy_hook_command(Path("/b"), "/venv/bin/python"))
     assert argv[1:3] == ["-I", "-m"]
+
+
+def test_policy_hook_command_uses_native_windows_shell_quoting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows Codex must not receive POSIX single-quoted path arguments."""
+    from omnigent.harnesses.codex_native.app_server import _codex_policy_hook_command
+    from omnigent.native import shell as native_shell
+
+    monkeypatch.setattr(native_shell, "IS_WINDOWS", True)
+    command = _codex_policy_hook_command(
+        Path(r"C:\Users\test\Omnigent Native\bridge"),
+        r"C:\Program Files\Python312\python.exe",
+    )
+
+    assert "'" not in command
+    assert "C:/Program Files/Python312/python.exe" in command
+    assert "C:/Users/test/Omnigent Native/bridge" in command
 
 
 def test_codex_model_upgrade_target_reads_catalog_migration() -> None:

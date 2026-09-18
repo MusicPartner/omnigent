@@ -50,6 +50,9 @@ from typing import TYPE_CHECKING
 
 import tomllib
 
+from omnigent._platform import IS_WINDOWS
+from omnigent.native.shell import shell_join
+
 if TYPE_CHECKING:
     # Imported only for type hints; the heavy/optional imports remain lazy
     # at runtime so importing this module stays cheap.
@@ -1475,11 +1478,9 @@ def _pip_invocation() -> str:
         ``shlex.split`` in :func:`_run_upgrade_command`), or ``"pip"``
         when no interpreter path is available.
     """
-    import shlex
-
     if not sys.executable:
         return "pip"
-    return f"{shlex.quote(sys.executable)} -m pip"
+    return shell_join([sys.executable, "-m", "pip"])
 
 
 def _package_spec(*, version: str | None = None, extras: Collection[str] = ()) -> str:
@@ -1728,11 +1729,19 @@ def _run_upgrade_command(command: str, console: Console) -> int:
         command string). The caller treats any non-zero return as
         "upgrade failed" and falls back to the existing install.
     """
-    import shlex
-
     console.print(f"[yellow]Running:[/yellow] {command}")
     try:
-        result = subprocess.run(shlex.split(command), check=False)
+        import shlex
+
+        args = shlex.split(command, posix=not IS_WINDOWS)
+        if IS_WINDOWS:
+            args = [
+                token[1:-1]
+                if len(token) >= 2 and token[0] == token[-1] and token[0] in ("'", '"')
+                else token
+                for token in args
+            ]
+        result = subprocess.run(args, check=False)
     except (OSError, ValueError) as exc:
         # OSError: binary not on PATH. ValueError: shlex.split
         # rejected the command (extremely unlikely for our

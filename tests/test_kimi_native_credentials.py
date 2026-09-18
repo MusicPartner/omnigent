@@ -49,6 +49,25 @@ def test_render_hooks_toml_is_valid_and_complete() -> None:
         assert hook["timeout"] == 600
 
 
+def test_render_hooks_toml_uses_native_windows_shell_quoting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from omnigent.native import shell as native_shell
+
+    monkeypatch.setattr(native_shell, "IS_WINDOWS", True)
+    toml = render_kimi_hooks_toml(
+        bridge_dir=Path(r"C:\Users\test\Omnigent Native\bridge"),
+        python_executable=r"C:\Program Files\Python312\python.exe",
+    )
+
+    parsed = tomllib.loads(toml)
+    for hook in parsed["hooks"]:
+        command = hook["command"]
+        assert "'" not in command
+        assert "C:/Program Files/Python312/python.exe" in command
+        assert "C:/Users/test/Omnigent Native/bridge" in command
+
+
 def test_build_session_home_preserves_user_config_and_appends_hooks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

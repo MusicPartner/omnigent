@@ -26,6 +26,7 @@ from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed
 
 from omnigent.models import model_catalog
+from omnigent.native.shell import shell_join
 from omnigent.util.json_types import JsonObject as _JsonObject
 
 if TYPE_CHECKING:
@@ -1810,7 +1811,7 @@ def _codex_policy_hook_command(bridge_dir: Path, python_executable: str | None) 
         --bridge-dir /home/u/.omnigent/codex-native/abc"``.
     """
     python = python_executable or sys.executable
-    return shlex.join(
+    return shell_join(
         [
             python,
             "-I",
@@ -1905,7 +1906,7 @@ def _codex_route_turn_hook(bridge_dir: Path, python_executable: str | None) -> _
 
     return {
         "type": "command",
-        "command": shlex.join(
+        "command": shell_join(
             [
                 python_executable or sys.executable,
                 "-I",

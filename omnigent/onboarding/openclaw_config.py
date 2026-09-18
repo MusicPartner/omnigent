@@ -7,13 +7,13 @@ agent keeps its own authentication.
 
 from __future__ import annotations
 
-import shlex
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
 import json5
 
+from omnigent.native.shell import shell_join
 from omnigent.onboarding.acp_auth import AcpAgentEntry, acp_agents, slugify
 
 SourceKind = Literal["acpx", "openclaw"]
@@ -32,7 +32,7 @@ class OpenClawAgentEntry:
     @property
     def command_line(self) -> str:
         """Return the shell command Omnigent should persist."""
-        return shlex.join([self.command, *self.args])
+        return shell_join([self.command, *self.args])
 
 
 @dataclass(frozen=True)

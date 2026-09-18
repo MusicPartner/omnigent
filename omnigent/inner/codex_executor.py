@@ -14,7 +14,6 @@ import json
 import logging
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -46,6 +45,7 @@ from omnigent.models.codex_model_vocabulary import (
 )
 from omnigent.models.model_fallbacks import CODEX_CATALOG_CLONE_SOURCE_SLUG, CODEX_DEFAULT_MODEL
 from omnigent.native import _native_forwarder_health as native_forwarder_health
+from omnigent.native.shell import shell_join
 from omnigent.spec.types import RetryPolicy
 from omnigent.util.reasoning_effort import CODEX_EFFORTS, EFFORT_ALIASES, validate_effort
 
@@ -1261,7 +1261,7 @@ def _codex_router_hook_command(
     if session_id:
         argv.extend(["--session-id", session_id])
     argv.extend(extra_args)
-    return shlex.join(argv)
+    return shell_join(argv)
 
 
 def codex_router_hooks_settings(

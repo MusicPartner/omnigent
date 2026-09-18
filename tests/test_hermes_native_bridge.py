@@ -323,6 +323,24 @@ def test_write_policy_hook_config_creates_expected_files(tmp_path) -> None:
     assert len(bridge_config["token"]) > 0
 
 
+def test_write_policy_hook_config_uses_native_windows_interpreter_quoting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hermes' shell wrapper must preserve a spaced Windows interpreter path."""
+    from omnigent.native import shell as native_shell
+
+    monkeypatch.setattr(native_shell, "IS_WINDOWS", True)
+    monkeypatch.setattr(b.sys, "executable", r"C:\Program Files\Python312\python.exe")
+    bridge_dir = tmp_path / "bridge"
+    bridge_dir.mkdir()
+
+    hermes_home = b.write_policy_hook_config(bridge_dir, "http://localhost:6767", "session-123")
+    wrapper_text = (hermes_home / "omnigent-policy-hook.sh").read_text()
+
+    assert 'exec "C:/Program Files/Python312/python.exe"' in wrapper_text
+    assert "C:\\Program Files\\Python312" not in wrapper_text
+
+
 def test_write_policy_hook_config_copies_user_files(tmp_path, monkeypatch) -> None:
     bridge_dir = tmp_path / "bridge"
     bridge_dir.mkdir()

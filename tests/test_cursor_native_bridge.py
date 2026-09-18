@@ -10,7 +10,7 @@ The clear now floods ``Backspace`` until the pane stops changing.
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import click
 import pytest
@@ -341,13 +341,32 @@ class TestHooksConfig:
         assert "/tmp/bridge" in command
         assert command.startswith("/usr/bin/python3")
 
-    def test_build_hooks_config_quotes_spaced_paths(self) -> None:
+    def test_build_hooks_config_quotes_spaced_paths(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from omnigent.native import shell as native_shell
+
+        monkeypatch.setattr(native_shell, "IS_WINDOWS", False)
         cfg = cursor_native_bridge.build_hooks_config(
-            Path("/tmp/dir with space"), python_executable="/usr/bin/python3"
+            PurePosixPath("/tmp/dir with space"), python_executable="/usr/bin/python3"
         )
         command = cfg["hooks"]["stop"][0]["command"]
         # A shell-quoted path keeps the spaced bridge dir a single argv token.
         assert "'/tmp/dir with space'" in command
+
+    def test_build_hooks_config_uses_native_windows_shell_quoting(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from omnigent.native import shell as native_shell
+
+        monkeypatch.setattr(native_shell, "IS_WINDOWS", True)
+        cfg = cursor_native_bridge.build_hooks_config(
+            Path(r"C:\Users\test\Omnigent Native\bridge"),
+            python_executable=r"C:\Program Files\Python312\python.exe",
+        )
+        command = cfg["hooks"]["stop"][0]["command"]
+
+        assert "'" not in command
+        assert "C:/Program Files/Python312/python.exe" in command
+        assert "C:/Users/test/Omnigent Native/bridge" in command
 
     def test_write_hooks_config_writes_project_scoped_file(self, tmp_path: Path) -> None:
         import json
@@ -358,7 +377,7 @@ class TestHooksConfig:
         path = cursor_native_bridge.write_hooks_config(workspace, bridge_dir)
         assert path == workspace / ".cursor" / "hooks.json"
         payload = json.loads(path.read_text())
-        assert payload["hooks"]["stop"][0]["command"].endswith(str(bridge_dir))
+        assert payload["hooks"]["stop"][0]["command"].endswith(bridge_dir.as_posix())
         # No leftover temp file from the atomic write.
         assert not (workspace / ".cursor" / "hooks.json.tmp").exists()
 
@@ -406,7 +425,7 @@ class TestHooksConfig:
         ]
         # Relaunching must not accumulate recorders pointing at dead bridge dirs.
         assert len(usage_commands) == 1
-        assert usage_commands[0].endswith(str(tmp_path / "bridge-new"))
+        assert usage_commands[0].endswith((tmp_path / "bridge-new").as_posix())
 
     def test_write_hooks_config_tolerates_malformed_file(self, tmp_path: Path) -> None:
         import json

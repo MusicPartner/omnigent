@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import TypeAlias
 
 from omnigent._platform import stable_user_id
+from omnigent.native.shell import shell_join
 
 _logger = logging.getLogger(__name__)
 
@@ -447,7 +448,7 @@ def inject_relay_into_policy_hook(
         f"export _OMNIGENT_SESSION_ID={shlex.quote(session_id)}\n"
         f"export {_RELAY_URL_ENV}={shlex.quote(relay_url)}\n"
         f"export {_RELAY_TOKEN_ENV}={shlex.quote(relay_token)}\n"
-        f"exec {shlex.quote(sys.executable)} {shlex.quote(hook_script_path)}\n"
+        f"exec {shell_join([sys.executable, hook_script_path])}\n"
     )
     fd, tmp_name = tempfile.mkstemp(prefix="omnigent-policy-hook.", dir=str(hermes_home))
     try:

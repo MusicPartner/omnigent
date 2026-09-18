@@ -1797,7 +1797,9 @@ async def test_search_scopes_to_a_subdirectory(client: httpx.AsyncClient) -> Non
     body = scoped.json()
     paths = {e["path"] for e in body["data"]}
 
-    assert body["base"].endswith("/src")
+    base = Path(body["base"])
+    assert base.name == "src"
+    assert base.parent.name == "workspace"
     # Paths are relative to the scoped base (no "src/" prefix), and the
     # parent's files are absent -- search covers exactly the scoped tree.
     assert paths == {"main.py"}, paths

@@ -31,6 +31,8 @@ from typing import NotRequired, TypedDict
 
 import httpx
 
+from omnigent.native.shell import shell_join
+
 # How long to keep retrying transient 5xx / connect errors on the
 # policy evaluate POST before failing closed. Keeps the pre-execution
 # gate from blocking long on a sick server while still absorbing brief
@@ -184,7 +186,7 @@ def policy_hook_wrapper_script(server_url: str, session_id: str, hook_script_pat
         f"export _OMNIGENT_SERVER_URL={shlex.quote(server_url)}\n"
         f"export _OMNIGENT_SESSION_ID={shlex.quote(session_id)}\n"
         f"export {_AUTH_HEADERS_ENV}={shlex.quote(json.dumps(auth_headers))}\n"
-        f"exec {shlex.quote(sys.executable)} {shlex.quote(hook_script_path)}\n"
+        f"exec {shell_join([sys.executable, hook_script_path])}\n"
     )
 
 

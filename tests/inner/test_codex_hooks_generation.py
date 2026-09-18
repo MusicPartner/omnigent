@@ -74,7 +74,7 @@ def test_router_hooks_settings_registers_the_pretooluse_gate(tmp_path: Path) -> 
     assert "route-subagent" in command_argv
     assert command_argv[command_argv.index("--session-id") + 1] == "conv_abc"
     assert command_argv[command_argv.index("--harness") + 1] == "codex"
-    assert command_argv[command_argv.index("--bridge-dir") + 1] == str(tmp_path / "bridge")
+    assert command_argv[command_argv.index("--bridge-dir") + 1] == (tmp_path / "bridge").as_posix()
 
 
 def test_router_hooks_settings_omits_session_flag_when_unknown(tmp_path: Path) -> None:

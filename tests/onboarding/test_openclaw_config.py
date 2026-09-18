@@ -208,7 +208,10 @@ def test_openclaw_json5_supports_escaped_apostrophes(tmp_path: Path) -> None:
     assert discovery.agents[0].args == ("it's-valid",)
 
 
-def test_agent_args_are_shell_quoted(tmp_path: Path) -> None:
+def test_agent_args_are_shell_quoted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from omnigent.native import shell as native_shell
+
+    monkeypatch.setattr(native_shell, "IS_WINDOWS", False)
     acpx = tmp_path / "config.json"
     acpx.write_text(
         '{"agents": {"Helper": {"command": "helper", "args": ["a b", "--flag=v;rm"]}}}',
@@ -221,7 +224,12 @@ def test_agent_args_are_shell_quoted(tmp_path: Path) -> None:
     assert discovery.agents[0].command_line == "helper 'a b' '--flag=v;rm'"
 
 
-def test_command_path_with_spaces_is_shell_quoted(tmp_path: Path) -> None:
+def test_command_path_with_spaces_is_shell_quoted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from omnigent.native import shell as native_shell
+
+    monkeypatch.setattr(native_shell, "IS_WINDOWS", False)
     acpx = tmp_path / "config.json"
     acpx.write_text(
         '{"agents": {"Helper": {"command": "/Applications/My App/bin/helper", '
@@ -233,6 +241,25 @@ def test_command_path_with_spaces_is_shell_quoted(tmp_path: Path) -> None:
 
     assert discovery.errors == ()
     assert discovery.agents[0].command_line == "'/Applications/My App/bin/helper' --acp"
+
+
+def test_command_path_with_spaces_uses_native_windows_quoting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from omnigent.native import shell as native_shell
+
+    monkeypatch.setattr(native_shell, "IS_WINDOWS", True)
+    acpx = tmp_path / "config.json"
+    acpx.write_text(
+        r'{"agents": {"Helper": {"command": "C:\\Program Files\\helper.exe", '
+        r'"args": ["--acp"]}}}',
+        encoding="utf-8",
+    )
+
+    discovery = discover_openclaw_agents(acpx_path=acpx, openclaw_path=tmp_path / "missing.json")
+
+    assert discovery.errors == ()
+    assert discovery.agents[0].command_line == '"C:/Program Files/helper.exe" --acp'
 
 
 def test_non_string_args_skip_only_malformed_agent(tmp_path: Path) -> None:

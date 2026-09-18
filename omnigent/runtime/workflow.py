@@ -41,6 +41,7 @@ from omnigent.errors import (
 from omnigent.llms import Client as LLMClient
 from omnigent.models.model_catalog import resolve_catalog_model
 from omnigent.models.model_resolver import ModelResolutionError
+from omnigent.native.shell import shell_join
 from omnigent.onboarding.databricks_config import (
     get_workspace_url_for_profile,
 )
@@ -1594,7 +1595,7 @@ def _build_acp_cli_spawn_env(
         or row.binary
     )
     env = {
-        "HARNESS_ACP_COMMAND": shlex.join([executable, *row.args]),
+        "HARNESS_ACP_COMMAND": shell_join([executable, *row.args]),
         "HARNESS_ACP_NAME": row.label,
         # Rows whose CLI doesn't yet support session-scoped MCP and ignores
         # session/new mcpServers (e.g. jcode) opt out of advertising the

@@ -35,12 +35,13 @@ import argparse
 import contextlib
 import json
 import os
-import shlex
 import sys
 import threading
 import time
 from pathlib import Path
 from urllib import error, request
+
+from omnigent.native.shell import shell_join
 
 # Timeout for the (fast, local) ``tmux list-clients`` lookup the launcher
 # runs before popping a modal.
@@ -230,7 +231,7 @@ def launch_cost_popup(
     ]
     if policy_name:
         argv += ["--policy-name", policy_name]
-    inner_cmd = shlex.join(argv)
+    inner_cmd = shell_join(argv)
     for client in clients:
         # ``-c`` targets a specific attached client (required: the runner
         # invoking this is not a tmux client). ``-E`` closes the popup when
@@ -305,7 +306,7 @@ def launch_blocked_notice(
     ]
     if policy_name:
         argv += ["--policy-name", policy_name]
-    inner_cmd = shlex.join(argv)
+    inner_cmd = shell_join(argv)
     for client in clients:
         cmd = [
             "tmux",

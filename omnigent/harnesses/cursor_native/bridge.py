@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 import click
 
 from omnigent._platform import stable_user_id
+from omnigent.native.shell import shell_join
 from omnigent.util.json_types import JsonObject as _JsonObject
 
 if TYPE_CHECKING:
@@ -377,12 +378,9 @@ def build_hooks_config(bridge_dir: Path, *, python_executable: str | None = None
     badge). Bakes the absolute ``--bridge-dir`` so the recorder writes where the
     forwarder reads, regardless of the hook's working directory.
     """
-    import shlex
-
     python = python_executable or sys.executable
-    command = " ".join(
-        shlex.quote(part)
-        for part in (
+    command = shell_join(
+        [
             python,
             "-I",
             "-m",
@@ -390,7 +388,7 @@ def build_hooks_config(bridge_dir: Path, *, python_executable: str | None = None
             "record-usage",
             "--bridge-dir",
             str(bridge_dir),
-        )
+        ]
     )
     return {"version": 1, "hooks": {"stop": [{"command": command}]}}
 
