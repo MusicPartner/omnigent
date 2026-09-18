@@ -38,7 +38,6 @@ import os
 import queue
 import re
 import secrets
-import shlex
 import socket
 import stat
 import subprocess
@@ -77,6 +76,7 @@ from omnigent.inner.hook_scripts.subagent_router import (
     AGENT_TOOL_MATCHER as CLAUDE_SUBAGENT_TOOL_MATCHER,
 )
 from omnigent.native import native_bridge_common
+from omnigent.native.shell import shell_join
 from omnigent.tools.base import Tool, ToolContext
 from omnigent.util.reasoning_effort import CLAUDE_EFFORTS
 
@@ -1902,9 +1902,7 @@ def build_mcp_config(bridge_dir: Path, *, python_executable: str | None = None) 
 
 def _shell_join(parts: list[str]) -> str:
     """Quote an argv vector for the shell Claude uses to run hooks."""
-    if IS_WINDOWS:
-        return subprocess.list2cmdline(parts)
-    return shlex.join(parts)
+    return shell_join(parts)
 
 
 def _shell_quote(value: str) -> str:
@@ -4826,7 +4824,6 @@ def _run_tmux(socket_path: str, *args: str) -> None:
     :raises RuntimeError: If the subprocess exits non-zero or times
         out.
     """
-    import subprocess
 
     _check_injection_cancelled()
     cmd = ["tmux", "-S", socket_path, *args]
@@ -4860,7 +4857,6 @@ def _capture_pane(socket_path: str, tmux_target: str) -> str:
     :param tmux_target: tmux pane target string, e.g. ``"main"``.
     :returns: The pane's visible text, or ``""`` if capture failed.
     """
-    import subprocess
 
     _check_injection_cancelled()
     try:
@@ -4893,7 +4889,6 @@ def _claude_pane_alive(socket_path: str, tmux_target: str) -> bool | None:
         ``False`` when tmux affirms it exited or rejects the query, and
         ``None`` when the probe went unanswered.
     """
-    import subprocess
 
     _check_injection_cancelled()
     try:

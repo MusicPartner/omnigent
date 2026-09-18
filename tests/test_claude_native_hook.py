@@ -6,8 +6,6 @@ import io
 import json
 import os
 import re
-import shlex
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -29,6 +27,7 @@ from omnigent.harnesses.claude_native.bridge import (
     write_active_session_id,
 )
 from omnigent.native import native_policy_hook
+from omnigent.native import shell as native_shell
 from tests.native_hook_helpers import make_failing_client
 
 
@@ -1105,7 +1104,7 @@ def test_build_hook_settings_registers_policy_hooks_when_omnigent_server_url_set
     assert "matcher" not in policy_entry
     pre_tool_use_cmd = policy_entry["hooks"][0]["command"]
     assert "evaluate-policy" in pre_tool_use_cmd
-    assert str(bridge_dir) in pre_tool_use_cmd
+    assert bridge_dir.as_posix() in pre_tool_use_cmd
     # PostToolUse has observer hooks (TodoWrite, TaskUpdate) PLUS the policy
     # evaluation hook appended as a catch-all entry.
     post_tool_use_entries = hooks["PostToolUse"]
@@ -1141,12 +1140,36 @@ def test_build_hook_settings_captures_observer_stderr(tmp_path: Path) -> None:
     )
 
     path = str(bridge_dir / OBSERVER_HOOK_STDERR_FILE)
-    quoted = subprocess.list2cmdline([path]) if os.name == "nt" else shlex.quote(path)
+    quoted = native_shell.shell_join([path])
     expected_redirection = f"2>> {quoted}"
     hooks = settings["hooks"]
     for event_name in ("SessionStart", "UserPromptSubmit", "Stop", "StopFailure"):
         command = hooks[event_name][0]["hooks"][0]["command"]
         assert command.endswith(expected_redirection)
+
+
+def test_windows_hook_commands_preserve_backslash_paths_for_posix_shell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows native hook paths must survive Claude's POSIX shell wrapper."""
+    monkeypatch.setattr(native_shell, "IS_WINDOWS", True)
+    bridge_dir = Path(r"D:\Develop\Source\OpenSource\_AI\Omnigent\omnigent\.codex-tmp\claude-hook")
+    settings = build_hook_settings(
+        bridge_dir,
+        python_executable=(
+            r"D:\Develop\Source\OpenSource\_AI\Omnigent\omnigent\.venv\Scripts\python.exe"
+        ),
+    )
+
+    python_path = "D:/Develop/Source/OpenSource/_AI/Omnigent/omnigent/.venv/Scripts/python.exe"
+    command = settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+    assert python_path in command
+    assert "D:\\Develop\\Source" not in command
+    assert "/.codex-tmp/claude-hook" in command
+
+    observer = settings["hooks"]["PostToolUse"][-1]["hooks"][0]["command"]
+    assert python_path in observer
+    assert "D:\\Develop\\Source" not in observer
 
 
 def test_build_hook_settings_registers_message_display_hook(
@@ -2953,7 +2976,7 @@ def test_build_hook_settings_registers_the_route_turn_hook(
     assert len(entries) == 1, "route-turn must be registered exactly once"
     command = entries[0]["command"]
     assert "omnigent.harnesses.claude_native.hook" in command
-    assert str(bridge_dir) in command
+    assert bridge_dir.as_posix() in command
     assert "claude-native" in command
     assert entries[0]["timeout"] == HARNESS_HOOK_TIMEOUT_S
     # The spike scaffolding this replaced must be gone.
