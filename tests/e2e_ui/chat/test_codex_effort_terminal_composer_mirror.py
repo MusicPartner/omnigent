@@ -49,7 +49,7 @@ import time
 import uuid
 
 import pytest
-from playwright.sync_api import Page, expect
+from playwright.sync_api import Page, Route, expect
 
 from omnigent.harnesses.codex_native.bridge import (
     bridge_dir_for_bridge_id,
@@ -85,6 +85,34 @@ _EFFORT_GEAR = '[data-testid="composer-config-effort"]'
 _CONFIG_GEAR = '[data-testid="composer-config-gear"]'
 # The composer configuration surface is the shared picker menu.
 _CONFIG_MODAL = '[data-testid="composer-agent-menu"]'
+
+# The mock session deliberately runs on ``gpt-4o``. Keep the UI-side catalog
+# present as well, otherwise the real catalog gate correctly hides the effort
+# row and the mirror assertion has no control to inspect.
+_CODEX_MOCK_MODEL_OPTIONS = {
+    "models": [
+        {
+            "id": "gpt-4o",
+            "model": "gpt-4o",
+            "displayName": "gpt-4o",
+            "isDefault": True,
+            "supportedReasoningEfforts": [
+                {"reasoningEffort": "low"},
+                {"reasoningEffort": "medium"},
+                {"reasoningEffort": "high"},
+            ],
+        }
+    ]
+}
+
+
+def _install_mock_codex_model_options(page: Page) -> None:
+    """Expose the mock session model through the UI catalog endpoint."""
+
+    def handle_model_options(route: Route) -> None:
+        route.fulfill(json=_CODEX_MOCK_MODEL_OPTIONS)
+
+    page.route("**/harnesses/codex-native/model-options*", handle_model_options)
 
 
 def _read_config_effort(session_id: str) -> str | None:
@@ -188,6 +216,7 @@ def test_codex_terminal_effort_change_reaches_composer(
     base_url, session_id = native_codex_mock_session
     _log.info("native-codex mock session ready: base_url=%s session_id=%s", base_url, session_id)
 
+    _install_mock_codex_model_options(page)
     page.goto(f"{base_url}/c/{session_id}")
     _open_terminal_view(page)
     _wait_terminal_connected(page)
@@ -368,6 +397,7 @@ def test_composer_effort_pick_survives_terminal_turns(
     base_url, session_id = native_codex_mock_session
     _log.info("native-codex mock session ready: base_url=%s session_id=%s", base_url, session_id)
 
+    _install_mock_codex_model_options(page)
     page.goto(f"{base_url}/c/{session_id}")
     _open_terminal_view(page)
     _wait_terminal_connected(page)

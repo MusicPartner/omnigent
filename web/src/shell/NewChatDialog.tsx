@@ -5004,9 +5004,17 @@ export function NewChatLandingScreen() {
         !smartRoutingHarnessSelected &&
         SMART_ROUTING_ARMS.some((harness) => harness === nativeAgent?.harness);
 
-      // Normalized create-time model / effort — shared by the optimistic seed
-      // and the POST body so the temp composer shows exactly what the create
-      // request pins. Never pinned alongside routing.
+      // The catalog's default is displayed as a concrete model in the picker.
+      // Native CLIs may have a different or stale local default, so pin the
+      // same provider-facing value when the user leaves that displayed default
+      // selected. Never pin alongside routing.
+      const defaultModelRow = pickerModelOptions.find((option) => option.isDefault);
+      const resolvedDefaultModel = defaultModelRow?.model ?? defaultModelRow?.id ?? null;
+      const nativeCatalogDefault =
+        (nativeAgent?.harness === "claude-native" || nativeAgent?.harness === "codex-native") &&
+        resolvedDefaultModel
+          ? resolvedDefaultModel
+          : null;
       const normalizedModelOverride =
         !smartRoutingHarnessSelected &&
         !routingOwnsModel &&
@@ -5017,8 +5025,8 @@ export function NewChatLandingScreen() {
         (agentSupportsModelPicker ||
           nativeAgent?.harness === "codex-native" ||
           nativeAgent?.harness === "devin-native") &&
-        pickedModel
-          ? pickedModel
+        (pickedModel || nativeCatalogDefault)
+          ? pickedModel || nativeCatalogDefault
           : null;
       const normalizedReasoningEffort =
         !smartRoutingHarnessSelected &&
@@ -5030,11 +5038,6 @@ export function NewChatLandingScreen() {
         pickedEffort
           ? pickedEffort
           : null;
-      // Resolved default (shown when nothing is pinned): the catalog's default
-      // row's provider-facing model id, else its row id.
-      const defaultModelRow = pickerModelOptions.find((option) => option.isDefault);
-      const resolvedDefaultModel = defaultModelRow?.model ?? defaultModelRow?.id ?? null;
-
       // Prepend each "@"-tagged path as an attachment marker on its own line —
       // the same wording the native executors emit and that title-seeding
       // strips. The runner, rooted at this workspace, reads the on-disk file

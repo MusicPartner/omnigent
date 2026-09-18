@@ -3842,7 +3842,7 @@ describe("NewChatLandingScreen", () => {
     closeMenu();
     const { body } = await submitAndReadBody();
     expect(body.agent_id).toBe("a2");
-    expect(body.model_override).toBeUndefined();
+    expect(body.model_override).toBe("databricks-gpt-5-5");
   });
 
   it("names Pi model and thinking-level details in the harness trigger", () => {
@@ -4509,6 +4509,7 @@ describe("NewChatLandingScreen", () => {
     const body = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
     // The pick rides the create exactly like Claude's landing row — the field
     // the codex-native launch path reads at terminal launch.
+    expect(body.model_override).toBe("databricks-gpt-5-5");
     expect(body.reasoning_effort).toBe("high");
   });
 

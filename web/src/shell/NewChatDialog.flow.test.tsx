@@ -1564,8 +1564,19 @@ describe("NewChatLandingScreen create flow", () => {
     expect(screen.queryByTestId("new-chat-landing-agy-skip-banner")).toBeNull();
   });
 
-  it("omits model + effort on create when the picker is untouched for claude-native", async () => {
+  it("pins the displayed catalog default for claude-native", async () => {
     setAgents([agent({ id: "ag_native", name: "claude-native-ui", display_name: "Claude Code" })]);
+    vi.mocked(useHostModelOptions).mockReturnValue({
+      data: [
+        {
+          id: "haiku",
+          model: "claude-haiku-4-5",
+          displayName: "Haiku 4.5",
+          isDefault: true,
+        },
+      ],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useHostModelOptions>);
     vi.mocked(authenticatedFetch).mockResolvedValueOnce({
       ok: true,
       json: async () => ({ id: "conv_native" }),
@@ -1573,16 +1584,15 @@ describe("NewChatLandingScreen create flow", () => {
 
     renderLanding();
     await waitForWorkspaceSeed();
-    // No model/effort default is forced: leaving the picker untouched omits
-    // both from the create (undefined is dropped by JSON.stringify), so Claude
-    // Code launches on its own configured model rather than a UI-forced one.
+    // The named catalog default is what the picker shows, so pin it at create
+    // time instead of allowing Claude's local config to silently disagree.
     typeMessage("go");
     fireEvent.click(screen.getByTestId("new-chat-landing-submit"));
 
     await waitFor(() => expect(authenticatedFetch).toHaveBeenCalledTimes(1));
     const [, init] = vi.mocked(authenticatedFetch).mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);
-    expect(body.model_override).toBeUndefined();
+    expect(body.model_override).toBe("claude-haiku-4-5");
     expect(body.reasoning_effort).toBeUndefined();
   });
 
