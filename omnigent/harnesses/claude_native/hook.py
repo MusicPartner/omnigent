@@ -1007,7 +1007,10 @@ def _main_evaluate_policy(argv: list[str]) -> int:
         print("omnigent evaluate-policy hook: expected JSON object", file=sys.stderr)
         return 0
     bridge_dir = Path(args.bridge_dir)
+    relay = read_relay_policy_config(bridge_dir)
     session_id = read_active_session_id(bridge_dir)
+    if relay and relay[2]:
+        session_id = relay[2]
     if not session_id:
         return 0
 
@@ -1031,7 +1034,6 @@ def _main_evaluate_policy(argv: list[str]) -> int:
         return 0
 
     # Prefer the relay; fall back to direct server call when relay not yet up.
-    relay = read_relay_policy_config(bridge_dir)
     if relay:
         relay_url, relay_token, _sid = relay
         url = relay_policy_evaluate_url(relay_url)

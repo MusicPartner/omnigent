@@ -210,10 +210,15 @@ def _rig_python(work: Path, gate_started: Path) -> str:
         "from omnigent.harnesses.claude_native import bridge\n"
         f"gate_started = Path({str(gate_started)!r})\n"
         "wait_for_prompt = bridge._wait_for_claude_prompt_ready\n"
-        "def observe_wait(socket_path, tmux_target, *, timeout_s):\n"
+        "def observe_wait(socket_path, tmux_target, *, timeout_s, accept_workspace_trust=False):\n"
         "    if not gate_started.exists():\n"
         "        gate_started.write_text(str(time.monotonic()))\n"
-        "    wait_for_prompt(socket_path, tmux_target, timeout_s=timeout_s)\n"
+        "    wait_for_prompt(\n"
+        "        socket_path,\n"
+        "        tmux_target,\n"
+        "        timeout_s=timeout_s,\n"
+        "        accept_workspace_trust=accept_workspace_trust,\n"
+        "    )\n"
         "bridge._wait_for_claude_prompt_ready = observe_wait\n"
     )
     (site_packages / "omnigent_rig.pth").write_text(

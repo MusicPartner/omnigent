@@ -83,7 +83,8 @@ _log = logging.getLogger(__name__)
 
 _EFFORT_GEAR = '[data-testid="composer-config-effort"]'
 _CONFIG_GEAR = '[data-testid="composer-config-gear"]'
-_CONFIG_MODAL = '[data-testid="composer-config-modal"]'
+# The composer configuration surface is the shared picker menu.
+_CONFIG_MODAL = '[data-testid="composer-agent-menu"]'
 
 
 def _read_config_effort(session_id: str) -> str | None:

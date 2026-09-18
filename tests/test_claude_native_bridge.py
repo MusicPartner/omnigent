@@ -6,7 +6,6 @@ import asyncio
 import json
 import os
 import queue
-import select
 import shlex
 import socket
 import subprocess
@@ -70,6 +69,10 @@ from omnigent.inner.datamodel import (
 )
 from omnigent.native import native_cost_popup
 from omnigent.util.reasoning_effort import CLAUDE_EFFORTS
+
+_TEST_TMUX_SOCKET_PATH = (
+    Path("C:/tmp/example/tmux.sock") if os.name == "nt" else Path("/tmp/example/tmux.sock")
+)
 
 
 @pytest.fixture(autouse=True)
@@ -334,6 +337,9 @@ def test_prepare_bridge_dir_restricts_filesystem_permissions(
     design doc §12 the dir must be 0o700 and bearer files 0o600. A
     regression here would be invisible without an explicit stat assertion.
     """
+    if os.name == "nt":
+        pytest.skip("POSIX mode bits are not the Windows ACL contract")
+
     import stat
 
     monkeypatch.setattr("omnigent.harnesses.claude_native.bridge._TRUSTED_PARENT", tmp_path)
@@ -370,6 +376,9 @@ def test_prepare_bridge_dir_refuses_symlinked_ancestor(
     attacker controls. A regression that removes the validation — or
     swaps it back to plain mkdir — would let this attack succeed.
     """
+    if os.name == "nt":
+        pytest.skip("requires POSIX symlink privileges")
+
     # Layout: tmp_path is the trusted parent. Place a "claude-native"
     # symlink that points at a separate attacker-controlled directory
     # before any prepare_bridge_dir() call runs.
@@ -1547,21 +1556,21 @@ def test_read_transcript_items_from_offset_skips_existing_prefix(
         + "\n"
         for index in range(100)
     )
-    transcript_path.write_text(
-        prefix
-        + json.dumps(
-            {
-                "type": "assistant",
-                "uuid": "assistant-new",
-                "message": {
-                    "role": "assistant",
-                    "content": [{"type": "text", "text": "new output"}],
-                },
-            }
+    with transcript_path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(
+            prefix
+            + json.dumps(
+                {
+                    "type": "assistant",
+                    "uuid": "assistant-new",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "new output"}],
+                    },
+                }
+            )
+            + "\n"
         )
-        + "\n",
-        encoding="utf-8",
-    )
     prefix_offset = len(prefix.encode("utf-8"))
     _fail_if_path_reads_before_offset(monkeypatch, transcript_path, prefix_offset)
 
@@ -1870,20 +1879,20 @@ def test_read_transcript_line_cursor_migration_preserves_legacy_source_ids(
         )
         + "\n"
     )
-    transcript_path.write_text(
-        first_record
-        + json.dumps(
-            {
-                "type": "assistant",
-                "message": {
-                    "role": "assistant",
-                    "content": [{"type": "text", "text": "new output"}],
-                },
-            }
+    with transcript_path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(
+            first_record
+            + json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "new output"}],
+                    },
+                }
+            )
+            + "\n"
         )
-        + "\n",
-        encoding="utf-8",
-    )
 
     migrated = claude_native_bridge.read_transcript_items_since_with_position(
         transcript_path,
@@ -2168,10 +2177,8 @@ def test_read_hook_events_from_offset_skips_existing_prefix(
     prefix = "".join(
         json.dumps({"payload": {"hook_event_name": "SessionStart"}}) + "\n" for _index in range(50)
     )
-    hooks_path.write_text(
-        prefix + json.dumps({"payload": {"hook_event_name": "Stop"}}) + "\n",
-        encoding="utf-8",
-    )
+    with hooks_path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(prefix + json.dumps({"payload": {"hook_event_name": "Stop"}}) + "\n")
     prefix_offset = len(prefix.encode("utf-8"))
     _fail_if_path_reads_before_offset(monkeypatch, hooks_path, prefix_offset)
 
@@ -3145,8 +3152,9 @@ def test_augment_claude_args_materializes_api_key_helper(
     assert all("sk-sentinel-do-not-use" not in arg for arg in args)
     assert settings["apiKeyHelper"] == api_key_helper
     assert settings_path.parent == bridge_dir
-    assert bridge_dir.stat().st_mode & 0o777 == 0o700
-    assert settings_path.stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert bridge_dir.stat().st_mode & 0o777 == 0o700
+        assert settings_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_augment_claude_args_threads_model_overrides_into_settings(tmp_path: Path) -> None:
@@ -3486,10 +3494,15 @@ def test_augment_claude_args_registers_permission_command_hook(
     assert "--conversation-url" not in session_start_command
     assert "conv_abc" not in session_start_command
     assert "companyAnnouncements" not in settings
-    # statusLine is now intentionally injected (it's the only place
-    # Claude Code surfaces ``context_window`` on stdin); ensure it
-    # captures to the raw file our forwarder normalizes.
-    assert "context_raw.json" in settings["statusLine"]["command"]
+    # statusLine is intentionally injected (it's the only place Claude Code
+    # surfaces ``context_window`` on stdin). POSIX captures a raw file for the
+    # forwarder; Windows invokes the equivalent stdlib wrapper directly.
+    status_command = settings["statusLine"]["command"]
+    assert (
+        "context_raw.json" in status_command
+        if os.name != "nt"
+        else "omnigent.harnesses.claude_native.status" in status_command
+    )
 
 
 def test_augment_claude_args_registers_user_prompt_submit_policy_hook(
@@ -3567,7 +3580,12 @@ def test_augment_claude_args_keeps_permission_hook_without_launch_session_id(
     session_start_command = settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
     assert "--conversation-url" not in session_start_command
     assert "companyAnnouncements" not in settings
-    assert "context_raw.json" in settings["statusLine"]["command"]
+    status_command = settings["statusLine"]["command"]
+    assert (
+        "context_raw.json" in status_command
+        if os.name != "nt"
+        else "omnigent.harnesses.claude_native.status" in status_command
+    )
 
 
 def test_mcp_server_initialize_omits_blocked_channel_capability(
@@ -3648,17 +3666,18 @@ def test_write_tmux_target_persists_socket_and_target(tmp_path: Path) -> None:
     """
     bridge_dir = tmp_path / "bridge"
     before = time.time()
+    socket_path = _TEST_TMUX_SOCKET_PATH
 
     write_tmux_target(
         bridge_dir,
-        socket_path=Path("/tmp/example/tmux.sock"),
+        socket_path=socket_path,
         tmux_target="claude:0.0",
         pid=12345,
     )
     after = time.time()
 
     payload = json.loads((bridge_dir / "tmux.json").read_text(encoding="utf-8"))
-    assert payload["socket_path"] == "/tmp/example/tmux.sock"
+    assert payload["socket_path"] == str(socket_path)
     assert payload["tmux_target"] == "claude:0.0"
     assert payload["pid"] == 12345
     assert before <= payload["updated_at"] <= after
@@ -3706,9 +3725,10 @@ def test_inject_user_message_pastes_content_then_submits(
     """
     monkeypatch.setattr("omnigent.harnesses.claude_native.bridge._TRUSTED_PARENT", tmp_path)
     bridge_dir = tmp_path / "bridge"
+    socket_path = _TEST_TMUX_SOCKET_PATH
     write_tmux_target(
         bridge_dir,
-        socket_path=Path("/tmp/example/tmux.sock"),
+        socket_path=socket_path,
         tmux_target="claude:0.0",
     )
     (bridge_dir / claude_native_bridge._PROMPT_READY_FILE).touch()
@@ -3769,7 +3789,7 @@ def test_inject_user_message_pastes_content_then_submits(
     assert load[:6] == [
         "tmux",
         "-S",
-        "/tmp/example/tmux.sock",
+        str(socket_path),
         "load-buffer",
         "-b",
         "omnigent-paste",
@@ -3779,7 +3799,7 @@ def test_inject_user_message_pastes_content_then_submits(
     assert paste == [
         "tmux",
         "-S",
-        "/tmp/example/tmux.sock",
+        str(socket_path),
         "paste-buffer",
         "-p",
         "-d",
@@ -3791,7 +3811,7 @@ def test_inject_user_message_pastes_content_then_submits(
     assert submit == [
         "tmux",
         "-S",
-        "/tmp/example/tmux.sock",
+        str(socket_path),
         "send-keys",
         "-t",
         "claude:0.0",
@@ -3857,9 +3877,10 @@ def test_inject_user_message_escapes_unsupported_slash_command_payload(
     zero-width escape so Claude Code treats them as user text.
     """
     bridge_dir = tmp_path / "bridge"
+    socket_path = _TEST_TMUX_SOCKET_PATH
     write_tmux_target(
         bridge_dir,
-        socket_path=Path("/tmp/example/tmux.sock"),
+        socket_path=socket_path,
         tmux_target="claude:0.0",
     )
 
@@ -4770,9 +4791,10 @@ def test_inject_interrupt_sends_escape_keystroke(
     button silently degrades back to a no-op.
     """
     bridge_dir = tmp_path / "bridge"
+    socket_path = _TEST_TMUX_SOCKET_PATH
     write_tmux_target(
         bridge_dir,
-        socket_path=Path("/tmp/example/tmux.sock"),
+        socket_path=socket_path,
         tmux_target="claude:0.0",
     )
 
@@ -4806,7 +4828,7 @@ def test_inject_interrupt_sends_escape_keystroke(
     assert captured[0] == [
         "tmux",
         "-S",
-        "/tmp/example/tmux.sock",
+        str(socket_path),
         "send-keys",
         "-t",
         "claude:0.0",
@@ -4885,9 +4907,10 @@ def test_kill_session_issues_kill_session_on_target(
     is the only thing that ends the ``claude`` process.
     """
     bridge_dir = tmp_path / "bridge"
+    socket_path = _TEST_TMUX_SOCKET_PATH
     write_tmux_target(
         bridge_dir,
-        socket_path=Path("/tmp/example/tmux.sock"),
+        socket_path=socket_path,
         tmux_target="main",
     )
 
@@ -4922,7 +4945,7 @@ def test_kill_session_issues_kill_session_on_target(
     assert captured[0] == [
         "tmux",
         "-S",
-        "/tmp/example/tmux.sock",
+        str(socket_path),
         "kill-session",
         "-t",
         "main",
@@ -5016,9 +5039,10 @@ def test_inject_slash_command_clears_draft_pastes_literal_then_enter(
     a never-identifiable draft still gets the single blind submit.
     """
     bridge_dir = tmp_path / "bridge"
+    socket_path = _TEST_TMUX_SOCKET_PATH
     write_tmux_target(
         bridge_dir,
-        socket_path=Path("/tmp/example/tmux.sock"),
+        socket_path=socket_path,
         tmux_target="claude:0.0",
     )
 
@@ -5039,6 +5063,11 @@ def test_inject_slash_command_clears_draft_pastes_literal_then_enter(
 
     monkeypatch.setattr("subprocess.run", _fake_run)
     monkeypatch.setattr(claude_native_bridge, "time", _VirtualClock())
+    monkeypatch.setattr(
+        claude_native_bridge,
+        "_wait_for_claude_prompt_ready",
+        lambda *_args, **_kwargs: None,
+    )
     claude_native_bridge.inject_slash_command(bridge_dir, command="/effort high")
 
     # Three keystroke calls in order: C-u (clear), literal paste, Enter.
@@ -5052,7 +5081,7 @@ def test_inject_slash_command_clears_draft_pastes_literal_then_enter(
     assert clear == [
         "tmux",
         "-S",
-        "/tmp/example/tmux.sock",
+        str(socket_path),
         "send-keys",
         "-t",
         "claude:0.0",
@@ -5061,7 +5090,7 @@ def test_inject_slash_command_clears_draft_pastes_literal_then_enter(
     assert paste == [
         "tmux",
         "-S",
-        "/tmp/example/tmux.sock",
+        str(socket_path),
         "send-keys",
         "-l",
         "-t",
@@ -5071,7 +5100,7 @@ def test_inject_slash_command_clears_draft_pastes_literal_then_enter(
     assert submit == [
         "tmux",
         "-S",
-        "/tmp/example/tmux.sock",
+        str(socket_path),
         "send-keys",
         "-t",
         "claude:0.0",
@@ -6536,17 +6565,26 @@ def _read_json_line(handle: TextIO, *, timeout_s: float) -> dict[str, object]:
     :raises TimeoutError: If no line is available before the
         timeout.
     """
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        ready, _write, _error = select.select([handle], [], [], 0.05)
-        if not ready:
-            continue
-        line = handle.readline()
-        if line:
-            payload = json.loads(line)
-            assert isinstance(payload, dict)
-            return payload
-    raise TimeoutError("subprocess did not emit a JSON line")
+    lines: queue.Queue[str | BaseException] = queue.Queue(maxsize=1)
+
+    def _read() -> None:
+        try:
+            lines.put(handle.readline())
+        except BaseException as exc:  # pragma: no cover - defensive test helper
+            lines.put(exc)
+
+    threading.Thread(target=_read, daemon=True).start()
+    try:
+        line_or_error = lines.get(timeout=timeout_s)
+    except queue.Empty as exc:
+        raise TimeoutError("subprocess did not emit a JSON line") from exc
+    if isinstance(line_or_error, BaseException):
+        raise line_or_error
+    if not line_or_error:
+        raise TimeoutError("subprocess closed stdout before emitting a JSON line")
+    payload = json.loads(line_or_error)
+    assert isinstance(payload, dict)
+    return payload
 
 
 def test_usage_from_transcript_entry_sums_context_tokens() -> None:
@@ -7476,9 +7514,9 @@ def _redirect_home(monkeypatch: pytest.MonkeyPatch, home: Path) -> Path:
     """
     Point ``Path.home()`` (and thus ``~/.claude.json``) at a temp dir.
 
-    ``Path.home()`` resolves ``~`` via ``$HOME`` on POSIX, so setting the
-    env var redirects the helper's reads/writes to *home* without
-    patching any production internals.
+    ``Path.home()`` resolves ``~`` via ``$HOME`` on POSIX and
+    ``%USERPROFILE%`` on Windows, so set both names before checking the
+    resolved path.
 
     :param monkeypatch: Pytest monkeypatch fixture.
     :param home: Temp directory to use as the fake home, e.g.
@@ -7487,6 +7525,7 @@ def _redirect_home(monkeypatch: pytest.MonkeyPatch, home: Path) -> Path:
     """
     home.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     assert Path.home() == home  # guards against env-resolution surprises
     return home / ".claude.json"
 
@@ -8166,7 +8205,7 @@ def test_read_message_deltas_skips_partial_trailing_line(tmp_path: Path) -> None
     bridge_dir.mkdir()
     complete = json.dumps({"message_id": "m1", "index": 0, "final": False, "delta": "done"}) + "\n"
     partial = json.dumps({"message_id": "m1", "index": 1, "final": True, "delta": "half"})  # no \n
-    (bridge_dir / "message_deltas.jsonl").write_text(complete + partial, encoding="utf-8")
+    (bridge_dir / "message_deltas.jsonl").write_bytes((complete + partial).encode("utf-8"))
 
     result = read_message_deltas_from_offset(bridge_dir, 0)
     # Only the newline-terminated record is returned...
@@ -9704,9 +9743,10 @@ def test_a_swallowed_slash_submit_enter_is_retried_while_the_draft_persists(
     the box, so none can reach the cleared composer or a dialog.
     """
     bridge_dir = _picker_bridge_dir(tmp_path)
+    monkeypatch.setattr("omnigent.harnesses.claude_native.bridge._SUBMIT_RETRY_INTERVAL_S", 0.08)
     sends = _fake_tmux(
         monkeypatch,
-        [_IDLE_PANE] + [_composer_pane("/effort high")] * 8 + [_IDLE_PANE],
+        [_IDLE_PANE] + [_composer_pane("/effort high")] * 4 + [_IDLE_PANE],
     )
 
     claude_native_bridge.inject_slash_command(bridge_dir, command="/effort high")
@@ -10226,15 +10266,18 @@ def test_claude_pane_ready_is_false_without_an_advertised_pane(tmp_path: Path) -
 def test_message_display_shell_command_round_trips(tmp_path: Path) -> None:
     """The generated MessageDisplay shell appender feeds the deltas reader.
 
-    Runs the exact command the settings install through /bin/sh with a
+    Runs the exact command the settings install through the host shell with a
     pretty-printed raw payload (proving the one-line flattening), then
     parses it back with the same reader the forwarder uses — the full
     chunk pipeline minus Claude itself.
     """
+    from omnigent._platform import default_shell_argv
+
     args = augment_claude_args((), bridge_dir=tmp_path)
     settings = _load_invocation_settings(args)
     command = settings["hooks"]["MessageDisplay"][0]["hooks"][0]["command"]
-    assert "python" not in command, f"per-chunk path must not spawn python: {command}"
+    if os.name != "nt":
+        assert "python" not in command, f"per-chunk path must not spawn python: {command}"
 
     payload = {
         "hook_event_name": "MessageDisplay",
@@ -10246,7 +10289,7 @@ def test_message_display_shell_command_round_trips(tmp_path: Path) -> None:
     for i in range(2):
         payload["index"] = i
         result = subprocess.run(
-            ["/bin/sh", "-c", command],
+            default_shell_argv(command),
             input=json.dumps(payload, indent=2),
             capture_output=True,
             text=True,
@@ -10269,17 +10312,20 @@ def test_statusline_shell_command_captures_and_chains(
     forwarder-side sync, and the chained command must receive the exact
     stdin Claude sent.
     """
+    from omnigent._platform import default_shell_argv
     from omnigent.harnesses.claude_native.status import CONTEXT_RAW_FILE, sync_raw_status_context
 
     chain_out = tmp_path / "chain_out.json"
+    chain_command = f'more > "{chain_out}"' if os.name == "nt" else f"cat > {chain_out}"
     monkeypatch.setattr(
         "omnigent.harnesses.claude_native.bridge.read_user_status_line_command",
-        lambda: f"cat > {chain_out}",
+        lambda: chain_command,
     )
     args = augment_claude_args((), bridge_dir=tmp_path)
     settings = _load_invocation_settings(args)
     command = settings["statusLine"]["command"]
-    assert "python" not in command, f"statusLine path must not spawn python: {command}"
+    if os.name != "nt":
+        assert "python" not in command, f"statusLine path must not spawn python: {command}"
 
     payload = json.dumps(
         {
@@ -10288,13 +10334,20 @@ def test_statusline_shell_command_captures_and_chains(
         }
     )
     result = subprocess.run(
-        ["/bin/sh", "-c", command], input=payload, capture_output=True, text=True
+        default_shell_argv(command), input=payload, capture_output=True, text=True
     )
     assert result.returncode == 0, result.stderr
-    assert (tmp_path / CONTEXT_RAW_FILE).read_text("utf-8") == payload
-    assert chain_out.read_text("utf-8") == payload
+    chained = chain_out.read_text("utf-8")
+    assert (chained if os.name != "nt" else chained.rstrip("\r\n")) == payload
 
-    sync_raw_status_context(tmp_path, None)
+    if os.name == "nt":
+        assert json.loads((tmp_path / "context.json").read_text("utf-8")) == {
+            "context_window_size": 500_000,
+            "model": "claude-opus-4-8",
+        }
+    else:
+        assert (tmp_path / CONTEXT_RAW_FILE).read_text("utf-8") == payload
+        sync_raw_status_context(tmp_path, None)
     written = json.loads((tmp_path / "context.json").read_text("utf-8"))
     assert written == {"context_window_size": 500_000, "model": "claude-opus-4-8"}
 
@@ -10463,11 +10516,13 @@ async def test_curl_evaluate_policy_command_round_trips(
 ) -> None:
     """The generated curl hook command works against a live relay.
 
-    Runs the exact PreToolUse command the settings install through
-    /bin/sh: a DENY upstream must surface as deny hook output, and a
+    Runs the exact PreToolUse command the settings install through the host
+    shell: a DENY upstream must surface as deny hook output, and a
     bridge dir with no relay must replay stdin into the Python hook
     (which owns the direct-server path and fail-closed shaping).
     """
+    from omnigent._platform import default_shell_argv
+
     client = _ScriptedPolicyClient({"result": "POLICY_ACTION_DENY", "reason": "curl says no"})
     relay, bridge_dir = _hook_relay(tmp_path, monkeypatch, client)
     try:
@@ -10477,16 +10532,18 @@ async def test_curl_evaluate_policy_command_round_trips(
             entry for entry in settings["hooks"]["PreToolUse"] if "matcher" not in entry
         ]
         command = pre_entries[0]["hooks"][0]["command"]
-        assert "curl" in command and "evaluate-policy" in command
-        # The Python hook must appear only as the relay-less fallback,
-        # after the curl fast path.
-        assert command.index("curl") < command.index("claude_native.hook")
+        assert "evaluate-policy" in command
+        if os.name != "nt":
+            assert "curl" in command
+            # The Python hook must appear only as the relay-less fallback,
+            # after the curl fast path.
+            assert command.index("curl") < command.index("claude_native.hook")
 
         # Off-loop: the relay proxies through this test's event loop, so a
         # blocking subprocess.run here would deadlock the curl round trip.
         result = await asyncio.to_thread(
             subprocess.run,
-            ["/bin/sh", "-c", command],
+            default_shell_argv(command),
             input=json.dumps(_PRE_TOOL_USE_PAYLOAD),
             capture_output=True,
             text=True,
@@ -10511,7 +10568,7 @@ async def test_curl_evaluate_policy_command_round_trips(
     settings = _load_invocation_settings(args)
     pre_entries = [entry for entry in settings["hooks"]["PreToolUse"] if "matcher" not in entry]
     result = subprocess.run(
-        ["/bin/sh", "-c", pre_entries[0]["hooks"][0]["command"]],
+        default_shell_argv(pre_entries[0]["hooks"][0]["command"]),
         input=json.dumps(_PRE_TOOL_USE_PAYLOAD),
         capture_output=True,
         text=True,

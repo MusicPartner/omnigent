@@ -11,6 +11,7 @@ stdin so its terminal output still renders.
 from __future__ import annotations
 
 import argparse
+import base64
 import contextlib
 import json
 import os
@@ -128,8 +129,15 @@ def main(argv: list[str] | None = None) -> int:
         payload = parsed
     if payload is not None:
         _write_context_atomic(Path(args.bridge_dir), payload)
-    if args.chain:
-        _chain(args.chain, raw)
+    chain = args.chain
+    if args.chain_b64:
+        try:
+            chain = base64.b64decode(args.chain_b64, validate=True).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            print("omnigent claude status: invalid encoded chain", file=sys.stderr)
+            chain = None
+    if chain:
+        _chain(chain, raw)
     return 0
 
 
@@ -146,6 +154,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     # set we exec it with the same stdin so claude-hud / their custom
     # status bar still renders for omnigent-launched sessions.
     parser.add_argument("--chain", default=None)
+    parser.add_argument("--chain-b64", default=None)
     return parser.parse_args(argv)
 
 

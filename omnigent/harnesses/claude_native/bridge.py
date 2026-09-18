@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import contextlib
 import hashlib
 import ipaddress
@@ -40,6 +41,7 @@ import secrets
 import shlex
 import socket
 import stat
+import subprocess
 import sys
 import tempfile
 import threading
@@ -56,7 +58,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib import request
 
-from omnigent._platform import is_wsl, stable_user_id
+from omnigent._platform import IS_WINDOWS, is_wsl, stable_user_id
 from omnigent.harnesses.claude_native.message_display_hook import MESSAGE_DELTAS_FILE
 from omnigent.harnesses.claude_native.status import CONTEXT_RAW_FILE
 from omnigent.harnesses.kiro_native.bridge import bridge_root as kiro_bridge_root
@@ -1057,15 +1059,21 @@ def _start_bridge_http_server(
     though a sandbox allowlisting only the pool cannot reach that fallback.
     """
     bind_host, advertised_host = _bridge_bind_hosts()
+
+    class _BridgeHTTPServer(ThreadingHTTPServer):
+        """HTTP server that never aliases an already-running relay port."""
+
+        allow_reuse_address = False
+
     httpd: ThreadingHTTPServer | None = None
     for port in _bridge_port_pool():
         try:
-            httpd = ThreadingHTTPServer((bind_host, port), handler_cls)
+            httpd = _BridgeHTTPServer((bind_host, port), handler_cls)
         except OSError:
             continue
         break
     if httpd is None:
-        httpd = ThreadingHTTPServer((bind_host, 0), handler_cls)
+        httpd = _BridgeHTTPServer((bind_host, 0), handler_cls)
     _, port = _http_server_host_port(httpd)
     return httpd, f"http://{advertised_host}:{port}"
 
@@ -1088,12 +1096,18 @@ class ClaudeNativeToolRelay:
     :param bridge_dir: Bridge directory containing
         ``tool_relay.json``, e.g. ``/tmp/omnigent/claude-native/x``.
     :param httpd: Started HTTP server for tool calls.
-    :param advertised_url: Base URL written to ``tool_relay.json``; it
-        identifies this relay's advertisement on close.
+    :param advertised_url: Base URL written to ``tool_relay.json``.
+    :param relay_token: Bearer token written to ``tool_relay.json``; together
+        with *advertised_url* it identifies this relay's advertisement on close.
     """
 
     def __init__(
-        self, *, bridge_dir: Path, httpd: ThreadingHTTPServer, advertised_url: str
+        self,
+        *,
+        bridge_dir: Path,
+        httpd: ThreadingHTTPServer,
+        advertised_url: str,
+        relay_token: str,
     ) -> None:
         """
         Initialize the relay handle.
@@ -1102,18 +1116,20 @@ class ClaudeNativeToolRelay:
             advertisement, e.g. ``Path("/tmp/omnigent/...")``.
         :param httpd: Started HTTP server for tool calls.
         :param advertised_url: Base URL advertised in ``tool_relay.json``.
+        :param relay_token: Bearer token advertised by this relay.
         :returns: None.
         """
         self._bridge_dir = bridge_dir
         self._httpd = httpd
         self._advertised_url = advertised_url
+        self._relay_token = relay_token
 
     def close(self) -> None:
         """
         Stop the relay's HTTP server and remove its advertisement file.
 
         Only unlinks ``tool_relay.json`` when it still advertises *this*
-        relay (its ``url`` matches this server's bound address). Sessions
+        relay (its ``url`` and ``token`` match this server). Sessions
         that fork/clear/resume keep the same ``bridge_id`` — hence the same
         bridge dir and relay file — so a newer session's relay may have
         overwritten the file with its own address. Unlinking unconditionally
@@ -1124,10 +1140,13 @@ class ClaudeNativeToolRelay:
         :returns: None.
         """
         relay_file = self._bridge_dir / _TOOL_RELAY_FILE
-        # A newer relay that overwrote the file advertises a different url
-        # (this relay's socket is still bound, so its port is unique), so the
-        # file is left for that relay to own.
-        if _read_json_file(relay_file).get("url") == self._advertised_url:
+        # URL equality alone is insufficient when an OS reuses a port after
+        # a relay restart; the per-relay token is the ownership identity.
+        advertised = _read_json_file(relay_file)
+        if (
+            advertised.get("url") == self._advertised_url
+            and advertised.get("token") == self._relay_token
+        ):
             with contextlib.suppress(FileNotFoundError):
                 relay_file.unlink()
         self._httpd.shutdown()
@@ -1881,6 +1900,18 @@ def build_mcp_config(bridge_dir: Path, *, python_executable: str | None = None) 
     }
 
 
+def _shell_join(parts: list[str]) -> str:
+    """Quote an argv vector for the shell Claude uses to run hooks."""
+    if IS_WINDOWS:
+        return subprocess.list2cmdline(parts)
+    return shlex.join(parts)
+
+
+def _shell_quote(value: str) -> str:
+    """Quote one shell value for a generated hook command."""
+    return _shell_join([value])
+
+
 def build_hook_settings(
     bridge_dir: Path,
     *,
@@ -1961,25 +1992,37 @@ def build_hook_settings(
     ]
     # Claude owns command-hook stderr, so it does not reach the runner logs.
     # Persist it for the forwarder to relay with the Omnigent session id.
-    observer_stderr = shlex.quote(str(bridge_dir / OBSERVER_HOOK_STDERR_FILE))
-    command = f"{shlex.join(command_parts)} 2>> {observer_stderr}"
+    observer_stderr = _shell_quote(str(bridge_dir / OBSERVER_HOOK_STDERR_FILE))
+    command = f"{_shell_join(command_parts)} 2>> {observer_stderr}"
     hook = {"type": "command", "command": command}
     session_start_hook = {
         "type": "command",
         "command": command,
     }
     # ``MessageDisplay`` fires once per streamed assistant-text chunk and
-    # Claude blocks on the hook, so the hot path must not even pay an
-    # interpreter spawn: a /bin/sh appender writes Claude's raw payload
-    # (flattened to one line — JSON strings never carry literal newlines)
-    # to ``message_deltas.jsonl``. The reader parses records by key and
-    # skips non-delta lines, so raw envelopes need no Python-side shaping.
-    deltas_quoted = shlex.quote(str(bridge_dir / MESSAGE_DELTAS_FILE))
+    # Claude blocks on the hook. POSIX uses a shell appender to avoid an
+    # interpreter spawn; native Windows uses the stdlib hook directly because
+    # its command shell has no portable equivalent of the POSIX pipeline.
+    deltas_quoted = _shell_quote(str(bridge_dir / MESSAGE_DELTAS_FILE))
     message_display_hook = {
         "type": "command",
         "command": (
-            "p=$(cat | tr -d '\\r\\n'); "
-            f'[ -n "$p" ] && printf \'%s\\n\' "$p" >> {deltas_quoted}; :'
+            _shell_join(
+                [
+                    python,
+                    "-I",
+                    "-m",
+                    "omnigent.harnesses.claude_native.message_display_hook",
+                    "--bridge-dir",
+                    str(bridge_dir),
+                ]
+            )
+            if IS_WINDOWS
+            else (
+                "p=$(cat | tr -d '\\r\\n'); "
+                f'[ -n "$p" ] && printf \'%s\\n\' "$p" >> '
+                f"{deltas_quoted}; :"
+            )
         ),
     }
     hooks: dict[str, list[_JsonObject]] = {
@@ -2063,7 +2106,7 @@ def build_hook_settings(
         ]
         permission_hook: _JsonObject = {
             "type": "command",
-            "command": shlex.join(permission_command_parts),
+            "command": _shell_join(permission_command_parts),
             # Wait up to a day for the verdict. Claude Code's default
             # command-hook timeout (~60s) would otherwise kill the hook
             # subprocess long before the user answers, putting the
@@ -2086,8 +2129,8 @@ def build_hook_settings(
         # replayed into the Python hook, which owns the direct-server
         # path and the phase-aware fail-closed contract — exactly the
         # pre-curl behavior.
-        relay_env_quoted = shlex.quote(str(bridge_dir / _TOOL_RELAY_ENV_FILE))
-        evaluate_policy_python = shlex.join(
+        relay_env_quoted = _shell_quote(str(bridge_dir / _TOOL_RELAY_ENV_FILE))
+        evaluate_policy_python = _shell_join(
             [
                 python,
                 "-I",
@@ -2099,14 +2142,18 @@ def build_hook_settings(
             ]
         )
         evaluate_policy_command = (
-            "p=$(cat); "
-            f"if [ -r {relay_env_quoted} ]; then . {relay_env_quoted}; "
-            "out=$(printf '%s' \"$p\" | curl -sf --max-time 86400 "
-            '-H "Authorization: Bearer $OMNIGENT_RELAY_TOKEN" '
-            "-H 'Content-Type: application/json' --data-binary @- "
-            '"$OMNIGENT_RELAY_URL/hook/claude/evaluate-policy" 2>/dev/null) '
-            "&& { printf '%s' \"$out\"; exit 0; }; fi; "
-            f"printf '%s' \"$p\" | {evaluate_policy_python}"
+            evaluate_policy_python
+            if IS_WINDOWS
+            else (
+                "p=$(cat); "
+                f"if [ -r {relay_env_quoted} ]; then . {relay_env_quoted}; "
+                "out=$(printf '%s' \"$p\" | curl -sf --max-time 86400 "
+                '-H "Authorization: Bearer $OMNIGENT_RELAY_TOKEN" '
+                "-H 'Content-Type: application/json' --data-binary @- "
+                '"$OMNIGENT_RELAY_URL/hook/claude/evaluate-policy" 2>/dev/null) '
+                "&& { printf '%s' \"$out\"; exit 0; }; fi; "
+                f"printf '%s' \"$p\" | {evaluate_policy_python}"
+            )
         )
         evaluate_policy_hook: _JsonObject = {
             "type": "command",
@@ -2152,7 +2199,7 @@ def build_hook_settings(
 
         router_hook: _JsonObject = {
             "type": "command",
-            "command": shlex.join(router_command_parts),
+            "command": _shell_join(router_command_parts),
             # Outermost hop of the routing timeout budget documented in
             # ``omnigent.runner.subagent_routing``: derived from the hook
             # script's own request budget so it always exceeds it and the
@@ -2187,14 +2234,28 @@ def build_hook_settings(
     # blocking statusLine path — the forwarder normalizes it into
     # ``context.json``) and chains to whatever the user had globally so
     # claude-hud / their bar still renders.
-    raw_quoted = shlex.quote(str(bridge_dir / CONTEXT_RAW_FILE))
-    status_command = (
-        f"p=$(cat); printf '%s' \"$p\" > {raw_quoted}.$$.tmp"
-        f" && mv -f {raw_quoted}.$$.tmp {raw_quoted}"
-    )
     chain_command = read_user_status_line_command()
-    if chain_command is not None:
-        status_command += f"; printf '%s' \"$p\" | ( {chain_command} )"
+    if IS_WINDOWS:
+        status_parts = [
+            python,
+            "-I",
+            "-m",
+            "omnigent.harnesses.claude_native.status",
+            "--bridge-dir",
+            str(bridge_dir),
+        ]
+        if chain_command is not None:
+            chain_b64 = base64.b64encode(chain_command.encode("utf-8")).decode("ascii")
+            status_parts.extend(["--chain-b64", chain_b64])
+        status_command = _shell_join(status_parts)
+    else:
+        raw_quoted = _shell_quote(str(bridge_dir / CONTEXT_RAW_FILE))
+        status_command = (
+            f"p=$(cat); printf '%s' \"$p\" > {raw_quoted}.$$.tmp"
+            f" && mv -f {raw_quoted}.$$.tmp {raw_quoted}"
+        )
+        if chain_command is not None:
+            status_command += f"; printf '%s' \"$p\" | ( {chain_command} )"
     settings["statusLine"] = {"type": "command", "command": status_command}
     return settings
 
@@ -2218,7 +2279,7 @@ def _claude_route_turn_hook(bridge_dir: Path, python: str) -> _JsonObject:
 
     return {
         "type": "command",
-        "command": shlex.join(
+        "command": _shell_join(
             [
                 python,
                 "-I",
@@ -3330,7 +3391,9 @@ def stop_hook_seen_since(bridge_dir: Path, start_event_count: int) -> bool:
                     transcript_path = (
                         payload.get("transcript_path") if isinstance(payload, dict) else None
                     )
-                    if isinstance(transcript_path, str) and "/subagents/" in transcript_path:
+                    if isinstance(
+                        transcript_path, str
+                    ) and "/subagents/" in transcript_path.replace("\\", "/"):
                         continue
                     return True
     except FileNotFoundError:
@@ -5462,7 +5525,12 @@ def start_tool_relay(
         daemon=True,
     )
     thread.start()
-    return ClaudeNativeToolRelay(bridge_dir=bridge_dir, httpd=httpd, advertised_url=advertised_url)
+    return ClaudeNativeToolRelay(
+        bridge_dir=bridge_dir,
+        httpd=httpd,
+        advertised_url=advertised_url,
+        relay_token=token,
+    )
 
 
 def main(argv: list[str] | None = None) -> None:

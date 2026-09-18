@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import re
 import shlex
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -1138,7 +1140,9 @@ def test_build_hook_settings_captures_observer_stderr(tmp_path: Path) -> None:
         python_executable="/venv/bin/python",
     )
 
-    expected_redirection = f"2>> {shlex.quote(str(bridge_dir / OBSERVER_HOOK_STDERR_FILE))}"
+    path = str(bridge_dir / OBSERVER_HOOK_STDERR_FILE)
+    quoted = subprocess.list2cmdline([path]) if os.name == "nt" else shlex.quote(path)
+    expected_redirection = f"2>> {quoted}"
     hooks = settings["hooks"]
     for event_name in ("SessionStart", "UserPromptSubmit", "Stop", "StopFailure"):
         command = hooks[event_name][0]["hooks"][0]["command"]
@@ -1172,11 +1176,14 @@ def test_build_hook_settings_registers_message_display_hook(
         "MessageDisplay hook not registered — live token streaming is dead"
     )
     command = hooks["MessageDisplay"][0]["hooks"][0]["command"]
-    # Appends straight to this bridge dir's deltas file from shell...
-    assert "message_deltas.jsonl" in command
-    assert str(bridge_dir) in command
-    # ...with no interpreter or server dependency on the per-chunk path.
-    assert "python" not in command
+    if os.name == "nt":
+        assert "omnigent.harnesses.claude_native.message_display_hook" in command
+    else:
+        # Appends straight to this bridge dir's deltas file from shell...
+        assert "message_deltas.jsonl" in command
+        assert str(bridge_dir) in command
+        # ...with no interpreter or server dependency on the per-chunk path.
+        assert "python" not in command
     assert "evaluate-policy" not in command
     assert "permission-request" not in command
 
