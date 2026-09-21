@@ -372,8 +372,8 @@ def test_composer_effort_pick_survives_terminal_turns(
     1. Change the effort in the embedded terminal first (same driving as the
        mirror journey) and run a turn — this lands the session on a known
        terminal effort and makes the composer's effort row render.
-    2. Pick a DIFFERENT effort in the composer gear and Save; the gear must
-       show the pick (the "works" half of the requirement).
+    2. Pick a DIFFERENT effort in the composer gear; the immediate-apply row
+       must show the pick (the "works" half of the requirement).
     3. Run a turn so the executor applies the pick; the terminal's
        ``config.toml`` must adopt it (fails while the mirror write is absent).
     4. Run one more turn (another ``turn/started`` config re-read) and verify
@@ -399,7 +399,7 @@ def test_composer_effort_pick_survives_terminal_turns(
     expect(effort_control).to_be_visible(timeout=15_000)
     expect(effort_control).to_contain_text(_effort_display_label(terminal_effort), timeout=30_000)
 
-    # --- 2. Pick a DIFFERENT effort in the composer gear and Save. -----------
+    # --- 2. Pick a DIFFERENT effort in the composer gear. --------------------
     effort_control.click()
     options = page.locator('[role="menuitemcheckbox"][data-effort-level]')
     expect(options.first).to_be_visible(timeout=15_000)
@@ -421,8 +421,12 @@ def test_composer_effort_pick_survives_terminal_turns(
         "cannot exercise a composer-initiated change"
     )
     _log.info("picking composer effort: %r (was %r)", picked, terminal_effort)
-    page.locator(f'[role="menuitemcheckbox"][data-effort-level="{picked}"]').click()
-    page.get_by_test_id("composer-config-save").click()
+    picked_option = page.locator(f'[role="menuitemcheckbox"][data-effort-level="{picked}"]')
+    picked_option.click()
+    expect(picked_option).to_have_attribute("aria-checked", "true", timeout=15_000)
+    # Composer configuration applies each checkbox immediately; there is no
+    # separate Save action. Escape closes the retained dropdown.
+    page.keyboard.press("Escape")
     expect(page.locator(_CONFIG_MODAL)).to_be_hidden(timeout=15_000)
 
     # The pick works: reopening the gear shows the composer-picked effort.

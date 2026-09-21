@@ -18,6 +18,7 @@ import uuid
 from pathlib import Path
 
 import httpx
+import pytest
 
 from tests.e2e.conftest import (
     configure_mock_llm,
@@ -35,10 +36,12 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _TEST_IMAGE_PATH = _REPO_ROOT / "tests" / "resources" / "test_image.png"
 
 
+@pytest.mark.parametrize("include_text", [True, False], ids=["text-and-image", "image-only"])
 def test_image_upload_reaches_llm(
     http_client: httpx.Client,
     live_runner_id: str,
     mock_llm_server_url: str,
+    include_text: bool,
 ) -> None:
     """
     Upload an image, send it to an agent, verify the agent produces
@@ -49,8 +52,8 @@ def test_image_upload_reaches_llm(
     1. Register an openai-agents agent pointing at the mock LLM.
     2. Create a runner-bound session and upload a test PNG via the
        session-scoped files API.
-    3. Post a user message (text + ``input_image``) asking the model
-       to identify the dominant color; poll the snapshot until terminal.
+    3. Post a user message with ``input_image`` (with and without accompanying
+       text); poll the snapshot until terminal.
     4. Assert the mock response text appears in the output (proving
        the image upload pipeline didn't drop content before reaching
        the executor).
@@ -96,18 +99,22 @@ def test_image_upload_reaches_llm(
     file_resp.raise_for_status()
     file_id = file_resp.json()["id"]
 
-    response_id = send_user_message_to_session(
-        http_client,
-        session_id=session_id,
-        content=[
+    content = []
+    if include_text:
+        content.append(
             {
                 "type": "input_text",
                 "text": (
                     "What is the dominant color of this image? Reply with just the color name."
                 ),
-            },
-            {"type": "input_image", "file_id": file_id},
-        ],
+            }
+        )
+    content.append({"type": "input_image", "file_id": file_id})
+
+    response_id = send_user_message_to_session(
+        http_client,
+        session_id=session_id,
+        content=content,
     )
     body = poll_session_until_terminal(
         http_client,

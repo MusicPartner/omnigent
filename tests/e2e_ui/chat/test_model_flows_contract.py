@@ -42,6 +42,9 @@ _STREAM_CONTROLLER = """
       const body = new ReadableStream({
         start(controller) {
           window.__mfStreamController = controller;
+          const ready = 'event: session.heartbeat\\n' +
+            'data: {"type":"session.heartbeat"}\\n\\n';
+          controller.enqueue(new TextEncoder().encode(ready));
         },
       });
       return Promise.resolve(new Response(body, {
@@ -56,7 +59,7 @@ _STREAM_CONTROLLER = """
 
 
 def _install_stream_controller(page: Page, session_id: str) -> None:
-    """Capture the session's SSE stream so tests can push frames."""
+    """Capture the session SSE stream and emit its real ready heartbeat."""
     page.add_init_script(_STREAM_CONTROLLER.replace("__SESSION_ID__", json.dumps(session_id)))
 
 

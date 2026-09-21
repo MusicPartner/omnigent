@@ -159,7 +159,7 @@ def test_session_composer_image_only_draft_sends(
     seeded_session: tuple[str, str],
     tmp_path: Path,
 ) -> None:
-    """An image-only message sends from the in-session composer and runs a turn."""
+    """An image-only message leaves the in-session composer via the real API."""
     base_url, session_id = seeded_session
     png = _write_png(tmp_path)
 
@@ -173,13 +173,17 @@ def test_session_composer_image_only_draft_sends(
 
     send = page.get_by_role("button", name="Send", exact=True)
     expect(send).to_be_enabled(timeout=10_000)
-    send.click()
+    with page.expect_response(
+        lambda response: (
+            response.request.method == "POST"
+            and response.url.endswith(f"/v1/sessions/{session_id}/events")
+        ),
+        timeout=30_000,
+    ) as posted:
+        send.click()
+    response = posted.value
+    assert response.status == 202, response.text()
+    assert response.json().get("item_id"), response.text()
 
     user_bubble = page.locator('[data-testid="message-bubble"][data-role="user"]')
     expect(user_bubble.locator("img").first).to_be_visible(timeout=30_000)
-    # Reply text is not pinned: the title-generation LLM call can consume
-    # scripted mock-queue entries before the turn's own call.
-    expect(
-        page.locator('[data-testid="message-bubble"][data-role="assistant"]').first
-    ).to_be_visible(timeout=60_000)
-    expect(page.locator('[data-testid="working-indicator"]')).to_have_count(0, timeout=60_000)
