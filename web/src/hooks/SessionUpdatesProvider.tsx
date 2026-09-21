@@ -183,6 +183,9 @@ export function SessionUpdatesProvider({ children }: { children: ReactNode }) {
   // socket reconnects, so changes missed while disconnected are caught by
   // the post-reconnect snapshot.
   const commentsFingerprintsRef = useRef(new Map<string, string>());
+  // The inbox snapshot query is keyed by this count, but an explicit
+  // invalidation also covers frames that arrive while the row is cached.
+  const pendingElicitationCountsRef = useRef(new Map<string, number>());
 
   // The frame handler is installed once (effect deps are [queryClient]) but
   // the active route changes over the socket's lifetime. Keep the current
@@ -315,6 +318,17 @@ export function SessionUpdatesProvider({ children }: { children: ReactNode }) {
       }
     };
 
+    const syncPendingElicitationCounts = (items: SessionListWireItem[]) => {
+      for (const item of items) {
+        const count = item.pending_elicitations_count ?? 0;
+        const previous = pendingElicitationCountsRef.current.get(item.id);
+        pendingElicitationCountsRef.current.set(item.id, count);
+        if (previous !== undefined && previous !== count) {
+          void queryClient.invalidateQueries({ queryKey: ["inbox-elicitations", item.id] });
+        }
+      }
+    };
+
     let projectsDirty = false;
     const refreshProjects = () => {
       if (!projectsDirty || queryClient.isMutating({ mutationKey: ["project-order"] }) > 0) return;
@@ -343,11 +357,13 @@ export function SessionUpdatesProvider({ children }: { children: ReactNode }) {
           return;
         case "removed":
           for (const id of frame.ids) commentsFingerprintsRef.current.delete(id);
+          for (const id of frame.ids) pendingElicitationCountsRef.current.delete(id);
           if (removeIdsFromCache(queryClient, frame.ids)) scheduleInvalidate();
           return;
         case "snapshot":
         case "changed": {
           syncCommentsFingerprints(frame.items);
+          syncPendingElicitationCounts(frame.items);
           if (frame.type === "snapshot") {
             // A snapshot restates the full watch-set, so fingerprints for
             // sessions outside it are de-watched leftovers — prune them to
@@ -356,6 +372,9 @@ export function SessionUpdatesProvider({ children }: { children: ReactNode }) {
             const watchedIds = new Set(frame.items.map((item) => item.id));
             for (const id of commentsFingerprintsRef.current.keys()) {
               if (!watchedIds.has(id)) commentsFingerprintsRef.current.delete(id);
+            }
+            for (const id of pendingElicitationCountsRef.current.keys()) {
+              if (!watchedIds.has(id)) pendingElicitationCountsRef.current.delete(id);
             }
           }
           // For child sessions the server includes parent_session_id in the

@@ -550,8 +550,9 @@ def mock_llm_server_url(
             resp = httpx.get(f"{base_url}/stats", timeout=1.0)
             if resp.status_code == 200:
                 break
-        except httpx.ConnectError:
-            # Expected while the mock server is still booting.
+        except (httpx.ConnectError, httpx.TimeoutException):
+            # Expected while the mock server is still booting, especially on
+            # Windows where a fresh Python process can miss the short probe.
             pass
         time.sleep(0.1)
     else:
@@ -810,20 +811,34 @@ def built_spa(request: pytest.FixtureRequest) -> None:
         # from blocking on its download confirmation under captured
         # pytest output, which reads as a hung test run.
         env = {**os.environ, "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0"}
-        pnpm = "pnpm.cmd" if sys.platform == "win32" else "pnpm"
+        # Prefer a real pnpm executable, but allow Corepack's command form
+        # when Windows has Node/Corepack installed without enabled shims.
+        pnpm = shutil.which("pnpm")
+        pnpm_cmd = [pnpm] if pnpm is not None else None
+        if pnpm_cmd is None:
+            corepack = shutil.which("corepack")
+            if corepack is not None:
+                pnpm_cmd = [corepack, "pnpm"]
+        if pnpm_cmd is None:
+            raise RuntimeError(
+                "pnpm is required to build the E2E web UI; install Node.js "
+                "with Corepack enabled or install pnpm"
+            )
         subprocess.run(
-            [pnpm, "install", "--frozen-lockfile", "--filter", "web"],
+            [*pnpm_cmd, "install", "--frozen-lockfile", "--filter", "web"],
             cwd=_REPO_ROOT,
             check=True,
             stdin=subprocess.DEVNULL,
             env=env,
+            timeout=600,
         )
         subprocess.run(
-            [pnpm, "--filter", "web", "run", "build"],
+            [*pnpm_cmd, "--filter", "web", "run", "build"],
             cwd=_REPO_ROOT,
             check=True,
             stdin=subprocess.DEVNULL,
             env=env,
+            timeout=600,
         )
 
 

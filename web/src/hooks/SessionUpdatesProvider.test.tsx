@@ -256,6 +256,55 @@ describe("SessionUpdatesProvider comments fingerprint", () => {
   });
 });
 
+describe("SessionUpdatesProvider pending elicitation count", () => {
+  it("invalidates the inbox snapshot when a pending count changes", () => {
+    const client = new QueryClient();
+    seedConversations(client, ["conv_a"]);
+    renderProvider(client, ["/inbox"]);
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const handler = frameHandler();
+
+    act(() => handler({ type: "snapshot", items: [{ ...conv("conv_a") }] }));
+    invalidate.mockClear();
+    act(() =>
+      handler({
+        type: "changed",
+        items: [{ ...conv("conv_a"), pending_elicitations_count: 1 }],
+      }),
+    );
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["inbox-elicitations", "conv_a"] });
+  });
+
+  it("does not invalidate the inbox snapshot when the count is unchanged", () => {
+    const client = new QueryClient();
+    seedConversations(client, ["conv_a"]);
+    renderProvider(client, ["/inbox"]);
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const handler = frameHandler();
+
+    act(() =>
+      handler({
+        type: "snapshot",
+        items: [{ ...conv("conv_a"), pending_elicitations_count: 1 }],
+      }),
+    );
+    invalidate.mockClear();
+    act(() =>
+      handler({
+        type: "changed",
+        items: [{ ...conv("conv_a"), pending_elicitations_count: 1, title: "same count" }],
+      }),
+    );
+
+    expect(
+      invalidate.mock.calls.filter(
+        ([args]) => Array.isArray(args?.queryKey) && args.queryKey[0] === "inbox-elicitations",
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe("SessionUpdatesProvider project folders", () => {
   it("watches sessions that live only in a project folder's cache", () => {
     // A project folder fetches its members into ["project-sessions", <name>],
