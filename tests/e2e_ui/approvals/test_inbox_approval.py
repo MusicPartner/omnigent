@@ -13,8 +13,8 @@ real LLM → nightly + generous timeout.
 
 The second test
 (:func:`test_reparked_elicitation_reliably_resurfaces_in_inbox`) covers
-omnigent#927: when a hook retry re-parks the *same* elicitation id after the
-user already approved it, the inbox card must drop its stale optimistic
+omnigent#927: when a distinct logical request reuses an elicitation id after
+the user already approved it, the inbox card must drop its stale optimistic
 verdict and resurface as an actionable pending card — not stay frozen on
 "Approved" with no buttons. It drives the real claude-native permission hook
 (``POST /v1/sessions/{id}/hooks/permission-request``) so the re-park is a
@@ -74,16 +74,16 @@ def _wait_for(predicate, *, timeout_s: float = 30.0, interval_s: float = 0.5) ->
     raise AssertionError("condition not met within timeout")
 
 
-def _permission_hook_payload(elicitation_id: str) -> dict:
-    """Build a Claude PermissionRequest hook body that pins a stable id.
+def _permission_hook_payload(elicitation_id: str, command: str) -> dict:
+    """Build a hook body with a stable id and cycle-specific fingerprint.
 
-    Mirrors the ``omnigent claude`` wrapper's hook subprocess: the
-    ``_omnigent_elicitation_id`` is minted once per prompt and re-sent on
-    every retry POST, so the server re-parks the SAME elicitation. A plain
-    tool name (``Bash``) with no ``requestedSchema`` renders the binary
+    The stable id is reused across logical requests, while ``command`` changes
+    the request fingerprint so a previous verdict tombstone is not replayed.
+    A plain tool name (``Bash``) with no ``requestedSchema`` renders the binary
     Approve/Reject ``ApprovalCard`` (not a form / plan / question card).
 
     :param elicitation_id: ``elicit_claude_`` + 32 hex chars.
+    :param command: Distinct command for this logical request cycle.
     :returns: JSON-serializable PermissionRequest payload.
     """
     return {
@@ -93,7 +93,7 @@ def _permission_hook_payload(elicitation_id: str) -> dict:
         "permission_mode": "default",
         "hook_event_name": "PermissionRequest",
         "tool_name": "Bash",
-        "tool_input": {"command": "git push origin main"},
+        "tool_input": {"command": command},
         "tool_use_id": "tool_use_e2e",
         "_omnigent_elicitation_id": elicitation_id,
     }
@@ -103,6 +103,7 @@ def _park_permission_hook(
     base_url: str,
     session_id: str,
     elicitation_id: str,
+    command: str,
     sink: dict,
 ) -> None:
     """Long-poll the permission hook in a worker thread; stash the verdict.
@@ -117,13 +118,14 @@ def _park_permission_hook(
     :param base_url: Live server base URL.
     :param session_id: Owning session id.
     :param elicitation_id: Stable id to (re-)park.
+    :param command: Distinct command for this logical request cycle.
     :param sink: Mutable dict; gets ``"resp"`` (httpx.Response) or
         ``"error"`` (Exception).
     """
     try:
         sink["resp"] = httpx.post(
             f"{base_url}/v1/sessions/{session_id}/hooks/permission-request",
-            json=_permission_hook_payload(elicitation_id),
+            json=_permission_hook_payload(elicitation_id, command),
             timeout=120.0,
         )
     except Exception as exc:
@@ -174,6 +176,7 @@ def _park_in_thread(
     base_url: str,
     session_id: str,
     elicitation_id: str,
+    command: str,
     workers: list[threading.Thread],
 ) -> dict:
     """Start a hook long-poll for *elicitation_id* and wait until it parks.
@@ -181,6 +184,7 @@ def _park_in_thread(
     :param base_url: Live server base URL.
     :param session_id: Owning session id.
     :param elicitation_id: Stable id to (re-)park.
+    :param command: Distinct command for this logical request cycle.
     :param workers: Thread registry the test drains on teardown.
     :returns: The sink dict the worker writes its verdict/error into; it also
         carries the worker thread under ``"thread"`` for the later join.
@@ -188,13 +192,26 @@ def _park_in_thread(
     sink: dict = {}
     worker = threading.Thread(
         target=_park_permission_hook,
-        args=(base_url, session_id, elicitation_id, sink),
+        args=(base_url, session_id, elicitation_id, command, sink),
         daemon=True,
     )
     sink["thread"] = worker
     workers.append(worker)
     worker.start()
-    _wait_for(partial(_is_parked, base_url, session_id, elicitation_id), timeout_s=30.0)
+    try:
+        _wait_for(partial(_is_parked, base_url, session_id, elicitation_id), timeout_s=30.0)
+    except AssertionError:
+        if "error" in sink:
+            worker_error = sink["error"]
+            raise AssertionError(
+                f"hook worker failed before parking: {worker_error!r}"
+            ) from worker_error
+        if "resp" in sink:
+            raise AssertionError(
+                "hook worker returned before parking: "
+                f"HTTP {sink['resp'].status_code}: {sink['resp'].text}"
+            ) from None
+        raise
     return sink
 
 
@@ -255,22 +272,23 @@ def test_reparked_elicitation_reliably_resurfaces_in_inbox(
     page: Page,
     seeded_session: tuple[str, str],
 ) -> None:
-    """A re-parked, already-approved elicitation resurfaces as an actionable card.
+    """A reused-id, distinct request resurfaces as an actionable card.
 
     Regression for omnigent#927. When the user approves an inbox approval, the
     page flips it to "Approved" optimistically (``responded`` keyed by
-    elicitation id). When a hook retry later re-parks the SAME id (the server
-    re-parks after its disconnect/grace window), the session snapshot lists it
-    as pending again — but the stale ``responded`` entry pinned the card to
-    "Approved" with no buttons, leaving a headless sub-agent invisibly blocked.
+    elicitation id). When a distinct request later reuses the same id, the
+    session snapshot lists it as pending again — but the stale ``responded``
+    entry pinned the card to "Approved" with no buttons, leaving a headless
+    sub-agent invisibly blocked.
     The fix sweeps verdicts whose id is pending again whenever a snapshot
-    refresh lands (``dataUpdatedAt`` advances).
+    refresh lands (``dataUpdatedAt`` advances). Each cycle changes the command
+    so the server treats it as a new question rather than replaying the prior
+    verdict tombstone.
 
     Recreated end to end against the live server: one elicitation id is parked,
-    approved in a real browser, then re-parked again and again through the real
-    claude-native permission hook (``POST .../hooks/permission-request``) — the
-    omnigent#927 shape of a single prompt whose hook keeps re-parking the same
-    id. Each retry must bring the card back as a *pending* card
+    approved in a real browser, then reused for distinct requests through the
+    real claude-native permission hook (``POST .../hooks/permission-request``).
+    Each retry must bring the card back as a *pending* card
     (``data-state="pending"`` with an Approve button), never a frozen
     "Approved" one. Several retries with randomized delays prove the resurface
     is robust, not a one-off interleaving.
@@ -285,8 +303,8 @@ def test_reparked_elicitation_reliably_resurfaces_in_inbox(
     fix governs.
 
     No real LLM: the hook endpoint parks elicitations directly, which is also
-    the only way to deterministically re-park the *same* id (a model-driven
-    gate mints a fresh id per call). Nightly + generous timeout to match the
+    the only way to deterministically reuse the same id (a model-driven gate
+    mints a fresh id per call). Nightly + generous timeout to match the
     other live-server UI suites.
     """
     base_url, session_id = seeded_session
@@ -297,15 +315,15 @@ def test_reparked_elicitation_reliably_resurfaces_in_inbox(
     page.goto(f"{base_url}/inbox")
     expect(page.get_by_text("Nothing waiting on you")).to_be_visible(timeout=_REPARK_TIMEOUT_MS)
 
-    # A single elicitation id, re-parked repeatedly — the omnigent#927 scenario
-    # is one prompt whose hook keeps re-parking the SAME id after each approval.
+    # A single elicitation id, reused for distinct requests — this preserves the
+    # stale responded-map key while avoiding same-fingerprint tombstone replay.
     eid = f"elicit_claude_{secrets.token_hex(16)}"
     rng = random.Random()
     workers: list[threading.Thread] = []
     try:
         # Initial park + approve: surfaces the card and sets the optimistic
         # "Approved" verdict the later retries must not get stuck behind.
-        sink = _park_in_thread(base_url, session_id, eid, workers)
+        sink = _park_in_thread(base_url, session_id, eid, "git push origin main", workers)
         first = page.locator(f'{_APPROVAL_CARD}[data-state="pending"]')
         expect(first).to_be_visible(timeout=_REPARK_TIMEOUT_MS)
         first.get_by_role("button", name="Approve", exact=True).click()
@@ -313,8 +331,16 @@ def test_reparked_elicitation_reliably_resurfaces_in_inbox(
         _settle_after_drain(page, base_url, session_id, rng)
 
         for cycle in range(_REPARK_CYCLES):
-            # A hook retry re-parks the SAME id.
-            sink = _park_in_thread(base_url, session_id, eid, workers)
+            # A distinct logical request reuses the same id, so the UI key and
+            # its stale optimistic verdict are exercised without replaying the
+            # previous request's tombstone.
+            sink = _park_in_thread(
+                base_url,
+                session_id,
+                eid,
+                f"git push origin main --cycle {cycle + 1}",
+                workers,
+            )
 
             # ── REGRESSION: the re-parked prompt must be actionable again. ──
             # The card returns either way; the bug is its STATE. Pre-fix the

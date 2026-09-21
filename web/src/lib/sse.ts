@@ -198,6 +198,7 @@ export function withStallGuard(
 export async function* parseSseStream(
   byteStream: ReadableStream<Uint8Array>,
   result?: SseStreamResult,
+  onEvent?: (eventType: string) => void,
 ): AsyncIterable<StreamEvent> {
   const decoder = new TextDecoder("utf-8");
   let buf = "";
@@ -241,6 +242,11 @@ export async function* parseSseStream(
               currentEvent = null;
               continue;
             }
+            // The server's initial session.heartbeat is the subscription
+            // acknowledgement. Notify callers before parsing so even an
+            // event type intentionally ignored by the reducer can establish
+            // stream readiness.
+            onEvent?.(currentEvent);
             const event = parseEvent(currentEvent, data);
             if (event !== null) yield event;
             currentEvent = null;

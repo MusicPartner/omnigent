@@ -1228,6 +1228,99 @@ conversationRegistry.subscribeDisposed((id) => streamEventRevisions.delete(id));
 // native preview messages have finalized, including warm session revisits.
 const nativePreviewTombstonesByController = new WeakMap<AbortController, Set<string>>();
 
+interface StreamReadiness {
+  promise: Promise<void>;
+  resolve: () => void;
+  reject: (reason: unknown) => void;
+  settled: boolean;
+  state: "connecting" | "awaiting_ready" | "failed";
+}
+
+// A controller is installed in the conversation entry before its SSE pump has
+// received the server's ready heartbeat. Sends must wait for that handshake or
+// a fast first turn can publish into the live-tail gap and lose every response.
+const streamReadinessByController = new WeakMap<AbortController, StreamReadiness>();
+const STREAM_READY_TIMEOUT_MS = 120_000;
+
+function streamReadiness(controller: AbortController): StreamReadiness {
+  const existing = streamReadinessByController.get(controller);
+  if (existing !== undefined) return existing;
+  let resolvePromise!: () => void;
+  let rejectPromise!: (reason: unknown) => void;
+  const promise = new Promise<void>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+  // A stream can be torn down without any send waiting on it. Keep that
+  // lifecycle rejection from becoming an unhandled promise rejection while
+  // preserving the rejection for a concurrent sender.
+  void promise.catch(() => {});
+  const readiness = {
+    promise,
+    resolve: resolvePromise,
+    reject: rejectPromise,
+    settled: false,
+    state: "connecting" as const,
+  };
+  streamReadinessByController.set(controller, readiness);
+  return readiness;
+}
+
+function markStreamReady(controller: AbortController): void {
+  const readiness = streamReadiness(controller);
+  if (readiness.settled) return;
+  readiness.settled = true;
+  readiness.resolve();
+}
+
+function markStreamAttemptStarted(controller: AbortController): void {
+  const readiness = streamReadiness(controller);
+  if (!readiness.settled) readiness.state = "connecting";
+}
+
+function markStreamAttemptFailed(controller: AbortController): void {
+  const readiness = streamReadiness(controller);
+  if (!readiness.settled) readiness.state = "failed";
+}
+
+function markStreamAwaitingReady(controller: AbortController): void {
+  const readiness = streamReadiness(controller);
+  if (!readiness.settled) readiness.state = "awaiting_ready";
+}
+
+function failStreamReadiness(controller: AbortController, reason: unknown): void {
+  const readiness = streamReadiness(controller);
+  if (readiness.settled) return;
+  readiness.settled = true;
+  readiness.reject(reason);
+}
+
+async function waitForStreamReady(controller: AbortController): Promise<void> {
+  const readiness = streamReadinessByController.get(controller);
+  if (readiness === undefined) return;
+  // Preserve the existing graceful-degradation path: if the stream endpoint
+  // is currently returning HTTP/network failures, the message may still post
+  // while the pump retries. Once a valid SSE response exists, the send waits
+  // for its ready frame so the live tail cannot miss the turn.
+  if (readiness.state === "failed") return;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    await Promise.race([
+      readiness.promise,
+      new Promise<void>((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error("session stream did not become ready");
+          failStreamReadiness(controller, error);
+          controller.abort();
+          reject(error);
+        }, STREAM_READY_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
+}
+
 /**
  * Evict a conversation from the live registry.
  *
@@ -3135,6 +3228,7 @@ function isConversationStreamCurrent(id: string): boolean {
 function abortConversationStream(entry: ConversationEntry): void {
   const { abortController } = entry.getState();
   if (abortController === null) return;
+  failStreamReadiness(abortController, new Error("session stream aborted"));
   abortController.abort();
   entry.setState({ abortController: null });
 }
@@ -3428,6 +3522,12 @@ async function ensureBoundSession(
     }
   }
 
+  const boundEntry = conversationRegistry.peek(sessionId);
+  const controller = boundEntry?.getState().abortController;
+  if (controller !== null && controller !== undefined) {
+    await waitForStreamReady(controller);
+  }
+
   return sessionId;
 }
 
@@ -3702,6 +3802,7 @@ async function bindStream(
 ): Promise<void> {
   racedNativeModelOptions.delete(id);
   const controller = new AbortController();
+  streamReadiness(controller);
   const ignoredNativeMessageIds = new Set<string>();
   nativePreviewTombstonesByController.set(controller, ignoredNativeMessageIds);
   // Take an origin-wide stream slot before opening the connection, evicting our
@@ -3712,6 +3813,7 @@ async function bindStream(
     // Switched away / evicted while awaiting the slot — don't open a dead
     // entry's stream, and hand any slot we took back to the origin.
     releaseStreamSlot(id);
+    failStreamReadiness(controller, new Error("conversation was disposed before stream startup"));
     return;
   }
   set({ abortController: controller });
@@ -3739,6 +3841,7 @@ async function bindStream(
     // slot taken above has to go back to the origin.
     if (isConversationDisposed(id)) {
       releaseStreamSlot(id);
+      failStreamReadiness(controller, new Error("conversation was disposed before stream startup"));
       return;
     }
   }
@@ -4780,6 +4883,7 @@ export async function startStreamPump(
   get: Getter,
   ignoredNativeMessageIds: Set<string> = new Set<string>(),
 ): Promise<void> {
+  streamReadiness(controller);
   nativePreviewTombstonesByController.set(controller, ignoredNativeMessageIds);
   let failedOpens = 0;
   let statusReconcileInFlight = false;
@@ -4831,6 +4935,7 @@ export async function startStreamPump(
       const onOuterAbort = () => attempt.abort();
       controller.signal.addEventListener("abort", onOuterAbort);
       presenceAttemptControllers.add(attempt);
+      markStreamAttemptStarted(controller);
       // Stamped from attempt start so the wake fast-path can also recycle
       // an open that has hung past the stale window, not just a dead body.
       streamAttemptActivity.set(attempt, Date.now());
@@ -4848,6 +4953,7 @@ export async function startStreamPump(
           }
           if (isConversationDisposed(id)) break;
           console.warn(`Session ${id}: stream connect failed, will retry`, err);
+          markStreamAttemptFailed(controller);
           failedOpens += 1;
           continue;
         }
@@ -4865,6 +4971,7 @@ export async function startStreamPump(
           // surfaces as offline liveness via ConnectionIndicator.
           if (streamRes.status === 401 || streamRes.status === 403) {
             console.warn(`Session ${id}: stream unavailable (${streamRes.status}), giving up`);
+            markStreamAttemptFailed(controller);
             failUnavailableStream(set, `stream unavailable (${streamRes.status})`);
             set({ status: "idle" });
             break;
@@ -4881,6 +4988,7 @@ export async function startStreamPump(
               );
               // Local lifecycle only — see the 401/403 branch above for why
               // `sessionStatus` is left to the server.
+              markStreamAttemptFailed(controller);
               finalizeActive(set, "failed", "stream unavailable (404)", null);
               set({ status: "idle" });
               break;
@@ -4888,10 +4996,12 @@ export async function startStreamPump(
             console.warn(
               `Session ${id}: stream open failed (404, attempt ${consecutive404s}/${MAX_TRANSIENT_404_RETRIES}), will retry`,
             );
+            markStreamAttemptFailed(controller);
             failedOpens += 1;
             continue;
           }
           console.warn(`Session ${id}: stream open failed (${streamRes.status}), will retry`);
+          markStreamAttemptFailed(controller);
           failedOpens += 1;
           continue;
         }
@@ -4905,10 +5015,12 @@ export async function startStreamPump(
         if (!contentType.toLowerCase().includes("text/event-stream")) {
           void streamRes.body.cancel().catch(() => {});
           console.warn(`Session ${id}: stream open returned '${contentType}', will retry`);
+          markStreamAttemptFailed(controller);
           failedOpens += 1;
           continue;
         }
 
+        markStreamAwaitingReady(controller);
         const reconnecting = hasConnected;
         hasConnected = true;
         failedOpens = 0;
@@ -4948,6 +5060,7 @@ export async function startStreamPump(
           get,
           undefined,
           ignoredNativeMessageIds,
+          () => markStreamReady(controller),
         );
         if (reconnecting) {
           await reconcileOnReconnect(id, set, get, ignoredNativeMessageIds);
@@ -4969,6 +5082,7 @@ export async function startStreamPump(
       }
     }
   } finally {
+    failStreamReadiness(controller, new Error("session stream ended before it became ready"));
     if (statusReconcileTimer !== null) window.clearInterval(statusReconcileTimer);
     if (get().abortController === controller) {
       set({ abortController: null });
@@ -5391,10 +5505,11 @@ export async function pumpStreamEvents(
   get: Getter,
   scheduler: FrameScheduler = createRafScheduler(),
   ignoredMessages: Set<string> = new Set<string>(),
+  onReady?: () => void,
 ): Promise<StreamEndReason> {
   const stream = new BlockStream();
   const sseResult: SseStreamResult = { sawDone: false };
-  const rawEvents = parseSseStream(body, sseResult);
+  const rawEvents = parseSseStream(body, sseResult, () => onReady?.());
   // Blocks awaiting their coalesced flush; `seenItemIds` dedupes against
   // both committed and still-buffered blocks. Lives for the whole stream
   // (one SSE connection); bounded by item count like `blocks` itself.

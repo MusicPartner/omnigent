@@ -2,7 +2,7 @@
 // and `withStallGuard` — the byte-level silence watchdog.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { parseEvent, withStallGuard } from "./sse";
+import { parseEvent, parseSseStream, withStallGuard } from "./sse";
 import type {
   ElicitationResolved,
   MessageDone,
@@ -80,6 +80,30 @@ describe("withStallGuard", () => {
     // The armed timer was cleared: silence after cancel is not a stall.
     await vi.advanceTimersByTimeAsync(5_000);
     expect(stalled).toBe(0);
+  });
+});
+
+describe("parseSseStream readiness callback", () => {
+  it("reports an ignored session heartbeat as soon as the wire frame arrives", async () => {
+    let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
+    const stream = new ReadableStream<Uint8Array>({
+      start(next) {
+        controller = next;
+      },
+    });
+    const seen: string[] = [];
+    const events: unknown[] = [];
+
+    controller!.enqueue(new TextEncoder().encode("event: session.heartbeat\ndata: {}\n\n"));
+    controller!.close();
+    for await (const event of parseSseStream(stream, undefined, (eventType) =>
+      seen.push(eventType),
+    )) {
+      events.push(event);
+    }
+
+    expect(seen).toEqual(["session.heartbeat"]);
+    expect(events).toEqual([]);
   });
 });
 

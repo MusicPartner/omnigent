@@ -3,8 +3,8 @@
 // `switchTo` opens the session SSE stream and hydrates session
 // metadata plus committed item history. We mock `fetch` at the global so we
 // control:
-//   - `GET  /v1/sessions/{id}/stream`  → empty SSE body (pump
-//     terminates immediately, no blocks delivered)
+//   - `GET  /v1/sessions/{id}/stream`  → heartbeat-only SSE body (pump
+//     stays open, no blocks delivered)
 //   - `GET  /v1/sessions/{id}`         → session metadata snapshot
 //   - `GET  /v1/sessions/{id}/items`   → paginated committed items
 //   - `POST /v1/sessions`              → new session JSON
@@ -154,7 +154,7 @@ function nativeToolItem(responseId: string): ConversationItem {
 // aborts the controller, which is not enough.
 const openEmptyStreams = new Set<ReadableStreamDefaultController<Uint8Array>>();
 
-// A stream that delivers no events and stays open, like a real idle session
+// A stream that delivers no semantic events and stays open, like a real idle session
 // stream between turns (the server holds it and emits heartbeats). Never
 // closing keeps it OPEN — `switchTo`/`ensureBoundSession` treat a stream that
 // ended as no longer current and re-bind, so a mock that closed immediately
@@ -162,12 +162,15 @@ const openEmptyStreams = new Set<ReadableStreamDefaultController<Uint8Array>>();
 //
 // Deliberately not `data: [DONE]`: in production that sentinel means a
 // clean server-side close, which is terminal by design.
-function emptyStream(): ReadableStream<Uint8Array> {
+function emptyStream(opts: { ready?: boolean } = {}): ReadableStream<Uint8Array> {
   let own: ReadableStreamDefaultController<Uint8Array> | null = null;
   return new ReadableStream({
     start(controller) {
       own = controller;
       openEmptyStreams.add(controller);
+      if (opts.ready !== false) {
+        controller.enqueue(new TextEncoder().encode("event: session.heartbeat\ndata: {}\n\n"));
+      }
     },
     cancel() {
       // The consumer let go first, so this one needs no closing. Drop only its
@@ -226,12 +229,15 @@ interface StreamSink {
   error: (err?: unknown) => void;
 }
 
-function pushableStream(): StreamSink {
+function pushableStream(opts: { ready?: boolean } = {}): StreamSink {
   let ctrl: ReadableStreamDefaultController<Uint8Array> | null = null;
   const enc = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     start(c) {
       ctrl = c;
+      if (opts.ready !== false) {
+        c.enqueue(enc.encode("event: session.heartbeat\ndata: {}\n\n"));
+      }
     },
   });
   return {
@@ -608,7 +614,7 @@ describe("test harness teardown", () => {
 
     // What `conversationRegistry.clear()` does, and all it does.
     useChatStore.getState().abortController?.abort();
-    const stream = emptyStream();
+    const stream = emptyStream({ ready: false });
     const reader = stream.getReader();
     let settled = false;
     void reader.read().then(() => {
@@ -1839,6 +1845,61 @@ describe("chatStore — send (first-send ordering)", () => {
       { queryKey: ["conversations"] },
       { queryKey: ["conversations"] },
     ]);
+  });
+
+  it("waits for the stream-ready event before posting an image-only first turn", async () => {
+    seedSession("conv_ready");
+    const stream = pushableStream({ ready: false });
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.split("?")[0]!.endsWith("/v1/sessions/conv_ready/stream")) {
+        return mockResponse(null, { bodyStream: stream.stream });
+      }
+      if (url.endsWith("/v1/sessions/conv_ready/resources/files")) {
+        return mockResponse({
+          id: "file_ready_image",
+          name: "diagram.png",
+          metadata: { filename: "diagram.png", bytes: 10, created_at: 0 },
+        });
+      }
+      return defaultFetchHandler(input, init);
+    });
+
+    await useChatStore.getState().switchTo("conv_ready");
+    const file = new File(["bytes"], "diagram.png", { type: "image/png" });
+    const sending = useChatStore.getState().send("", "agent_xyz", [file]);
+    await tick();
+
+    // The optimistic bubble is present, but the upload and event POST wait
+    // behind the live-tail subscription handshake.
+    expect(useChatStore.getState().pendingUserMessages).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, request]) =>
+          String(url).endsWith("/v1/sessions/conv_ready/events") &&
+          (request as RequestInit | undefined)?.method === "POST",
+      ),
+    ).toBe(false);
+
+    stream.push(sse("session.heartbeat", {}));
+    await sending;
+
+    const eventCall = fetchMock.mock.calls.find(
+      ([url, request]) =>
+        String(url).endsWith("/v1/sessions/conv_ready/events") &&
+        (request as RequestInit | undefined)?.method === "POST",
+    );
+    expect(eventCall).toBeDefined();
+    expect(JSON.parse((eventCall![1] as RequestInit).body as string)).toMatchObject({
+      type: "message",
+      data: {
+        role: "user",
+        content: [{ type: "input_image", file_id: "file_ready_image", filename: "diagram.png" }],
+      },
+    });
+
+    stream.push("data: [DONE]\n\n");
+    stream.close();
   });
 
   it("serializes rapid-fire sends so POSTs reach the server in submission order", async () => {

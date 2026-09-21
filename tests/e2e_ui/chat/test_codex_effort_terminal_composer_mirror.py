@@ -401,7 +401,7 @@ def test_composer_effort_pick_survives_terminal_turns(
 
     # --- 2. Pick a DIFFERENT effort in the composer gear and Save. -----------
     effort_control.click()
-    options = page.locator('[role="option"][data-effort-level]')
+    options = page.locator('[role="menuitemcheckbox"][data-effort-level]')
     expect(options.first).to_be_visible(timeout=15_000)
     picked = ""
     for i in range(options.count()):
@@ -421,7 +421,7 @@ def test_composer_effort_pick_survives_terminal_turns(
         "cannot exercise a composer-initiated change"
     )
     _log.info("picking composer effort: %r (was %r)", picked, terminal_effort)
-    page.locator(f'[role="option"][data-effort-level="{picked}"]').click()
+    page.locator(f'[role="menuitemcheckbox"][data-effort-level="{picked}"]').click()
     page.get_by_test_id("composer-config-save").click()
     expect(page.locator(_CONFIG_MODAL)).to_be_hidden(timeout=15_000)
 
