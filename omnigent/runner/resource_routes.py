@@ -67,6 +67,7 @@ from omnigent.runner.resource_registry import (
     SessionResourceRegistry,
 )
 from omnigent.spec.types import AgentSpec
+from omnigent.terminals.capture_bridge import bridge_capture_to_websocket
 from omnigent.terminals.control_bridge import bridge_tmux_control_to_websocket
 from omnigent.terminals.ws_common import WS_CLOSE_TERMINAL_NOT_FOUND
 from omnigent.util.json_types import JsonObject as _JsonObject
@@ -967,6 +968,14 @@ def register_resource_routes(
         )
         _COST_POPUP_REPOP_TASKS.add(_repop_task)
         _repop_task.add_done_callback(_COST_POPUP_REPOP_TASKS.discard)
+        if getattr(entry.instance, "backend_name", "tmux") == "psmux":
+            await bridge_capture_to_websocket(
+                websocket,
+                instance=entry.instance,
+                read_only=read_only,
+                on_client_interaction=entry.instance.note_client_interaction,
+            )
+            return
         await bridge_tmux_control_to_websocket(
             websocket,
             socket_path=str(entry.instance.socket_path),

@@ -46,7 +46,8 @@ from urllib.parse import quote
 
 from omnigent.inner.datamodel import OSEnvSpec, TerminalEnvSpec
 from omnigent.inner.os_env import OSEnvironment
-from omnigent.inner.terminal import TerminalInstance, create_terminal_instance
+from omnigent.inner.terminal import TerminalInstance
+from omnigent.terminals.backend import TerminalMuxBackend, default_terminal_mux_backend
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +129,12 @@ class TerminalRegistry:
     map-level consistency.
     """
 
-    def __init__(self, *, conversation_link_base_url: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        conversation_link_base_url: str | None = None,
+        backend: TerminalMuxBackend | None = None,
+    ) -> None:
         """
         Construct an empty registry.
 
@@ -137,6 +143,7 @@ class TerminalRegistry:
             ``None`` keeps links relative.
         """
         self._conversation_link_base_url = conversation_link_base_url
+        self._backend = backend or default_terminal_mux_backend()
         # Two-level dict: conversation_id -> (name, key) -> instance.
         # Per-conversation maps make ``cleanup_conversation`` cheap
         # (one pop) and ``list_for_conversation`` direct.
@@ -247,22 +254,22 @@ class TerminalRegistry:
         shared_environment_args = (
             {"parent_environment": parent_environment} if parent_environment else {}
         )
-        created = create_terminal_instance(
+        created_instance, created_cwd = self._backend.create(
             terminal_name,
             session_key,
             spec,
-            parent_os_env_spec=parent_os_env,
+            parent_os_env=parent_os_env,
             **shared_environment_args,
             cwd_override=cwd_override,
             sandbox_override=sandbox_override,
             conversation_link=self.conversation_link_for_id(conversation_id),
         )
-        created.instance.lifecycle_trace.transfer_session(conversation_id)
-        await created.instance.launch(cwd=created.cwd)
-        if not await created.instance.is_alive():
-            created.instance.lifecycle_trace.note_exit()
+        created_instance.lifecycle_trace.transfer_session(conversation_id)
+        await created_instance.launch(cwd=created_cwd)
+        if not await created_instance.is_alive():
+            created_instance.lifecycle_trace.note_exit()
             try:
-                await asyncio.wait_for(created.instance.close(), timeout=_CLOSE_TIMEOUT_S)
+                await asyncio.wait_for(created_instance.close(), timeout=_CLOSE_TIMEOUT_S)
             except asyncio.TimeoutError:
                 logger.warning(
                     "Newly launched terminal close timed out for %s:%s in conv %s",
@@ -270,7 +277,7 @@ class TerminalRegistry:
                     session_key,
                     conversation_id,
                 )
-            raise TerminalExitedDuringLaunch(created.instance)
+            raise TerminalExitedDuringLaunch(created_instance)
 
         with self._lock:
             slot = self._by_conversation.setdefault(conversation_id, {})
@@ -281,12 +288,12 @@ class TerminalRegistry:
             racer = slot.get(key)
             if racer is not None and racer.running:
                 # Close ours outside the lock; racer wins.
-                instance_to_close: TerminalInstance | None = created.instance
+                instance_to_close: TerminalInstance | None = created_instance
                 winning_instance = racer
             else:
-                slot[key] = created.instance
+                slot[key] = created_instance
                 instance_to_close = None
-                winning_instance = created.instance
+                winning_instance = created_instance
                 # Allocate a per-instance lock alongside the
                 # registration. Tools fetch it via
                 # :meth:`get_instance_lock` to serialize concurrent
