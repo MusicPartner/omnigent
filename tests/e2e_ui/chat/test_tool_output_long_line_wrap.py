@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import tempfile
 import uuid
 from collections.abc import Iterator
@@ -40,6 +41,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from tests.e2e_ui.conftest import (
     _create_bundled_session,
+    _ensure_runner_online,
     configure_mock_llm,
     set_fallback_mock_llm,
 )
@@ -115,6 +117,7 @@ def long_output_session(
     live_server: str,
     runner_id: str,
     mock_llm_server_url: str,
+    tmp_path_factory: pytest.TempPathFactory,
 ) -> Iterator[tuple[str, str]]:
     """A runner-bound session whose turn runs one long-output shell command.
 
@@ -128,6 +131,7 @@ def long_output_session(
     :param mock_llm_server_url: Session-scoped mock LLM server URL.
     :returns: ``(base_url, session_id)``.
     """
+    respawned_runner = _ensure_runner_online(live_server, tmp_path_factory)
     ws = Path(tempfile.mkdtemp(prefix="omnigent-e2e-long-output-"))
     name = f"long_output_probe_{uuid.uuid4().hex[:8]}"
     model = f"long-output-probe-{uuid.uuid4().hex[:8]}"
@@ -157,6 +161,13 @@ def long_output_session(
     finally:
         httpx.delete(f"{live_server}/v1/sessions/{session_id}", timeout=10.0)
         shutil.rmtree(ws, ignore_errors=True)
+        if respawned_runner is not None:
+            respawned_runner.terminate()
+            try:
+                respawned_runner.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                respawned_runner.kill()
+                respawned_runner.wait(timeout=5)
 
 
 def _send(page: Page, text: str) -> None:
