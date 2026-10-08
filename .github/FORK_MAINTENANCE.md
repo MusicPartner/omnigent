@@ -101,9 +101,16 @@ The latest failed [UI run](https://github.com/MusicPartner/omnigent/actions/runs
 counted the expected undelivered-message notice as an assistant reply. Both
 attempts' Claude transcripts contained exactly two replies. The corrected
 assertion passed when replayed against the failed browser DOM and still rejected
-a duplicated reply. The Linux reconnect journey has not been rerun remotely.
-The [fork validation run](https://github.com/MusicPartner/omnigent/actions/runs/37822928820)
-on committed revision `1f40f896c` passed; it predates this follow-up.
+a duplicated reply. The corrected reconnect journey passed on its first attempt
+in the [new UI run](https://github.com/MusicPartner/omnigent/actions/runs/37828738534),
+and all ten shards plus Browser Contract UI passed.
+The [fork validation run](https://github.com/MusicPartner/omnigent/actions/runs/37828737400)
+on revision `2d43e9d95` passed, including the Windows installer artifact.
+[Docker](https://github.com/MusicPartner/omnigent/actions/runs/37829582487),
+[Integration](https://github.com/MusicPartner/omnigent/actions/runs/37829587308),
+and [E2E](https://github.com/MusicPartner/omnigent/actions/runs/37829592170)
+also passed. E2E needed one retry of only shard 3 after a test-server port
+collision; the same revision then passed all 202 tests in that shard.
 
 Local focused validation: 587 passed, 2 skipped, and 6 Unix-only checks
 were deselected. The previously failing exit-status assertion exposed a dependency
@@ -118,8 +125,17 @@ Deferred pending a clear caller contract:
 - Replace sandbox `%*` batch forwarding: some callers accept only an executable
   filename, so a Python executable plus launcher arguments needs an API change.
 - Select quoting by the consuming shell instead of the host OS, including popups.
-- Capture a real Claude pane's `pane_start_command` and Win32 command line with
-  its full settings JSON; the current real-psmux argv check uses a Python child.
+- Automate the supplementary real-Claude capture across supported versions.
+  Local Win32 capture on Claude 2.1.294/psmux 3.3.8 proved the settings-file
+  path and full 6,822-byte inline JSON unchanged, plus exact Setup-hook argv,
+  cwd and environment removal. In psmux 3.3.8, `pane_start_command` formats
+  the default shell and cannot prove child argv.
+
+The [remaining-work plan](../docs/windows/PARITY-NEXT-STEPS.md) records researched
+launcher options, shell consumers, CLI compatibility choices, and the separate
+Windows auth-provenance gap exposed by the non-blocking unit sweep. That sweep
+timed out in a POSIX helper fixture; the required Windows checks still passed.
+No ownership checks were bypassed and no blanket test skips were added.
 
 To repeat the new Windows checks from this worktree:
 
