@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import os
-import shlex
 
 import click
 
 from omnigent._platform import IS_WINDOWS
-from omnigent.native.shell import shell_join
+from omnigent.native.shell import shell_join, split_command
 
 _RESUME_COMMAND_PREFIX_ENV_VAR = "OMNIGENT_RESUME_COMMAND_PREFIX"
 
@@ -37,14 +36,7 @@ def format_native_resume_command(
     prefix = os.environ.get(_RESUME_COMMAND_PREFIX_ENV_VAR)
     if prefix:
         try:
-            prefix_parts = shlex.split(prefix, posix=not IS_WINDOWS)
-            if IS_WINDOWS:
-                prefix_parts = [
-                    token[1:-1]
-                    if len(token) >= 2 and token[0] == token[-1] and token[0] in ("'", '"')
-                    else token
-                    for token in prefix_parts
-                ]
+            prefix_parts = split_command(prefix, windows=IS_WINDOWS)
         except ValueError:
             prefix_parts = []
         if prefix_parts:

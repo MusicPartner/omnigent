@@ -51,7 +51,7 @@ from typing import TYPE_CHECKING
 import tomllib
 
 from omnigent._platform import IS_WINDOWS
-from omnigent.native.shell import shell_join
+from omnigent.native.shell import shell_join, split_command
 
 if TYPE_CHECKING:
     # Imported only for type hints; the heavy/optional imports remain lazy
@@ -1731,16 +1731,7 @@ def _run_upgrade_command(command: str, console: Console) -> int:
     """
     console.print(f"[yellow]Running:[/yellow] {command}")
     try:
-        import shlex
-
-        args = shlex.split(command, posix=not IS_WINDOWS)
-        if IS_WINDOWS:
-            args = [
-                token[1:-1]
-                if len(token) >= 2 and token[0] == token[-1] and token[0] in ("'", '"')
-                else token
-                for token in args
-            ]
+        args = split_command(command, windows=IS_WINDOWS)
         result = subprocess.run(args, check=False)
     except (OSError, ValueError) as exc:
         # OSError: binary not on PATH. ValueError: shlex.split
