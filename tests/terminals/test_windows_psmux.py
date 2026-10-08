@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -9,6 +12,7 @@ import pytest
 
 from omnigent.inner.datamodel import OSEnvSandboxSpec, OSEnvSpec, TerminalEnvSpec
 from omnigent.terminals import TerminalRegistry
+from omnigent.terminals import psmux as psmux_module
 from omnigent.terminals.backend import PsmuxTerminalInstance, PsmuxTerminalMuxBackend
 from omnigent.terminals.capture_bridge import _screen_snapshot_bytes, bridge_capture_to_websocket
 from omnigent.terminals.ws_common import (
@@ -421,3 +425,184 @@ def test_psmux_backend_reexport_preserves_identity() -> None:
     assert backend.PsmuxTerminalMuxBackend is psmux.PsmuxTerminalMuxBackend
     assert backend.PsmuxTerminalInstance is psmux.PsmuxTerminalInstance
     assert terminals_pkg.PsmuxTerminalMuxBackend is psmux.PsmuxTerminalMuxBackend
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows launcher test")
+def test_psmux_python_launcher_preserves_argv_environment_and_exit_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    launch_path = tmp_path / "launch.py"
+    launch_path.write_text(psmux_module._PSMUX_CLEAN_ENV_SCRIPT, encoding="utf-8")
+    output_path = tmp_path / "result.json"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", "inherited-from-server")
+    monkeypatch.setenv("OMNIGENT_PROBE_KEEP", "retained")
+    # Isolated startup must ignore modules placed beside the launcher.
+    (tmp_path / "subprocess.py").write_text("raise RuntimeError('shadowed')", encoding="utf-8")
+    child_script = (
+        "import json,os,pathlib,sys; "
+        "pathlib.Path(sys.argv[1]).write_text(json.dumps({"
+        "'argv':sys.argv[2:], 'unset':os.getenv('CLAUDE_CONFIG_DIR'), "
+        "'kept':os.getenv('OMNIGENT_PROBE_KEEP')}), encoding='utf-8'); sys.exit(37)"
+    )
+    payload = [
+        json.dumps({"permissionMode": "default", "command": 'echo hi 2>> "log file"'}),
+        '& | ^ ! %PATH% > 2>> "quoted" Å',
+        "",
+        "space and trailing slash\\\\",
+    ]
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            str(launch_path),
+            "1",
+            "CLAUDE_CONFIG_DIR",
+            sys.executable,
+            "-I",
+            "-c",
+            child_script,
+            str(output_path),
+            *payload,
+        ],
+        cwd=tmp_path,
+        check=False,
+    )
+
+    assert completed.returncode == 37
+    result = json.loads(output_path.read_text(encoding="utf-8"))
+    assert result == {"argv": payload, "unset": None, "kept": "retained"}
+    assert os.environ["CLAUDE_CONFIG_DIR"] == "inherited-from-server"
+
+
+async def test_psmux_launch_uses_isolated_absolute_python_wrapper(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", "inherited")
+    instance = PsmuxTerminalInstance(
+        name="shell",
+        session_key="s1",
+        socket_path=tmp_path / "psmux.sock",
+        private_dir=tmp_path,
+        command=sys.executable,
+        args=['{"command":"echo Å & | ^ ! %PATH% 2>> \\\\"log file\\\\""}', ""],
+        env_unset=["CLAUDE_CONFIG_DIR"],
+    )
+    proc = AsyncMock()
+    proc.returncode = 0
+    proc.communicate.return_value = (b"", b"")
+    spawn = AsyncMock(return_value=proc)
+    monkeypatch.setattr(
+        psmux_module,
+        "asyncio",
+        SimpleNamespace(create_subprocess_exec=spawn, subprocess=asyncio.subprocess),
+    )
+    await instance.launch(cwd=tmp_path)
+
+    call = spawn.call_args
+    argv = call.args
+    wrapper = argv[argv.index("--") + 1 :]
+    assert wrapper == (
+        sys.executable,
+        "-I",
+        str((tmp_path / "launch.py").resolve()),
+        "1",
+        "CLAUDE_CONFIG_DIR",
+        shutil.which(sys.executable) or sys.executable,
+        *instance.args,
+    )
+    assert "CLAUDE_CONFIG_DIR" not in call.kwargs["env"]
+    assert (tmp_path / "launch.py").read_text(
+        encoding="utf-8"
+    ) == psmux_module._PSMUX_CLEAN_ENV_SCRIPT
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows psmux test")
+@pytest.mark.skipif(shutil.which("psmux") is None, reason="psmux not installed")
+async def test_windows_psmux_preserves_json_argv_and_clears_existing_server_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("OMNIGENT_PROBE_UNSET", raising=False)
+    output_path = tmp_path / "result.json"
+    seed_path = tmp_path / "seed.json"
+    seed = PsmuxTerminalInstance(
+        name="seed",
+        session_key="s1",
+        socket_path=tmp_path / "psmux.sock",
+        private_dir=tmp_path,
+        command=sys.executable,
+        args=[
+            "-I",
+            "-c",
+            (
+                "import json,os,pathlib,sys,time; "
+                "pathlib.Path(sys.argv[1]).write_text(json.dumps({"
+                "'config':os.getenv('CLAUDE_CONFIG_DIR'), "
+                "'unset':os.getenv('OMNIGENT_PROBE_UNSET')})); time.sleep(60)"
+            ),
+            str(seed_path),
+        ],
+        env={"CLAUDE_CONFIG_DIR": "server-config", "OMNIGENT_PROBE_UNSET": "server-unset"},
+    )
+    payload = [
+        json.dumps({"command": 'echo Å 2>> "log file"', "permissionMode": "default"}),
+        '& | ^ ! %PATH% > 2>> "quoted"',
+        "",
+        "space and trailing slash\\",
+    ]
+    instance = PsmuxTerminalInstance(
+        name="probe",
+        session_key="s1",
+        socket_path=seed.socket_path,
+        private_dir=tmp_path,
+        command=sys.executable,
+        args=[
+            "-I",
+            "-c",
+            (
+                "import json,os,pathlib,sys; "
+                "pathlib.Path(sys.argv[1]).write_text(json.dumps({"
+                "'argv':sys.argv[2:], 'config':os.getenv('CLAUDE_CONFIG_DIR'), "
+                "'unset':os.getenv('OMNIGENT_PROBE_UNSET'), 'cwd':os.getcwd()}), "
+                "encoding='utf-8'); sys.exit(37)"
+            ),
+            str(output_path),
+            *payload,
+        ],
+        env_unset=["CLAUDE_CONFIG_DIR", "OMNIGENT_PROBE_UNSET"],
+        keep_alive_after_exit=True,
+    )
+    try:
+        await seed.launch(cwd=tmp_path)
+        for _ in range(100):
+            if seed_path.exists():
+                break
+            await asyncio.sleep(0.1)
+        assert json.loads(seed_path.read_text()) == {
+            "config": "server-config",
+            "unset": "server-unset",
+        }
+        await instance._tmux("set-option", "-gq", "remain-on-exit", "on")
+        await instance.launch(cwd=tmp_path)
+        for _ in range(100):
+            if output_path.exists():
+                break
+            await asyncio.sleep(0.1)
+        assert json.loads(output_path.read_text(encoding="utf-8")) == {
+            "argv": payload,
+            "config": None,
+            "unset": None,
+            "cwd": str(tmp_path),
+        }
+        for _ in range(100):
+            await instance._refresh_exit_status()
+            if instance.last_exit_status() is not None:
+                break
+            await asyncio.sleep(0.1)
+        assert instance.last_exit_status() == 37
+    finally:
+        await instance.close()
+        await seed.close()

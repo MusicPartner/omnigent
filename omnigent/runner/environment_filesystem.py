@@ -48,7 +48,7 @@ from omnigent.inner.sandbox import (
     is_unconfined,
     reachable_roots,
 )
-from omnigent.runner.python_probe import windows_python_command
+from omnigent.runner.python_probe import windows_python_argv
 
 if TYPE_CHECKING:
     from omnigent.inner.os_env import OpResult, OSEnvironment
@@ -76,15 +76,12 @@ def _shell_quote(s: str) -> str:
 def _python_shell_command(script: str) -> str:
     """Build a shell command that runs *script*.
 
-    Windows uses the runner's own interpreter (see :mod:`python_probe`).
-    POSIX sandboxes keep using ``python3`` so the interpreter remains the one
+    POSIX sandboxes use ``python3`` so the interpreter remains the one
     provided inside the sandbox rather than the parent process environment.
 
     :param script: Python source passed to ``python -c``.
     :returns: A command string for :meth:`OSEnvironment.shell`.
     """
-    if IS_WINDOWS:
-        return windows_python_command(sys.executable, script)
     return f"python3 -c {_shell_quote(script)}"
 
 
@@ -624,8 +621,8 @@ class CallerProcessFilesystem:
 
     Routes read/write/edit through the OSEnvironment's methods so
     sandbox policies (bwrap, seatbelt) are enforced by the helper
-    subprocess.  Directory listing and stat use ``os_env.shell()``
-    for the same reason.  The ``_root`` path is used only for
+    subprocess. Directory listing and stat use that helper's shell or
+    direct argv execution for the same reason.  The ``_root`` path is used only for
     path validation (traversal checks), not for direct I/O.
 
     :param os_env: The backing OSEnvironment instance.
@@ -646,6 +643,19 @@ class CallerProcessFilesystem:
         else:
             self._roots = reachable_roots(self._root, policy)
             self._unconfined = is_unconfined(policy)
+
+    async def _run_python_probe(self, script: str) -> OpResult:
+        """Run Python inside the environment, avoiding Windows shell quoting.
+
+        :param script: Python source for the filesystem operation.
+        :returns: The helper's command result.
+        """
+        if IS_WINDOWS:
+            return await _run_os_env_async(
+                self._os_env.launch_command,
+                windows_python_argv(sys.executable, script),
+            )
+        return await _run_os_env_async(self._os_env.shell, _python_shell_command(script))
 
     @property
     def reach(self) -> tuple[list[ReachableRoot], bool]:
@@ -832,10 +842,7 @@ class CallerProcessFilesystem:
                 "print(json.dumps(es))",
             ]
         )
-        result = await _run_os_env_async(
-            self._os_env.shell,
-            _python_shell_command(_script),
-        )
+        result = await self._run_python_probe(_script)
         if "error" in result:
             raise FilesystemPathNotFound(f"Directory {path!r} not found or not accessible")
 
@@ -1056,10 +1063,7 @@ while deferred and not stop:
 print(json.dumps({'r': results, 't': truncated}))
 """
         _script = _header + "\n" + _body
-        result = await _run_os_env_async(
-            self._os_env.shell,
-            _python_shell_command(_script),
-        )
+        result = await self._run_python_probe(_script)
         if "error" in result:
             raise FilesystemPathNotFound(f"Root directory not accessible: {result['error']}")
 
@@ -1278,10 +1282,7 @@ print(json.dumps({'r': results, 't': truncated}))
                 "    'r': r, 'dev': s.st_dev, 'ino': s.st_ino}))",
             ]
         )
-        result = await _run_os_env_async(
-            self._os_env.shell,
-            _python_shell_command(_script),
-        )
+        result = await self._run_python_probe(_script)
         if "error" in result or result.get("exit_code", 1) != 0:
             return None
         try:
@@ -1464,10 +1465,7 @@ print(json.dumps({'r': results, 't': truncated}))
                 "print(json.dumps({'s': s.st_size, 'd': S.S_ISDIR(s.st_mode)}))",
             ]
         )
-        result = await _run_os_env_async(
-            self._os_env.shell,
-            _python_shell_command(_script),
-        )
+        result = await self._run_python_probe(_script)
         if "error" in result or result.get("exit_code", 1) != 0:
             raise FilesystemPathNotFound(f"Path {validated!r} not found")
         try:
@@ -1496,10 +1494,7 @@ print(json.dumps({'r': results, 't': truncated}))
                 "print(len(os.listdir(p)))",
             ]
         )
-        check = await _run_os_env_async(
-            self._os_env.shell,
-            _python_shell_command(_script),
-        )
+        check = await self._run_python_probe(_script)
         count = int(check.get("stdout", "0").strip() or "0")
         return count > 0
 

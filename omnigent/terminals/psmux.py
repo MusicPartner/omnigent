@@ -11,6 +11,7 @@ import asyncio
 import logging
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -35,19 +36,14 @@ def native_terminal_supported() -> bool:
 
 
 _PSMUX_CLEAN_ENV_SCRIPT = """\
-$unsetCount = [int]$args[0]
-for ($index = 0; $index -lt $unsetCount; $index++) {
-    Remove-Item -LiteralPath "Env:$($args[$index + 1])" -ErrorAction SilentlyContinue
-}
-$commandIndex = $unsetCount + 1
-$command = $args[$commandIndex]
-$commandArgs = if ($commandIndex + 1 -lt $args.Count) {
-    @($args[($commandIndex + 1)..($args.Count - 1)])
-} else {
-    @()
-}
-& $command @commandArgs
-exit $LASTEXITCODE
+import os
+import subprocess
+import sys
+
+unset_count = int(sys.argv[1])
+for name in sys.argv[2:unset_count + 2]:
+    os.environ.pop(name, None)
+raise SystemExit(subprocess.call(sys.argv[unset_count + 2:]))
 """
 
 
@@ -92,13 +88,11 @@ class PsmuxTerminalInstance(TerminalInstance):
         executable = shutil.which(self.command) or self.command
         command_args = [executable, *self.args]
         if self.env_unset:
-            wrapper_path = self.private_dir / "clean-env.ps1"
+            wrapper_path = (self.private_dir / "launch.py").resolve()
             wrapper_path.write_text(_PSMUX_CLEAN_ENV_SCRIPT, encoding="utf-8")
-            powershell = shutil.which("pwsh") or shutil.which("powershell.exe") or "pwsh.exe"
             command_args = [
-                powershell,
-                "-NoProfile",
-                "-File",
+                sys.executable,
+                "-I",
                 str(wrapper_path),
                 str(len(self.env_unset)),
                 *self.env_unset,

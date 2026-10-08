@@ -349,6 +349,21 @@ class OSEnvironment(ABC):
     ) -> OpResult:
         raise NotImplementedError
 
+    async def launch_command(
+        self,
+        argv: Sequence[str],
+        timeout: int | None = None,
+        max_output: int | None = None,
+    ) -> OpResult:
+        """Run an argv command inside this environment without a shell.
+
+        :param argv: Executable and arguments, without shell quoting.
+        :param timeout: Maximum execution time in seconds.
+        :param max_output: Maximum characters per output field.
+        :returns: The command result.
+        """
+        raise NotImplementedError
+
     def prepare_sandbox(self, policy: SandboxPolicy) -> None:
         """Attach environment-owned resources before launching a consumer."""
         if policy.copy_on_write_roots:
@@ -869,6 +884,29 @@ class CallerProcessOSEnvironment(OSEnvironment):
     def copy_on_write_environment(self) -> CopyOnWriteEnvironment | None:
         return self._copy_on_write_environment
 
+    async def launch_command(
+        self,
+        argv: Sequence[str],
+        timeout: int | None = None,
+        max_output: int | None = None,
+    ) -> OpResult:
+        """Run argv through the sandboxed helper, preserving its child environment.
+
+        :param argv: Executable and arguments, without shell quoting.
+        :param timeout: Maximum execution time in seconds.
+        :param max_output: Maximum characters per output field.
+        :returns: The command result.
+        """
+        request: dict[str, object] = {
+            "op": "launch",
+            "argv": list(argv),
+            "timeout": 120 if timeout is None else timeout,
+        }
+        if max_output is not None:
+            request["max_output"] = max_output
+        result = await run_sync_on_thread(self._helper.request, request)
+        return cast(OpResult, result)
+
     def prepare_sandbox(self, policy: SandboxPolicy) -> None:
         if self._copy_on_write_environment is not None:
             self._copy_on_write_environment.prepare(policy)
@@ -1119,10 +1157,19 @@ def _handle_helper_request(
             request.get("edits"),
         )
 
-    if op == "shell":
+    if op in ("shell", "launch"):
         command = request.get("command")
-        if not isinstance(command, str) or not command.strip():
-            return {"error": "command must be a non-empty string"}
+        argv = request.get("argv")
+        if op == "shell":
+            if not isinstance(command, str) or not command.strip():
+                return {"error": "command must be a non-empty string"}
+        elif (
+            not isinstance(argv, list)
+            or not argv
+            or not all(isinstance(arg, str) for arg in argv)
+            or not argv[0]
+        ):
+            return {"error": "argv must contain an executable and string arguments"}
         timeout_raw = request.get("timeout", 120)
         timeout = timeout_raw if isinstance(timeout_raw, int) else 120
         if timeout < 1:
@@ -1136,8 +1183,15 @@ def _handle_helper_request(
             max_output_raw if isinstance(max_output_raw, int) else _MAX_TOOL_OUTPUT_CHARS,
             5_000_000,
         )
+        if op == "launch":
+            return _run_argv_impl(
+                argv=cast(list[str], argv),
+                timeout=timeout,
+                cwd=cwd,
+                max_output=max_output,
+            )
         return _shell_impl(
-            command=command,
+            command=cast(str, command),
             timeout=timeout,
             shell_path=shell_path,
             cwd=cwd,
@@ -1535,7 +1589,32 @@ def _shell_impl(
         ``stdout`` and ``stderr`` are each truncated to ``max_output``
         characters.
     """
-    argv = _shell_argv(shell_path, command)
+    return _run_argv_impl(
+        argv=_shell_argv(shell_path, command),
+        timeout=timeout,
+        cwd=cwd,
+        max_output=max_output,
+        shell_path=shell_path,
+    )
+
+
+def _run_argv_impl(
+    *,
+    argv: Sequence[str],
+    timeout: int,
+    cwd: Path,
+    max_output: int = _MAX_TOOL_OUTPUT_CHARS,
+    shell_path: str | None = None,
+) -> OpResult:
+    """Execute argv with the helper's cwd, environment, and output limits.
+
+    :param argv: Executable and arguments.
+    :param timeout: Maximum seconds before terminating the command.
+    :param cwd: Working directory for the command.
+    :param max_output: Maximum characters per output field.
+    :param shell_path: Shell identity for shell-command results.
+    :returns: The command result.
+    """
     try:
         completed = subprocess.run(
             argv,
@@ -1562,7 +1641,8 @@ def _shell_impl(
             "cwd": str(cwd),
         }
     except OSError as exc:
-        return {"error": f"Failed to run shell command: {exc}"}
+        kind = "shell command" if shell_path is not None else "command"
+        return {"error": f"Failed to run {kind}: {exc}"}
 
     stdout = _truncate_output(completed.stdout, "stdout", max_output)
     stderr = _truncate_output(completed.stderr, "stderr", max_output)

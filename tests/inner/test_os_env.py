@@ -7,8 +7,10 @@ import base64
 import io
 import os
 import shutil
+import subprocess
 import tracemalloc
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -16,6 +18,7 @@ from omnigent._platform import IS_WINDOWS
 from omnigent.inner.datamodel import OSEnvSandboxSpec, OSEnvSpec
 from omnigent.inner.os_env import (
     _child_shell_env,
+    _handle_helper_request,
     _project_root,
     _read_impl,
     _shell_impl,
@@ -519,3 +522,53 @@ def test_shell_command_does_not_see_omnigent_project_root(
     out = result.get("stdout", "")
     assert project_entry in out
     assert str(_project_root()) not in out
+
+
+def test_launch_helper_preserves_argv_cwd_and_child_environment(tmp_path: Path) -> None:
+    argv = [r"C:\\Program Files\\Python\\python.exe", "-c", 'print("Å & | ^ % ! >")']
+    env = {"PATH": "child-path", "PROBE": "kept"}
+    completed = subprocess.CompletedProcess(argv, 0, stdout="probe", stderr="")
+    with (
+        patch("omnigent.inner.os_env._child_shell_env", return_value=env),
+        patch("omnigent.inner.os_env.subprocess.run", return_value=completed) as run,
+    ):
+        result = _handle_helper_request(
+            request={"op": "launch", "argv": argv},
+            cwd=tmp_path,
+            shell_path="cmd.exe",
+            sandbox=_inactive_policy(),
+        )
+
+    run.assert_called_once_with(
+        argv, cwd=str(tmp_path), env=env, text=True, capture_output=True, timeout=120
+    )
+    assert result["stdout"] == "probe"
+    assert result["exit_code"] == 0
+    assert result["shell"] is None
+
+
+@pytest.mark.parametrize("argv", [[], [""], ["python", None], "python -c probe"])
+def test_launch_helper_rejects_invalid_argv(tmp_path: Path, argv: object) -> None:
+    result = _handle_helper_request(
+        request={"op": "launch", "argv": argv},
+        cwd=tmp_path,
+        shell_path="cmd.exe",
+        sandbox=_inactive_policy(),
+    )
+    assert "error" in result
+
+
+async def test_launch_command_routes_through_environment_helper(tmp_path: Path) -> None:
+    from unittest.mock import Mock
+
+    os_env = create_os_environment(
+        OSEnvSpec(type="caller_process", cwd=str(tmp_path), sandbox=OSEnvSandboxSpec(type="none"))
+    )
+    assert os_env is not None
+    argv = [r"C:\\Program Files\\Python\\python.exe", "-c", 'print("probe")']
+    with patch.object(os_env._helper, "request", Mock(return_value={"exit_code": 0})) as request:
+        result = await os_env.launch_command(argv, timeout=7, max_output=55)
+    os_env.close()
+
+    assert result == {"exit_code": 0}
+    request.assert_called_once_with({"op": "launch", "argv": argv, "timeout": 7, "max_output": 55})
