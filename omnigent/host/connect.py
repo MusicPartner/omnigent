@@ -102,6 +102,7 @@ from omnigent.host.git_worktree import (
     list_worktrees,
     remove_worktree,
 )
+from omnigent.host.host_listing import host_native_path, is_untraversable_junction
 from omnigent.host.identity import HostIdentity, load_or_create_host_identity
 from omnigent.host.runner_zygote import ZygoteManager, ZygoteRunnerProc, ZygoteUnavailable
 from omnigent.inner import _proc
@@ -2509,15 +2510,8 @@ class HostProcess:
             except OSError:
                 continue
             if S_ISDIR(st.st_mode):
-                # Windows exposes legacy compatibility junctions such as
-                # ``My Documents`` even when traversal is explicitly denied.
-                # Do not advertise those as selectable workspace directories.
-                if os.path.isjunction(de.path):
-                    try:
-                        with os.scandir(de.path):
-                            pass
-                    except OSError:
-                        continue
+                if is_untraversable_junction(de.path):
+                    continue
                 entry_type = "directory"
                 size: int | None = None
             elif S_ISREG(st.st_mode):
@@ -2529,11 +2523,7 @@ class HostProcess:
             entries.append(
                 HostListDirEntry(
                     name=de.name,
-                    # ``DirEntry.path`` preserves the spelling of the input
-                    # prefix. On Windows a URL path arrives as ``C:/...`` and
-                    # scandir then appends ``\\name``, leaking a mixed path
-                    # back into the picker. Return the host-native spelling.
-                    path=os.path.normpath(de.path),
+                    path=host_native_path(de.path),
                     type=entry_type,
                     bytes=size,
                     modified_at=int(st.st_mtime),

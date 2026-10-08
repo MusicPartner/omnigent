@@ -15,7 +15,6 @@ import base64
 import os
 import re
 import stat
-import subprocess
 import sys
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
@@ -50,6 +49,7 @@ from omnigent.inner.sandbox import (
     is_unconfined,
     reachable_roots,
 )
+from omnigent.runner.python_probe import windows_python_command
 
 if TYPE_CHECKING:
     from omnigent.inner.os_env import OpResult, OSEnvironment
@@ -74,12 +74,9 @@ def _shell_quote(s: str) -> str:
 
 
 def _python_shell_command(script: str) -> str:
-    """Build a shell command that runs *script* with the runner's Python.
+    """Build a shell command that runs *script*.
 
-    Native Windows does not guarantee a ``python3`` command. In particular,
-    the Windows App execution alias can resolve it to a non-runnable stub.
-    Use the interpreter that is already running the runner there, and quote
-    the complete argv with Windows command-line rules for ``cmd.exe``.
+    Windows uses the runner's own interpreter (see :mod:`python_probe`).
     POSIX sandboxes keep using ``python3`` so the interpreter remains the one
     provided inside the sandbox rather than the parent process environment.
 
@@ -87,13 +84,7 @@ def _python_shell_command(script: str) -> str:
     :returns: A command string for :meth:`OSEnvironment.shell`.
     """
     if IS_WINDOWS:
-        encoded = base64.b64encode(script.encode("utf-8")).decode("ascii")
-        bootstrap = (
-            "exec(compile(__import__('base64').b64decode('"
-            + encoded
-            + "'),'omnigent-filesystem','exec'))"
-        )
-        return subprocess.list2cmdline([sys.executable, "-c", bootstrap])
+        return windows_python_command(sys.executable, script)
     return f"python3 -c {_shell_quote(script)}"
 
 
