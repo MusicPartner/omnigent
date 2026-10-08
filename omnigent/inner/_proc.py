@@ -364,9 +364,12 @@ def terminate_tree(process: _ProcessLike | None, *, grace: float = 0.0) -> None:
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             same_process = False
         if same_process and send_ctrl_break(pid):
-            if grace:
+            if not grace:
+                return
+            # Console children (e.g. cmd.exe running ping) may ignore CTRL_BREAK.
+            with suppress(psutil.TimeoutExpired):
                 _wait_gone(pid, grace)
-            return
+                return
     group_is_owned = owned_pgid is None or _identity_in_group(observed, owned_pgid)
     identities = _signal_tree_census(
         process,

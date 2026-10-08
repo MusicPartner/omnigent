@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -129,6 +131,42 @@ def test_terminate_tree_windows_path_falls_back_when_ctrl_break_fails(
     _proc.terminate_tree(windows_tree.process)
     assert windows_tree.sent == [4242]
     assert windows_tree.census == [{"force": False, "remove": False, "snapshot_root": True}]
+
+
+def test_terminate_tree_escalates_when_ctrl_break_is_ignored(
+    monkeypatch: pytest.MonkeyPatch, windows_tree: SimpleNamespace
+) -> None:
+    def wait_gone(pid: int, grace: float) -> None:
+        windows_tree.waited.append((pid, grace))
+        if len(windows_tree.waited) == 1:
+            raise _proc.psutil.TimeoutExpired(grace, pid)
+
+    monkeypatch.setattr(_proc, "_wait_gone", wait_gone)
+    _proc.terminate_tree(windows_tree.process, grace=5)
+    assert windows_tree.sent == [4242]
+    assert windows_tree.census == [{"force": False, "remove": False, "snapshot_root": True}]
+    assert windows_tree.waited == [(4242, 5), (4242, 5)]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="CTRL_BREAK is Windows-only")
+def test_terminate_tree_stops_a_child_that_ignores_ctrl_break() -> None:
+    script = (
+        "import signal, sys, time\n"
+        "signal.signal(signal.SIGBREAK, signal.SIG_IGN)\n"
+        "print('ready', flush=True)\n"
+        "time.sleep(60)\n"
+    )
+    proc = subprocess.Popen(
+        [sys.executable, "-c", script], stdout=subprocess.PIPE, **_proc.spawn_kwargs()
+    )
+    try:
+        assert proc.stdout is not None
+        assert proc.stdout.readline().strip() == b"ready"
+        _proc.terminate_tree(proc, grace=1)
+        assert proc.wait(timeout=5) is not None
+    finally:
+        _proc.kill_tree(proc)
+        proc.wait(timeout=5)
 
 
 def test_terminate_tree_never_breaks_a_previously_reused_root(
