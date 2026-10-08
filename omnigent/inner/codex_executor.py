@@ -54,6 +54,7 @@ from ._subprocess_lifecycle import close_subprocess_transport
 from .async_utils import run_sync_on_thread
 from .codex_goal_command import goal_objective_from_content as _goal_objective_from_content
 from .codex_goal_command import goal_objective_length_error as _goal_objective_length_error
+from .codex_windows import prefer_native_codex_exe
 from .databricks_executor import (
     _databricks_gateway_host,
 )
@@ -517,25 +518,7 @@ def _find_codex_cli() -> str | None:
     resolved = resolve_cli_binary("codex", env_var=_CODEX_PATH_ENV)
     if not IS_WINDOWS or resolved is None:
         return resolved
-
-    path = Path(resolved)
-    if path.suffix.lower() not in {".cmd", ".bat"}:
-        return resolved
-
-    # Passing TOML/JSON-valued ``-c`` arguments through an npm batch shim lets
-    # cmd.exe split their embedded spaces. The npm package ships the real Rust
-    # binary below the shim; invoke it directly so argv reaches Codex unchanged.
-    package_root = path.parent / "node_modules" / "@openai" / "codex"
-    try:
-        native_candidates = sorted(package_root.glob("**/vendor/**/codex.exe"))
-    except OSError:
-        native_candidates = []
-    for candidate in native_candidates:
-        if candidate.is_file():
-            return str(candidate)
-
-    native_on_path = resolve_cli_binary("codex.exe")
-    return native_on_path or resolved
+    return prefer_native_codex_exe(resolved)
 
 
 async def _codex_cli_version(codex_path: str) -> tuple[int, int, int] | None:
