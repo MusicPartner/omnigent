@@ -151,6 +151,11 @@ class _ChatSseStream:
                     stream._connected.set()
                 try:
                     self.wfile.write(b": browser chat stream ready\n\n")
+                    # Mirror the server's subscription-ready frame; the client
+                    # holds the first send until it arrives.
+                    self.wfile.write(
+                        b'event: session.heartbeat\ndata: {"type":"session.heartbeat"}\n\n'
+                    )
                     self.wfile.flush()
                     while True:
                         try:
