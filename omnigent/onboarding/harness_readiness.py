@@ -75,6 +75,7 @@ from omnigent.onboarding.provider_config import (
     default_provider_for_harness,
     load_config,
 )
+from omnigent.terminals.psmux import native_terminal_supported
 
 # In-process SDK harnesses: no CLI binary to gate on. The launch gate never
 # blocks them (spec-level auth is invisible here), but the picker map reports
@@ -232,8 +233,8 @@ def _harness_availability_core(harness: str) -> HarnessAvailability:
         ``False`` or a reason string otherwise.
     """
     canonical = _canonical_harness(harness)
-    if IS_WINDOWS and canonical in NATIVE_HARNESSES:
-        # Native harnesses require tmux/PTY, which the runner does not support on Windows.
+    if canonical in NATIVE_HARNESSES and not native_terminal_supported():
+        # Windows native harnesses need psmux before binary/auth probes can apply.
         return False
     if canonical == "acp":
         # The generic ACP harness has no fixed binary — "configured" means at
@@ -947,7 +948,7 @@ def _cli_family_availability(canonical: str, install_key: str) -> HarnessAvailab
 
 def _harness_availability(canonical: str) -> HarnessAvailability:
     """Return picker-facing availability for one canonical harness spelling."""
-    if IS_WINDOWS and canonical in NATIVE_HARNESSES:
+    if canonical in NATIVE_HARNESSES and not native_terminal_supported():
         return False
     if _is_codex_family_harness(canonical):
         from omnigent.harnesses.codex_native.main import _codex_auth_unavailable_reason
@@ -1024,6 +1025,15 @@ def _is_codex_family_harness(canonical: str) -> bool:
     )
 
 
+def _harness_readiness_cache_key(canonical: str) -> tuple[str, ...]:
+    """Keep Windows-native readiness separate and sensitive to psmux presence."""
+    if IS_WINDOWS and canonical in NATIVE_HARNESSES:
+        return ("harness", canonical, "psmux", str(native_terminal_supported()))
+    if _is_codex_family_harness(canonical):
+        return ("codex",)
+    return ("harness", canonical)
+
+
 def configured_harness_map() -> dict[str, HarnessAvailability]:
     """Return per-harness readiness for every accepted harness spelling.
 
@@ -1063,13 +1073,7 @@ def configured_harness_map() -> dict[str, HarnessAvailability]:
     cache_key_by_spelling: dict[str, tuple[str, ...]] = {}
     for spelling in spellings:
         canonical = _canonical_harness(spelling)
-        # Windows-native Codex must not share plain Codex's readiness cache entry.
-        if _is_codex_family_harness(canonical) and not (
-            IS_WINDOWS and canonical in NATIVE_HARNESSES
-        ):
-            cache_key: tuple[str, ...] = ("codex",)
-        else:
-            cache_key = ("harness", canonical)
+        cache_key = _harness_readiness_cache_key(canonical)
         canonical_by_cache_key.setdefault(cache_key, canonical)
         cache_key_by_spelling[spelling] = cache_key
 

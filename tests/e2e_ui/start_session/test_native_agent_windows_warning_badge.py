@@ -11,7 +11,8 @@ from playwright.async_api import Route, async_playwright, expect
 from tests._helpers.async_thread import run_in_fresh_loop as _run_in_fresh_loop
 
 _HOST_ID = "host_e2e_windows"
-_WINDOWS_NATIVE_HARNESS_AVAILABLE: bool = False
+# Model a Windows host without psmux, not every Windows host.
+_WINDOWS_WITHOUT_PSMUX_NATIVE_HARNESS_AVAILABLE: bool = False
 _TESTED_NATIVE_HARNESS = "claude-native"
 
 
@@ -25,7 +26,7 @@ def _windows_hosts_body() -> str:
                     "owner": "e2e",
                     "status": "online",
                     "configured_harnesses": {
-                        _TESTED_NATIVE_HARNESS: _WINDOWS_NATIVE_HARNESS_AVAILABLE,
+                        _TESTED_NATIVE_HARNESS: _WINDOWS_WITHOUT_PSMUX_NATIVE_HARNESS_AVAILABLE,
                         "claude-sdk": True,
                     },
                 }

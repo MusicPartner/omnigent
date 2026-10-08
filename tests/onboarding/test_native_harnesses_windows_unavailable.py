@@ -60,6 +60,8 @@ def test_native_terminal_harness_unavailable_on_windows(
     monkeypatch.setattr(_plat, "IS_WINDOWS", True)
     monkeypatch.setattr(readiness, "IS_WINDOWS", True)
 
+    monkeypatch.setattr(readiness, "native_terminal_supported", lambda: False)
+
     result = readiness.configured_harness_map()
 
     assert result.get(harness) is not True

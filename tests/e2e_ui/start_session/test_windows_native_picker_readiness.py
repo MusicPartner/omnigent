@@ -64,6 +64,7 @@ if os.environ.get("SIMULATE_WINDOWS") == "1":
 import omnigent.onboarding.harness_readiness as readiness
 if os.environ.get("SIMULATE_WINDOWS") == "1" and hasattr(readiness, "IS_WINDOWS"):
     readiness.IS_WINDOWS = True
+    readiness.native_terminal_supported = lambda: False
 print(json.dumps(readiness.configured_harness_map()))
 """
 

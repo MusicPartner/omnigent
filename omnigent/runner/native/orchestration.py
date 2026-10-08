@@ -64,6 +64,7 @@ from omnigent.native.native_coding_agents import (
 )
 from omnigent.native.native_dispatch import resolve_hook
 from omnigent.process_logging import process_log_reference
+from omnigent.runner.native.windows_env import psmux_claude_env_unset
 from omnigent.runner.resource_registry import (
     ANTIGRAVITY_NATIVE_TERMINAL_ROLE,
     CLAUDE_NATIVE_TERMINAL_ROLE,
@@ -85,6 +86,7 @@ from omnigent.runner.session_init_protocol import (
 )
 from omnigent.runner.transports.ws_tunnel.event_delivery import RunnerEventDispatcher
 from omnigent.spec.types import AgentSpec
+from omnigent.terminals.psmux import native_terminal_supported
 
 _logger = logging.getLogger("omnigent.runner.app")
 
@@ -7420,6 +7422,8 @@ def _claude_terminal_env_unset(
         ``["DATABRICKS_CONFIG_PROFILE", "CLAUDECODE", "ANTHROPIC_API_KEY"]``.
     """
     env_unset = ["DATABRICKS_CONFIG_PROFILE", "CLAUDECODE"]
+    if IS_WINDOWS:
+        env_unset.extend(psmux_claude_env_unset())
     if claude_config is not None and claude_config.api_key_helper:
         env_unset.append("ANTHROPIC_API_KEY")
     return env_unset
@@ -7619,9 +7623,8 @@ def _native_terminal_start_error_payload(
             "Install @anthropic-ai/claude-code from WSL so a WSL-native `claude` "
             "binary wins PATH resolution, then retry."
         )
-    elif IS_WINDOWS:
-        # Native terminals are tmux/PTY-based and disabled on Windows by design.
-        # Give the client an actionable message instead of a log pointer.
+    elif IS_WINDOWS and not native_terminal_supported():
+        # Without psmux the Windows native terminal path is unavailable.
         message = (
             f"Native {runtime_name} terminal (tmux/PTY) is not supported on "
             "Windows. Use an SDK-based harness (e.g. claude-sdk, cursor, "

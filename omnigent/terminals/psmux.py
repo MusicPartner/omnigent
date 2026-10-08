@@ -28,6 +28,12 @@ from omnigent.runner.identity import strip_runner_auth_secrets
 
 logger = logging.getLogger(__name__)
 
+
+def native_terminal_supported() -> bool:
+    """Whether the platform can run its native terminal multiplexer."""
+    return not IS_WINDOWS or shutil.which("psmux") is not None
+
+
 _PSMUX_CLEAN_ENV_SCRIPT = """\
 $unsetCount = [int]$args[0]
 for ($index = 0; $index -lt $unsetCount; $index++) {

@@ -34,6 +34,12 @@ from omnigent.terminals.registry import TerminalExitedDuringLaunch
 _ERROR_ID_RE = re.compile(r" Error ID: (err_[0-9a-f]{32})\.$")
 
 
+@pytest.fixture(autouse=True)
+def _supported_terminal_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Generic error classification runs with an available terminal backend."""
+    monkeypatch.setattr(orchestration, "native_terminal_supported", lambda: True)
+
+
 def test_missing_session_agent_classified_as_lifecycle_condition() -> None:
     """A ``SESSION_AGENT_MISSING`` cause yields the distinct lifecycle code.
 
@@ -80,6 +86,8 @@ def test_other_causes_keep_generic_startup_failure_code() -> None:
     assert payload["code"] == _NATIVE_TERMINAL_START_FAILED_CODE
     assert payload["code"] == "native_terminal_start_failed"
     assert "agent is no longer available" not in payload["message"]
+    assert "not supported on Windows" not in payload["message"]
+    assert "see the runner log" in payload["message"]
 
 
 @pytest.mark.parametrize(

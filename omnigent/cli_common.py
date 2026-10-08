@@ -15,6 +15,7 @@ import click
 
 from omnigent._platform import IS_WINDOWS
 from omnigent.cli_invocation import cli_invocation
+from omnigent.terminals.psmux import native_terminal_supported
 
 # Click ``flag_value`` for bare ``--resume`` (no arg). Must exist before any
 # command's decorator evaluates.
@@ -29,13 +30,13 @@ def reject_native_on_windows(harness: str) -> None:
     """Fail a native (tmux/PTY) harness command with an actionable message.
 
     The ``omnigent claude`` / ``codex`` / ``cursor`` native wrappers drive a
-    private tmux server and PTY, which don't exist on Windows. Point users at
-    the SDK harnesses / web UI instead of letting them hit a tmux crash.
+    private terminal multiplexer. Windows requires psmux; when it is absent,
+    point users at the SDK harnesses / web UI instead of a failed launch.
 
     :param harness: The native command name, e.g. ``"claude"``.
-    :raises click.ClickException: Always, when running on Windows.
+    :raises click.ClickException: On Windows when psmux is unavailable.
     """
-    if IS_WINDOWS:
+    if IS_WINDOWS and not native_terminal_supported():
         raise click.ClickException(
             f"`{cli_invocation()} {harness}` (native tmux/PTY terminal) is not supported on "
             f"Windows. Use an SDK-based harness via `{cli_invocation()} run <agent.yaml>` "
