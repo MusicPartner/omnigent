@@ -15,10 +15,12 @@ import base64
 import os
 import re
 import stat
+import sys
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, Literal, ParamSpec
 
+from omnigent._platform import IS_WINDOWS
 from omnigent.entities.environment_filesystem import (
     DeleteFilesystemResult,
     DirectoryNotEmpty,
@@ -46,6 +48,7 @@ from omnigent.inner.sandbox import (
     is_unconfined,
     reachable_roots,
 )
+from omnigent.runner.python_probe import windows_python_command
 
 if TYPE_CHECKING:
     from omnigent.inner.os_env import OpResult, OSEnvironment
@@ -68,6 +71,21 @@ def _shell_quote(s: str) -> str:
     :returns: Single-quoted shell-safe string.
     """
     return "'" + s.replace("'", "'\\''") + "'"
+
+
+def _python_shell_command(script: str) -> str:
+    """Build a shell command that runs *script*.
+
+    Windows uses the runner's own interpreter (see :mod:`python_probe`).
+    POSIX sandboxes keep using ``python3`` so the interpreter remains the one
+    provided inside the sandbox rather than the parent process environment.
+
+    :param script: Python source passed to ``python -c``.
+    :returns: A command string for :meth:`OSEnvironment.shell`.
+    """
+    if IS_WINDOWS:
+        return windows_python_command(sys.executable, script)
+    return f"python3 -c {_shell_quote(script)}"
 
 
 def _glob_to_regex(pattern: str) -> str:
@@ -469,17 +487,21 @@ def is_absolute_request(path: str) -> bool:
     """Whether a client-supplied path names an absolute location.
 
     The filesystem routes accept either a workspace-relative path (the
-    historical contract) or an absolute one. A path is absolute exactly
-    when it starts with ``/`` — the same rule the filesystem itself uses.
-    ``~`` is deliberately NOT expanded here: the environment metadata
-    already reports ``home``, so the caller expands it and sends a real
-    path rather than relying on whose home the runner would guess.
+    historical contract) or an absolute one, using the same rule
+    :func:`_validate_path` uses to reject an absolute path passed through the
+    relative route: ``os.path.isabs``. On POSIX that is exactly "starts with
+    ``/``"; on Windows it also recognizes a drive-letter path (``C:\\...``)
+    or a UNC path, so a native absolute path is routed the same way
+    regardless of host OS. ``~`` is deliberately NOT expanded here: the
+    environment metadata already reports ``home``, so the caller expands it
+    and sends a real path rather than relying on whose home the runner
+    would guess.
 
     :param path: Client-supplied path string, e.g. ``"src/app.py"`` or
         ``"/etc/hosts"``.
     :returns: ``True`` for absolute paths.
     """
-    return path.startswith("/")
+    return os.path.isabs(path)
 
 
 def resolve_browse_target(
@@ -519,9 +541,19 @@ def resolve_browse_target(
         raise InvalidPath("Path contains NUL bytes")
     # An unconfined environment's reach IS the filesystem root — stating it as
     # a root keeps every return below a containment check, rather than having
-    # one branch hand back an unchecked path.
+    # one branch hand back an unchecked path. The anchor is derived from
+    # *absolute_path* itself (``/`` on POSIX; the drive or UNC share, e.g.
+    # ``C:\``, on Windows) rather than hardcoded to ``/`` -- a fixed POSIX
+    # root would never contain a Windows drive-letter path, so every
+    # unconfined request would be wrongly rejected as unreachable.
+    root_anchor = Path(absolute_path).anchor or os.sep
     allowed = (
-        [*roots, ReachableRoot(path=Path("/"), access="write", origin="unconfined", kind="tree")]
+        [
+            *roots,
+            ReachableRoot(
+                path=Path(root_anchor), access="write", origin="unconfined", kind="tree"
+            ),
+        ]
         if unconfined
         else roots
     )
@@ -802,7 +834,7 @@ class CallerProcessFilesystem:
         )
         result = await _run_os_env_async(
             self._os_env.shell,
-            f"python3 -c {_shell_quote(_script)}",
+            _python_shell_command(_script),
         )
         if "error" in result:
             raise FilesystemPathNotFound(f"Directory {path!r} not found or not accessible")
@@ -1026,7 +1058,7 @@ print(json.dumps({'r': results, 't': truncated}))
         _script = _header + "\n" + _body
         result = await _run_os_env_async(
             self._os_env.shell,
-            f"python3 -c {_shell_quote(_script)}",
+            _python_shell_command(_script),
         )
         if "error" in result:
             raise FilesystemPathNotFound(f"Root directory not accessible: {result['error']}")
@@ -1248,7 +1280,7 @@ print(json.dumps({'r': results, 't': truncated}))
         )
         result = await _run_os_env_async(
             self._os_env.shell,
-            f"python3 -c {_shell_quote(_script)}",
+            _python_shell_command(_script),
         )
         if "error" in result or result.get("exit_code", 1) != 0:
             return None
@@ -1434,7 +1466,7 @@ print(json.dumps({'r': results, 't': truncated}))
         )
         result = await _run_os_env_async(
             self._os_env.shell,
-            f"python3 -c {_shell_quote(_script)}",
+            _python_shell_command(_script),
         )
         if "error" in result or result.get("exit_code", 1) != 0:
             raise FilesystemPathNotFound(f"Path {validated!r} not found")
@@ -1466,7 +1498,7 @@ print(json.dumps({'r': results, 't': truncated}))
         )
         check = await _run_os_env_async(
             self._os_env.shell,
-            f"python3 -c {_shell_quote(_script)}",
+            _python_shell_command(_script),
         )
         count = int(check.get("stdout", "0").strip() or "0")
         return count > 0
