@@ -403,8 +403,19 @@ async def test_capture_bridge_closes_not_found_when_backend_dies() -> None:
 
 def test_psmux_backend_missing_binary_error_is_actionable(monkeypatch: pytest.MonkeyPatch) -> None:
     import omnigent.terminals.backend as backend
+    import omnigent.terminals.psmux as psmux
 
-    monkeypatch.setattr(backend, "IS_WINDOWS", True)
-    monkeypatch.setattr(backend.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(psmux, "IS_WINDOWS", True)
+    monkeypatch.setattr(psmux.shutil, "which", lambda _name: None)
     with pytest.raises(RuntimeError, match="Install psmux"):
         backend.PsmuxTerminalMuxBackend().validate_available()
+
+
+def test_psmux_backend_reexport_preserves_identity() -> None:
+    import omnigent.terminals as terminals_pkg
+    import omnigent.terminals.backend as backend
+    import omnigent.terminals.psmux as psmux
+
+    assert backend.PsmuxTerminalMuxBackend is psmux.PsmuxTerminalMuxBackend
+    assert backend.PsmuxTerminalInstance is psmux.PsmuxTerminalInstance
+    assert terminals_pkg.PsmuxTerminalMuxBackend is psmux.PsmuxTerminalMuxBackend
