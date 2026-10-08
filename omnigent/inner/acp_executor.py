@@ -52,13 +52,13 @@ import logging
 import math
 import os
 import secrets
-import shlex
 from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, TypeAlias
 
+from omnigent._platform import IS_WINDOWS
 from omnigent.inner import _proc
 from omnigent.inner._acp_omnigent_mcp import OmnigentAcpMcp
 from omnigent.inner.acp_extension import NO_ACP_EXTENSION, AcpExtension
@@ -84,6 +84,7 @@ from omnigent.inner.executor import (
     describe_exception,
 )
 from omnigent.inner.os_env import OSEnvironment, create_os_environment
+from omnigent.native.shell import split_command
 from omnigent.process_logging import current_process_log_path, display_log_path
 
 logger = logging.getLogger(__name__)
@@ -190,6 +191,9 @@ class AcpAgentConfig:
     :param command: The command to launch, e.g. ``"gemini --experimental-acp"``.
         Split with :func:`shlex.split` into an argv and exec'd directly (never
         via a shell), so quoting works but ``$VAR`` / pipes / redirects do not.
+        Split in non-POSIX mode on Windows: POSIX mode treats ``\\`` as an
+        escape character, which mangles a Windows path's drive/backslash
+        separators (``C:\\Users\\...`` becomes ``C:Users...``).
     :param name: Human label for logs / elicitation cards (e.g. ``"Gemini CLI"``).
     :param model: Optional model id, applied to the live session when a turn
         carries no per-turn pick — via ``session/set_model`` for agents that
@@ -426,7 +430,8 @@ class AcpExecutor(Executor):
         self._model_switch_supported: bool = True
 
         # Parsed argv; the first token is the binary we resolve / sandbox.
-        self._argv: list[str] = shlex.split(config.command)
+        # Non-POSIX splitting on Windows preserves backslashes in paths.
+        self._argv: list[str] = split_command(config.command, windows=IS_WINDOWS)
         if not self._argv:
             raise ValueError("AcpAgentConfig.command is empty")
 

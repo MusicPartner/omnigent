@@ -10,6 +10,16 @@ from omnigent.native._native_resume_hint import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _force_posix_shell_for_legacy_expectations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the existing copy/paste examples deterministic across test hosts."""
+    from omnigent.native import _native_resume_hint as resume_hint
+    from omnigent.native import shell as native_shell
+
+    monkeypatch.setattr(resume_hint, "IS_WINDOWS", False)
+    monkeypatch.setattr(native_shell, "IS_WINDOWS", False)
+
+
 def test_format_native_resume_command_includes_remote_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -33,6 +43,27 @@ def test_format_native_resume_command_includes_remote_context(
     )
 
     assert command == ("omnigent claude --server https://example.databricks.com --resume conv_abc")
+
+
+def test_format_native_resume_command_uses_native_windows_quoting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from omnigent.native import _native_resume_hint as resume_hint
+    from omnigent.native import shell as native_shell
+
+    monkeypatch.delenv("OMNIGENT_RESUME_COMMAND_PREFIX", raising=False)
+    monkeypatch.setattr(resume_hint, "IS_WINDOWS", True)
+    monkeypatch.setattr(native_shell, "IS_WINDOWS", True)
+
+    command = format_native_resume_command(
+        native_command="codex",
+        server=r"C:\Omnigent Native\server",
+        session_id="conversation with spaces",
+    )
+
+    assert command == (
+        'omnigent codex --server "C:/Omnigent Native/server" --resume "conversation with spaces"'
+    )
 
 
 def test_format_native_resume_command_uses_launcher_prefix(

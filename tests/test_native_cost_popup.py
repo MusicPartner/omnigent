@@ -391,6 +391,36 @@ def test_launch_blocked_notice_spawns_notice_popup(
     assert "--config-file" not in inner and "--elicitation-id" not in inner
 
 
+def test_popup_command_uses_native_windows_interpreter_quoting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Windows interpreter path remains executable in the popup shell."""
+    from omnigent.native import shell as native_shell
+
+    monkeypatch.setattr(native_shell, "IS_WINDOWS", True)
+    monkeypatch.setattr(native_cost_popup, "_list_tmux_clients", lambda _s, _t: ["client"])
+    spawned: list[list[str]] = []
+
+    class _FakePopen:
+        def __init__(self, cmd: list[str], **_kw: Any) -> None:
+            spawned.append(cmd)
+
+    import subprocess
+
+    monkeypatch.setattr(subprocess, "Popen", _FakePopen)
+    native_cost_popup.launch_blocked_notice(
+        r"C:\Temp\socket.sock",
+        "main",
+        message="over budget",
+        python_executable=r"C:\Program Files\Omnigent\.venv\Scripts\python.exe",
+    )
+
+    assert spawned
+    inner = spawned[0][-1]
+    assert '"C:/Program Files/Omnigent/.venv/Scripts/python.exe"' in inner
+    assert "C:\\Program Files" not in inner
+
+
 def test_launch_blocked_notice_skips_without_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -4,17 +4,18 @@ from __future__ import annotations
 
 import argparse
 import json
-import shlex
 import sys
 import urllib.request
 from pathlib import Path
+
+from omnigent.native.shell import shell_join
 
 
 def hook_settings(bridge_dir: Path, python: str, module: str) -> dict[str, object]:
     """Use each harness's existing owned hook module and trust registration."""
     return {
         "type": "command",
-        "command": shlex.join(
+        "command": shell_join(
             [python, "-I", "-m", module, "observe-tool", "--bridge-dir", str(bridge_dir)]
         ),
         "timeout": 3,

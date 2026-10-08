@@ -854,6 +854,27 @@ def test_policy_hook_wrapper_script_omits_auth_when_unauthenticated(
     assert "X-Databricks-Org-Id" not in line
 
 
+def test_policy_hook_wrapper_uses_native_windows_interpreter_quoting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The POSIX wrapper used by Git Bash must preserve a Windows path."""
+    from omnigent.native import shell as native_shell
+
+    monkeypatch.setattr(native_shell, "IS_WINDOWS", True)
+    monkeypatch.setattr(
+        native_policy_hook.sys, "executable", r"C:\Program Files\Python312\python.exe"
+    )
+
+    script = native_policy_hook.policy_hook_wrapper_script(
+        "http://127.0.0.1:6767", "conv_windows", r"C:\Program Files\Omnigent\hook.py"
+    )
+
+    assert (
+        'exec "C:/Program Files/Python312/python.exe" "C:/Program Files/Omnigent/hook.py"'
+        in script
+    )
+
+
 def test_policy_hook_reauth_remints_and_preserves_routing_header(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

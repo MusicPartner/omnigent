@@ -15,7 +15,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import shlex
-from pathlib import Path
+from pathlib import PurePosixPath
 
 import pytest
 
@@ -95,7 +95,7 @@ def test_spawn_env_forwards_cwd_sandbox_and_quotes_command(
         fork=False,
     )
     env = _build_acp_cli_spawn_env(
-        _spec("fakecli", os_env=os_env), harness="fakecli", cwd=Path("/work/space")
+        _spec("fakecli", os_env=os_env), harness="fakecli", cwd=PurePosixPath("/work/space")
     )
 
     assert shlex.split(env["HARNESS_ACP_COMMAND"]) == [
@@ -108,6 +108,20 @@ def test_spawn_env_forwards_cwd_sandbox_and_quotes_command(
     assert json.loads(env["HARNESS_ACP_OS_ENV"]) == dataclasses.asdict(os_env)
     # Rows own their model selection: no model var may ride along.
     assert "HARNESS_ACP_MODEL" not in env
+
+
+def test_spawn_env_uses_native_windows_shell_quoting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from omnigent.native import shell as native_shell
+
+    monkeypatch.setitem(ACP_CLI_HARNESSES, "fakecli", _FAKE_ROW)
+    monkeypatch.setenv("OMNIGENT_FAKECLI_PATH", r"C:\Program Files\Omnigent\fakecli.exe")
+    monkeypatch.setattr(native_shell, "IS_WINDOWS", True)
+
+    env = _build_acp_cli_spawn_env(_spec("fakecli"), harness="fakecli")
+
+    assert env["HARNESS_ACP_COMMAND"] == '"C:/Program Files/Omnigent/fakecli.exe" agent stdio'
 
 
 def test_jcode_connect_injects_gateway_env_and_passthrough(

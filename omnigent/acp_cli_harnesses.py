@@ -38,10 +38,10 @@ so the registry, onboarding, and runner layers can all read it without cycles.
 
 from __future__ import annotations
 
-import shlex
 from dataclasses import dataclass
 
 from omnigent.harness_install_spec import HarnessInstallSpec
+from omnigent.native.shell import shell_join
 
 
 @dataclass(frozen=True)
@@ -81,7 +81,7 @@ class AcpCliHarness:
         """The vendor login command to show in setup steps, or ``None``."""
         if self.install.login_args is None:
             return None
-        return shlex.join([self.binary, *self.install.login_args])
+        return shell_join([self.binary, *self.install.login_args])
 
 
 # Keyed by canonical harness id. Keep keys sorted; each row's registrations

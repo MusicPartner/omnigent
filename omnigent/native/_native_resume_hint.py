@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import os
-import shlex
 
 import click
+
+from omnigent._platform import IS_WINDOWS
+from omnigent.native.shell import shell_join, split_command
 
 _RESUME_COMMAND_PREFIX_ENV_VAR = "OMNIGENT_RESUME_COMMAND_PREFIX"
 
@@ -34,18 +36,18 @@ def format_native_resume_command(
     prefix = os.environ.get(_RESUME_COMMAND_PREFIX_ENV_VAR)
     if prefix:
         try:
-            prefix_parts = shlex.split(prefix)
+            prefix_parts = split_command(prefix, windows=IS_WINDOWS)
         except ValueError:
             prefix_parts = []
         if prefix_parts:
             parts = [*prefix_parts, native_command, "--resume", session_id]
-            return " ".join(shlex.quote(part) for part in parts)
+            return shell_join(parts)
 
     parts = ["omnigent", native_command]
     if server is not None:
         parts.extend(["--server", server])
     parts.extend(["--resume", session_id])
-    return " ".join(shlex.quote(part) for part in parts)
+    return shell_join(parts)
 
 
 def echo_native_resume_hint(

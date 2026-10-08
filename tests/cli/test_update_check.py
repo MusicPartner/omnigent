@@ -938,6 +938,9 @@ def test_pip_invocation_pins_to_running_interpreter(monkeypatch: pytest.MonkeyPa
     to ``<sys.executable> -m pip`` keeps the upgrade in the running
     interpreter's environment.
     """
+    from omnigent.native import shell as native_shell
+
+    monkeypatch.setattr(native_shell, "IS_WINDOWS", False)
     monkeypatch.setattr(sys, "executable", "/opt/venv/bin/python")
     assert _pip_invocation() == "/opt/venv/bin/python -m pip"
     # An interpreter path with a space is shell-quoted so it survives the
@@ -947,6 +950,38 @@ def test_pip_invocation_pins_to_running_interpreter(monkeypatch: pytest.MonkeyPa
     # No interpreter path (frozen / embedded) → bare ``pip`` fallback.
     monkeypatch.setattr(sys, "executable", "")
     assert _pip_invocation() == "pip"
+
+
+def test_pip_invocation_and_runner_preserve_windows_interpreter_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import subprocess as _subprocess
+
+    from rich.console import Console
+
+    import omnigent.update_check as update_check
+    from omnigent.native import shell as native_shell
+
+    monkeypatch.setattr(native_shell, "IS_WINDOWS", True)
+    monkeypatch.setattr(update_check, "IS_WINDOWS", True)
+    monkeypatch.setattr(sys, "executable", r"C:\Program Files\Python312\python.exe")
+    command = update_check._pip_invocation()
+    assert command == '"C:/Program Files/Python312/python.exe" -m pip'
+
+    captured: list[list[str]] = []
+
+    def _fake_run(args: list[str], check: bool = False) -> object:
+        captured.append(args)
+        assert check is False
+
+        class _Result:
+            returncode = 0
+
+        return _Result()
+
+    monkeypatch.setattr(_subprocess, "run", _fake_run)
+    assert update_check._run_upgrade_command(command, Console(stderr=True)) == 0
+    assert captured == [["C:/Program Files/Python312/python.exe", "-m", "pip"]]
 
 
 def test_pip_upgrade_suggestions_use_running_interpreter(
