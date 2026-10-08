@@ -63,6 +63,8 @@ Invoke-Step "stable Windows unit subset" @(
     'tests/harnesses/claude_native/test_claude_native_windows_hooks.py',
     'tests/test_native_shell.py',
     'tests/terminals/test_windows_psmux.py::test_psmux_backend_reexport_preserves_identity',
+    # Fails at v0.17.0 too: it asserts b"ready\n" but Windows text-mode stdout emits CRLF.
+    '--deselect', 'tests/runtime/harnesses/test_process_manager.py::test_release_reaps_term_resistant_process_when_graceful_wait_is_cancelled',
     '-p', 'no:cacheprovider', '-q'
 )
 
