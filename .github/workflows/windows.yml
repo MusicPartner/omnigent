@@ -89,6 +89,13 @@ jobs:
           uv run pytest
           tests/inner/test_proc_and_platform.py
           tests/runtime/test_process_manager.py
+          tests/host/test_host_listing.py
+          tests/inner/test_codex_windows.py
+          tests/inner/test_windows_shutdown.py
+          tests/runner/test_native_windows_env.py
+          tests/runner/test_python_probe.py
+          tests/harnesses/claude_native/test_claude_native_windows_hooks.py
+          tests/test_native_shell.py
           -p no:cacheprovider -q
 
       - name: Codex skill junction regressions (hard)

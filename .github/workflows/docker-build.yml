@@ -4,7 +4,8 @@
 # nightly rebuild or a release. Builds the server image single-arch (linux/amd64)
 # with the GHA layer cache and runs a `omnigent --help` CLI smoke. Changes to the
 # Cloudflare deployment or JavaScript lockfiles additionally run Wrangler's full
-# dry-run, including its derived container build. Nothing is pushed or deployed.
+# dry-run, including its derived container build. Manual dispatches may also
+# publish the tested image to GHCR when explicitly requested.
 #
 # Scope: the server target exercises the shared builder stage (Python deps +
 # web SPA build) that all five published variants inherit, so it catches the
@@ -19,6 +20,19 @@
 name: Docker build
 
 on:
+  # Lets contributors validate the image from a branch without opening a PR.
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the tested image to GHCR"
+        required: false
+        type: boolean
+        default: false
+      image_tag:
+        description: "Version tag to publish when publish=true"
+        required: false
+        type: string
+        default: "0.17.0.mp"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     # Only build when something that lands in the image changes. Mirrors the
@@ -69,7 +83,9 @@ jobs:
       - name: Detect Cloudflare container changes
         id: cloudflare
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # A manual dispatch has no PR base. Diffing its selected commit against
+          # itself leaves the PR-only Cloudflare dry-run disabled.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
         run: |
           changed=false
           while IFS= read -r file; do
@@ -103,6 +119,22 @@ jobs:
       - name: CLI smoke
         run: docker run --rm omnigent-server:pr-${{ github.event.pull_request.number || github.sha }} omnigent --help
 
+      - name: Export manual Docker image
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          docker save omnigent-server:pr-${{ github.sha }} | gzip -1 > omnigent-server-${{ github.sha }}.tar.gz
+          ls -lh omnigent-server-${{ github.sha }}.tar.gz
+
+      - name: Upload manual Docker image
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: omnigent-server-${{ github.sha }}
+          path: omnigent-server-${{ github.sha }}.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
       - name: Set up pnpm
         if: steps.cloudflare.outputs.changed == 'true'
         uses: ./.github/actions/setup-pnpm
@@ -116,3 +148,54 @@ jobs:
       - name: Cloudflare Worker and container dry-run
         if: steps.cloudflare.outputs.changed == 'true'
         run: pnpm --dir deploy/cloudflare exec wrangler deploy --dry-run
+
+  publish:
+    name: Publish Docker image to GHCR
+    needs: build
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.publish == true &&
+      needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download tested Docker image
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: omnigent-server-${{ github.sha }}
+          path: .
+
+      - name: Load tested Docker image
+        env:
+          ARCHIVE: omnigent-server-${{ github.sha }}.tar.gz
+        run: gzip -dc "$ARCHIVE" | docker load
+
+      - name: Log in to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag and push release image
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          SOURCE_IMAGE: omnigent-server:pr-${{ github.sha }}
+          SHA_TAG: sha-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$IMAGE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "Invalid Docker image tag: $IMAGE_TAG" >&2
+            exit 1
+          fi
+
+          image_repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docker tag "$SOURCE_IMAGE" "$image_repository:$IMAGE_TAG"
+          docker tag "$SOURCE_IMAGE" "$image_repository:$SHA_TAG"
+          docker push "$image_repository:$IMAGE_TAG"
+          docker push "$image_repository:$SHA_TAG"
+          echo "Published $image_repository:$IMAGE_TAG"
+          echo "Published $image_repository:$SHA_TAG"
