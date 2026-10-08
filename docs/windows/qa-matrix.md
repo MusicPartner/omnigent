@@ -25,7 +25,7 @@ $env:PIP_INDEX_URL = "https://pypi.org/simple"
 
 uv sync --locked --extra dev
 .\scripts\windows_safe_pytest.ps1 -StableOnly
-uv run pytest tests/terminals/test_registry.py::test_windows_psmux_backend_launch_send_read_close -p no:cacheprovider -q
+uv run pytest tests/terminals/test_windows_psmux.py::test_windows_psmux_backend_launch_send_read_close -p no:cacheprovider -q
 .\scripts\windows_safe_pytest.ps1 -CollectOnly
 ```
 

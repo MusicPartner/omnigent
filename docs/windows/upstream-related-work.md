@@ -50,3 +50,24 @@ Windows instead of failing during import collection.
 Local pre-commit hooks should use `uv run ...` rather than hardcoded virtualenv
 paths such as `.venv/bin/python` or `.venv\\Scripts\\python.exe`. This keeps the
 same hook definitions usable from POSIX shells and native Windows PowerShell.
+
+## Migration hazards for future main updates
+
+- Upstream `1d0cbe7d7` already accepts drive-letter Start-session workspaces.
+- Upstream `c0df96772` deliberately disables native harness readiness on
+  Windows; future psmux integration must reconcile readiness, cache keys, and
+  launch support together.
+- Upstream changed Claude readiness, MCP ingress, process teardown, session
+  lifecycle, and browser-test structure.
+- Large mixed fork commits to audit by surviving hunks and merge resolutions,
+  not messages: `dc48bee8d`, `de1e033f5`, `b04849152`, `d61605390`,
+  `7eac00b28`, `74c37e323`.
+- Future-update procedure:
+  1. Choose an explicit release SHA or tag.
+  2. Refresh the semantic overlap ledger.
+  3. Retain upstream implementations that satisfy existing contracts.
+  4. Replay only the remaining fork behavior; the leaf modules in
+     `.github/FORK_MAINTENANCE.md` ("Windows isolation topic map (v0.14)") are
+     the replay units.
+  5. Validate platform capability and lifecycle contracts.
+  6. Publish a new integration branch without rewriting the old one.

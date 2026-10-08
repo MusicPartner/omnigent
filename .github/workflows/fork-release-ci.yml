@@ -49,7 +49,14 @@ jobs:
       - name: Ruff Windows integration surfaces
         run: >-
           uv run ruff check
+          omnigent/harnesses/claude_native/windows_hooks.py
+          omnigent/host/host_listing.py
+          omnigent/inner/_windows_shutdown.py
+          omnigent/inner/codex_windows.py
           omnigent/inner/sandbox_capabilities.py
+          omnigent/native/shell.py
+          omnigent/runner/native/windows_env.py
+          omnigent/runner/python_probe.py
           omnigent/runner/routing.py
           omnigent/runner/transport_locator.py
           omnigent/server/_runner_transport.py
@@ -59,17 +66,32 @@ jobs:
           omnigent/spec/validator.py
           omnigent/terminals/backend.py
           omnigent/terminals/capture_bridge.py
+          omnigent/terminals/psmux.py
+          tests/host/test_host_listing.py
+          tests/inner/test_codex_windows.py
+          tests/inner/test_windows_shutdown.py
+          tests/runner/test_native_windows_env.py
+          tests/runner/test_python_probe.py
           tests/terminals/test_windows_psmux.py
+          tests/test_claude_native_windows_hooks.py
+          tests/test_native_shell.py
 
       - name: Focused integration tests
         run: >-
           uv run pytest -q -p no:cacheprovider
+          tests/host/test_host_listing.py
+          tests/inner/test_codex_windows.py
           tests/inner/test_sandbox_capabilities.py
+          tests/inner/test_windows_shutdown.py
+          tests/runner/test_native_windows_env.py
+          tests/runner/test_python_probe.py
           tests/runner/test_routing.py
           tests/server/test_runner_transport.py
           tests/spec/test_parser.py
           tests/spec/test_validator.py
           tests/terminals/test_windows_psmux.py
+          tests/test_claude_native_windows_hooks.py
+          tests/test_native_shell.py
 
   windows-native:
     name: Native Windows compatibility
@@ -127,6 +149,7 @@ jobs:
           uv run pytest
           tests/terminals/test_windows_psmux.py::test_windows_psmux_backend_launch_send_read_close
           tests/terminals/test_windows_psmux.py::test_windows_psmux_backend_strips_runner_auth_secrets
+          tests/terminals/test_windows_psmux.py::test_psmux_backend_reexport_preserves_identity
           -p no:cacheprovider -q
 
       - name: Broader Windows unit sweep

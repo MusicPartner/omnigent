@@ -55,6 +55,14 @@ Invoke-Step "stable Windows unit subset" @(
     'tests/spec/test_validator.py::test_os_env_windows_jobobject_rejects_network_deny',
     'tests/spec/test_validator.py::test_os_env_windows_jobobject_rejects_egress_rules',
     'tests/scripts/test_install_oss_ps1.py',
+    'tests/host/test_host_listing.py',
+    'tests/inner/test_codex_windows.py',
+    'tests/inner/test_windows_shutdown.py',
+    'tests/runner/test_native_windows_env.py',
+    'tests/runner/test_python_probe.py',
+    'tests/test_claude_native_windows_hooks.py',
+    'tests/test_native_shell.py',
+    'tests/terminals/test_windows_psmux.py::test_psmux_backend_reexport_preserves_identity',
     '-p', 'no:cacheprovider', '-q'
 )
 

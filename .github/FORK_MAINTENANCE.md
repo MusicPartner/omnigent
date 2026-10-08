@@ -56,3 +56,31 @@ The permanent fork-specific layer is intentionally small:
 - `.github/workflows/fork-housekeeping.yml` — keep transient branches/runs and fork-irrelevant upstream automation under control.
 
 Upstream's core test workflows stay available instead of being forked into custom copies. Fork-only policy is concentrated in these files to minimize merge conflicts during future upstream releases.
+
+## Windows isolation topic map (v0.14)
+
+Windows-specific mechanics live in leaf modules so shared modules keep only their `IS_WINDOWS` branch and a call to the helper. Code was extracted verbatim, so existing monkeypatch targets on the callers still work.
+
+| Topic | Windows leaf module(s) | Caller seam (keeps the `IS_WINDOWS` branch) | Tests |
+| --- | --- | --- | --- |
+| psmux terminal backend | `omnigent/terminals/psmux.py` | `omnigent/terminals/backend.py` re-exports the psmux classes unconditionally | `tests/terminals/test_windows_psmux.py` |
+| Web workspace breadcrumbs | `web/src/shell/hostPaths.ts`, `web/src/shell/workspaceBreadcrumbs.ts` | `web/src/shell/WorkspacePicker.tsx` re-exports them | `web/src/shell/workspaceBreadcrumbs.test.ts` (existing helper tests remain in `WorkspacePicker.test.tsx`) |
+| Host listing | `omnigent/host/host_listing.py` | `omnigent/host/connect.py` (`_handle_list_dir`) | `tests/host/test_host_listing.py` |
+| Runner python probe | `omnigent/runner/python_probe.py` | `omnigent/runner/environment_filesystem.py` (`_python_shell_command`) | `tests/runner/test_python_probe.py` |
+| Command parsing | `omnigent/native/shell.py` (`split_command()`) | `omnigent/inner/acp_executor.py`, `omnigent/update_check.py`, `omnigent/native/_native_resume_hint.py` | `tests/test_native_shell.py` |
+| Codex CLI | `omnigent/inner/codex_windows.py` | `omnigent/inner/codex_executor.py` (`_find_codex_cli`) | `tests/inner/test_codex_windows.py` |
+| Claude hooks | `omnigent/harnesses/claude_native/windows_hooks.py` | `omnigent/harnesses/claude_native/bridge.py` (readiness/lifecycle policy stays here) | `tests/test_claude_native_windows_hooks.py` |
+| Shutdown | `omnigent/inner/_windows_shutdown.py` | `omnigent/inner/_proc.py` (`terminate_tree`), `omnigent/runtime/harnesses/_runner.py` | `tests/inner/test_windows_shutdown.py` |
+| Native env | `omnigent/runner/native/windows_env.py` | `omnigent/runner/native/orchestration.py` (`_claude_terminal_env_unset`) | `tests/runner/test_native_windows_env.py` |
+
+Left in place on purpose:
+
+- The runner transport locator and sandbox-capability seams.
+- General (non-Windows) fixes: catalogs, SSE readiness, worktree error handling, and shared UI fixes.
+- Upstream path helpers other than the four moved to `hostPaths.ts` stay in `WorkspacePicker.tsx`.
+
+Rules:
+
+- New Windows mechanics go into a leaf module, not a shared module.
+- Psmux tests that monkeypatch `IS_WINDOWS` or `shutil` must patch `omnigent.terminals.psmux`.
+- `workspaceBreadcrumbs.ts` and `hostPaths.ts` must not import `WorkspacePicker.tsx` (oxlint `import/no-cycle`).
