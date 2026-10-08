@@ -5251,6 +5251,17 @@ export function NewChatLandingScreen() {
       // Normalized create-time model / effort — shared by the optimistic seed
       // and the POST body so the temp composer shows exactly what the create
       // request pins. Never pinned alongside routing.
+      // The catalog's default is displayed as a concrete model in the picker.
+      // Native CLIs may have a different or stale local default, so pin the
+      // same provider-facing value when the user leaves that displayed default
+      // selected.
+      const defaultModelRow = pickerModelOptions.find((option) => option.isDefault);
+      const resolvedDefaultModel = defaultModelRow?.model ?? defaultModelRow?.id ?? null;
+      const nativeCatalogDefault =
+        (nativeAgent?.harness === "claude-native" || nativeAgent?.harness === "codex-native") &&
+        resolvedDefaultModel
+          ? resolvedDefaultModel
+          : null;
       // A stored Fusion id can go stale (host switch, or a restored draft after
       // the combo was retired). The controls display it through
       // `currentFusionCombo` (which falls back to a real combo), so resolve the
@@ -5271,8 +5282,8 @@ export function NewChatLandingScreen() {
           agentSupportsModelPicker ||
           nativeAgent?.harness === "codex-native" ||
           nativeAgent?.harness === "devin-native") &&
-        submittedModel
-          ? submittedModel
+        (submittedModel || nativeCatalogDefault)
+          ? submittedModel || nativeCatalogDefault
           : null;
       const normalizedReasoningEffort =
         !smartRoutingHarnessSelected &&
@@ -5284,10 +5295,6 @@ export function NewChatLandingScreen() {
         pickedEffort
           ? pickedEffort
           : null;
-      // Resolved default (shown when nothing is pinned): the catalog's default
-      // row's provider-facing model id, else its row id.
-      const defaultModelRow = pickerModelOptions.find((option) => option.isDefault);
-      const resolvedDefaultModel = defaultModelRow?.model ?? defaultModelRow?.id ?? null;
 
       // Prepend each "@"-tagged path as an attachment marker on its own line —
       // the same wording the native executors emit and that title-seeding

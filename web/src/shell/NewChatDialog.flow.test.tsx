@@ -1756,6 +1756,38 @@ describe("NewChatLandingScreen create flow", () => {
     expect(body.reasoning_effort).toBeUndefined();
   });
 
+  it("pins the displayed catalog default for claude-native", async () => {
+    setAgents([agent({ id: "ag_native", name: "claude-native-ui", display_name: "Claude Code" })]);
+    vi.mocked(useHostModelOptions).mockReturnValue({
+      data: [
+        {
+          id: "haiku",
+          model: "claude-haiku-4-5",
+          displayName: "Haiku 4.5",
+          isDefault: true,
+        },
+      ],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useHostModelOptions>);
+    vi.mocked(authenticatedFetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ id: "conv_native" }),
+    } as unknown as Response);
+
+    renderLanding();
+    await waitForWorkspaceSeed();
+    // The named catalog default is what the picker shows, so pin it at create
+    // time instead of allowing Claude's local config to silently disagree.
+    typeMessage("go");
+    fireEvent.click(screen.getByTestId("new-chat-landing-submit"));
+
+    await waitFor(() => expect(authenticatedFetch).toHaveBeenCalledTimes(1));
+    const [, init] = vi.mocked(authenticatedFetch).mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.model_override).toBe("claude-haiku-4-5");
+    expect(body.reasoning_effort).toBeUndefined();
+  });
+
   it("rides a picked model + effort along to create for claude-native", async () => {
     setAgents([agent({ id: "ag_native", name: "claude-native-ui", display_name: "Claude Code" })]);
     vi.mocked(authenticatedFetch).mockResolvedValueOnce({
