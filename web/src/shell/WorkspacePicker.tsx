@@ -24,11 +24,15 @@ import {
   WorktreeRadioRow,
 } from "./WorktreeRadioRow";
 import { WorkspacePickerEntry } from "./WorkspacePickerEntry";
+import { basename, isWindowsDrivePath, lastSeparatorIndex, separatorOf } from "./hostPaths";
+import { workspaceBreadcrumbItems, workspaceBreadcrumbSeparator } from "./workspaceBreadcrumbs";
 
-/** True for Windows drive-letter paths such as `C:/Users/me` or `C:\\Users\\me`. */
-export function isWindowsDrivePath(path: string): boolean {
-  return /^[A-Za-z]:[\\/]/.test(path);
-}
+export { basename, isWindowsDrivePath } from "./hostPaths";
+export {
+  type WorkspaceBreadcrumbItem,
+  workspaceBreadcrumbItems,
+  workspaceBreadcrumbSeparator,
+} from "./workspaceBreadcrumbs";
 
 function sameHostDirectory(a: string, b: string): boolean {
   if (isWindowsDrivePath(a) && isWindowsDrivePath(b)) {
@@ -43,17 +47,6 @@ function sameHostDirectory(a: string, b: string): boolean {
  */
 export function isHostAbsolutePath(path: string): boolean {
   return path.startsWith("/") || isWindowsDrivePath(path);
-}
-
-function lastSeparatorIndex(path: string): number {
-  if (isWindowsDrivePath(path)) {
-    return Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
-  }
-  return path.lastIndexOf("/");
-}
-
-function separatorOf(path: string): "/" | "\\" {
-  return path.includes("\\") && !path.slice(path.indexOf(":") + 1).includes("/") ? "\\" : "/";
 }
 
 /**
@@ -171,36 +164,6 @@ export function normalizeTypedPath(input: string, home: string | null = null): s
     return "/";
   }
   return collapsed.endsWith("/") ? collapsed.slice(0, -1) : collapsed;
-}
-
-/**
- * Basename of an absolute path, for the "Select current" label.
- *
- * @param absolutePath Current directory, e.g.
- *   ``"/Users/corey/projects"``, ``"/"``, or ``""`` (home,
- *   pre-resolution).
- * @returns The last path segment (``"projects"``), ``"/"`` for the
- *   root, or ``"~"`` when the path is still the empty placeholder.
- */
-export function basename(absolutePath: string): string {
-  if (absolutePath === "") {
-    return "~";
-  }
-  if (absolutePath === "/") {
-    return "/";
-  }
-  if (/^[A-Za-z]:[\\/]?$/.test(absolutePath)) {
-    return absolutePath.length >= 3 ? absolutePath.slice(0, 3) : `${absolutePath}\\`;
-  }
-  const stripped =
-    absolutePath.endsWith("/") || (isWindowsDrivePath(absolutePath) && absolutePath.endsWith("\\"))
-      ? absolutePath.slice(0, -1)
-      : absolutePath;
-  const sepIdx = lastSeparatorIndex(stripped);
-  if (sepIdx < 0) {
-    return stripped;
-  }
-  return stripped.slice(sepIdx + 1);
 }
 
 /**
@@ -603,35 +566,8 @@ export function WorkspacePicker({
       return a.name.localeCompare(b.name);
     });
 
-  const breadcrumbItems = (() => {
-    if (currentAbsolute === "") {
-      return [{ label: "~", path: "" }];
-    }
-    if (currentAbsolute === "/") {
-      return [{ label: "/", path: "/" }];
-    }
-    if (
-      resolvedHome !== null &&
-      (currentAbsolute === resolvedHome || currentAbsolute.startsWith(`${resolvedHome}/`))
-    ) {
-      const relativeParts = currentAbsolute.slice(resolvedHome.length).split("/").filter(Boolean);
-      return [
-        { label: basename(resolvedHome), path: resolvedHome },
-        ...relativeParts.map((label, index) => ({
-          label,
-          path: `${resolvedHome}/${relativeParts.slice(0, index + 1).join("/")}`,
-        })),
-      ];
-    }
-    const parts = currentAbsolute.split("/").filter(Boolean);
-    return [
-      { label: "/", path: "/" },
-      ...parts.map((label, index) => ({
-        label,
-        path: `/${parts.slice(0, index + 1).join("/")}`,
-      })),
-    ];
-  })();
+  const breadcrumbItems = workspaceBreadcrumbItems(currentAbsolute, resolvedHome);
+  const breadcrumbSeparator = workspaceBreadcrumbSeparator(currentAbsolute);
 
   function navigateTo(next: string) {
     // A click/commit supersedes any in-progress typing; let the
@@ -761,7 +697,7 @@ export function WorkspacePicker({
                   >
                     {index > 0 && breadcrumbItems[index - 1].path !== "/" && (
                       <span className="shrink-0 text-muted-foreground" aria-hidden>
-                        /
+                        {breadcrumbSeparator}
                       </span>
                     )}
                     <button

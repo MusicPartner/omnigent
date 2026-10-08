@@ -563,6 +563,9 @@ describe("normalizeWorkspacePath", () => {
     // Root is preserved, not collapsed away.
     ["/", "/"],
     ["///", "/"],
+    ["C:\\Users\\Corey\\repo\\", "c:/users/corey/repo"],
+    ["C:/Users/Corey/repo/", "c:/users/corey/repo"],
+    ["C:\\", "c:/"],
     // Blank → null (no path) — must NOT become "/", or an empty input would
     // spuriously match a session whose workspace is the root.
     ["", null],
@@ -847,6 +850,39 @@ describe("sandbox repository helpers", () => {
         repositoryLabel: "Documents",
         branchLabel: "None",
         branchDescription: "Create or select a worktree",
+      },
+    },
+    {
+      name: "Windows plain directory",
+      workspace: "C:\\Users\\corey\\Documents",
+      worktrees: [],
+      worktreesResolved: true,
+      branchName: "",
+      autoSeededBranch: "",
+      expected: {
+        repositoryLabel: "Documents",
+        branchLabel: "None",
+        branchDescription: "Create or select a worktree",
+      },
+    },
+    {
+      name: "Windows main repository with mixed-case separators",
+      workspace: "c:/users/corey/projects/alpha",
+      worktrees: [
+        {
+          path: "C:\\Users\\corey\\projects\\alpha",
+          branch: "main",
+          is_main: true,
+          detached: false,
+        },
+      ],
+      worktreesResolved: true,
+      branchName: "",
+      autoSeededBranch: "",
+      expected: {
+        repositoryLabel: "alpha",
+        branchLabel: "None",
+        branchDescription: "Create or select a worktree from main repository branch: main",
       },
     },
     {
@@ -4896,6 +4932,24 @@ describe("NewChatLandingScreen", () => {
     // (e.g. dropped the workspace gate), the blank cases above would have
     // enabled too.
     expect(submit.disabled).toBe(false);
+  });
+
+  it("enables Codex submit with a Windows workspace", async () => {
+    localStorage.setItem(
+      RECENT_KEY,
+      JSON.stringify({ host_1: ["C:\\Users\\corey\\projects\\repo"] }),
+    );
+    renderLanding();
+    selectAgent("a2");
+    await waitFor(() =>
+      expect(screen.getByTestId("new-chat-landing-workspace-chip")).toHaveTextContent("repo"),
+    );
+
+    fireEvent.change(screen.getByTestId("new-chat-landing-input"), {
+      target: { value: "inspect the Windows repo" },
+    });
+
+    await waitFor(() => expect(screen.getByTestId("new-chat-landing-submit")).toBeEnabled());
   });
 
   it("keeps the disabled reason tooltip on the new-chat submit button", async () => {
