@@ -3653,8 +3653,9 @@ async def test_embedded_codex_materializes_provider_auth_outside_argv(
         ]
         assert config["model_providers"]["omnigent_provider"]["auth"]["timeout_ms"] == 15000
         assert config["model_providers"]["omnigent_provider"]["wire_api"] == "responses"
-        assert stat.S_IMODE(codex_home.stat().st_mode) == 0o700
-        assert stat.S_IMODE(config_path.stat().st_mode) == 0o600
+        if sys.platform != "win32":
+            assert stat.S_IMODE(codex_home.stat().st_mode) == 0o700
+            assert stat.S_IMODE(config_path.stat().st_mode) == 0o600
         await session.close()
 
     assert not codex_home.exists()
@@ -4145,6 +4146,7 @@ def test_app_server_start_uses_real_home_for_private_inherited_codex_home(
     """
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     inherited = home / ".omnigent" / "codex-native" / "abc123" / "codex-home"
     inherited.mkdir(parents=True)
     monkeypatch.setenv("CODEX_HOME", str(inherited))
@@ -4946,9 +4948,45 @@ def test_find_codex_cli_delegates_to_shared_resolver(monkeypatch):
         captured["env_var"] = env_var
         return "/opt/homebrew/bin/codex"
 
+    monkeypatch.setattr(ce, "IS_WINDOWS", False)
     monkeypatch.setattr(ce, "resolve_cli_binary", fake_resolve)
     assert ce._find_codex_cli() == "/opt/homebrew/bin/codex"
     assert captured == {"name": "codex", "env_var": "OMNIGENT_CODEX_PATH"}
+
+
+def test_find_codex_cli_uses_native_binary_behind_windows_npm_shim(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Windows must bypass cmd.exe so structured ``-c`` values stay one argv item."""
+    from omnigent.inner import codex_executor as ce
+
+    shim = tmp_path / "npm" / "codex.cmd"
+    native = (
+        shim.parent
+        / "node_modules"
+        / "@openai"
+        / "codex"
+        / "node_modules"
+        / "@openai"
+        / "codex-win32-x64"
+        / "vendor"
+        / "x86_64-pc-windows-msvc"
+        / "bin"
+        / "codex.exe"
+    )
+    shim.parent.mkdir(parents=True)
+    shim.write_text("@echo off\n", encoding="utf-8")
+    native.parent.mkdir(parents=True)
+    native.write_bytes(b"native")
+
+    monkeypatch.setattr(ce, "IS_WINDOWS", True)
+    monkeypatch.setattr(
+        ce,
+        "resolve_cli_binary",
+        lambda name, **_kwargs: str(shim) if name == "codex" else None,
+    )
+
+    assert ce._find_codex_cli() == str(native)
 
 
 class TestCodexAppServerSessionHomeStaging(unittest.TestCase):

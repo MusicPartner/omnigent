@@ -14,7 +14,6 @@ import json
 import logging
 import os
 import re
-import shlex
 import shutil
 import stat
 import subprocess
@@ -39,7 +38,7 @@ from typing import Any, Protocol, TypeAlias, cast
 
 from packaging.version import InvalidVersion, Version
 
-from omnigent._platform import resolve_cli_binary
+from omnigent._platform import IS_WINDOWS, resolve_cli_binary
 from omnigent.errors import HarnessTransportClosedError
 from omnigent.inner.agent_env import clean_agent_env, declared_passthrough
 from omnigent.llms._usage_observer import notify_from_dict as _notify_usage_from_dict
@@ -51,6 +50,7 @@ from omnigent.models.codex_model_vocabulary import (
 )
 from omnigent.models.model_fallbacks import CODEX_CATALOG_CLONE_SOURCE_SLUG, CODEX_DEFAULT_MODEL
 from omnigent.native import _native_forwarder_health as native_forwarder_health
+from omnigent.native.shell import shell_join
 from omnigent.runtime.mcp_tool_result import decode_mcp_image_result
 from omnigent.spec.types import RetryPolicy
 from omnigent.util.reasoning_effort import CODEX_EFFORTS, EFFORT_ALIASES, validate_effort
@@ -67,6 +67,7 @@ from .codex_staging import (
     link_codex_skills_dir,
     prepare_codex_skills_dir,
 )
+from .codex_windows import prefer_native_codex_exe
 from .codex_worker import (
     CodexWorkerLaunch,
     prepare_codex_catalog_probe,
@@ -546,8 +547,11 @@ _CODEX_PATH_ENV = "OMNIGENT_CODEX_PATH"
 
 
 def _find_codex_cli() -> str | None:
-    """Resolve the ``codex`` CLI binary (override → ``PATH`` → global dirs)."""
-    return resolve_cli_binary("codex", env_var=_CODEX_PATH_ENV)
+    """Resolve Codex, preferring the native binary behind npm shims on Windows."""
+    resolved = resolve_cli_binary("codex", env_var=_CODEX_PATH_ENV)
+    if not IS_WINDOWS or resolved is None:
+        return resolved
+    return prefer_native_codex_exe(resolved)
 
 
 async def _codex_cli_version_text(codex_path: str) -> str | None:
@@ -1410,7 +1414,7 @@ def _codex_router_hook_command(
     if session_id:
         argv.extend(["--session-id", session_id])
     argv.extend(extra_args)
-    return shlex.join(argv)
+    return shell_join(argv)
 
 
 def codex_router_hooks_settings(
@@ -1864,13 +1868,21 @@ def _probe_codex_model_catalog(
         logger.warning("could not read the codex model catalog (%s)", exc)
         return None
     if completed.returncode != 0:
+        stderr = completed.stderr if isinstance(completed.stderr, str) else ""
+        stdout = completed.stdout if isinstance(completed.stdout, str) else ""
         logger.warning(
-            "codex debug models exited %s: %s", completed.returncode, completed.stderr[:200]
+            "codex debug models exited %s: %s",
+            completed.returncode,
+            (stderr or stdout or "<no output>")[:200],
         )
         return None
+    stdout = completed.stdout if isinstance(completed.stdout, str) else ""
+    if not stdout.strip():
+        logger.warning("codex debug models returned no stdout")
+        return None
     try:
-        catalog = json.loads(completed.stdout)
-    except ValueError as exc:
+        catalog = json.loads(stdout)
+    except (TypeError, ValueError) as exc:
         logger.warning("could not parse the codex model catalog (%s)", exc)
         return None
     if not _valid_model_catalog(catalog):

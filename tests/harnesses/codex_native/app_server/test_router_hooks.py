@@ -224,7 +224,9 @@ async def test_trust_step_trusts_user_hooks_only_when_trust_all_enabled(
         assert set(trusted) == expected
 
 
-async def test_policy_hook_command_runs_python_isolated() -> None:
+async def test_policy_hook_command_runs_python_isolated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The policy hook command passes ``-I`` before ``-m``.
 
     Same silent fail-open as the routing hooks: codex runs hooks with the
@@ -235,6 +237,26 @@ async def test_policy_hook_command_runs_python_isolated() -> None:
     import shlex
 
     from omnigent.harnesses.codex_native.app_server import _codex_policy_hook_command
+    from omnigent.native import shell as native_shell
 
+    monkeypatch.setattr(native_shell, "IS_WINDOWS", False)
     argv = shlex.split(_codex_policy_hook_command(Path("/b"), "/venv/bin/python"))
     assert argv[1:3] == ["-I", "-m"]
+
+
+def test_policy_hook_command_uses_native_windows_shell_quoting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows Codex must not receive POSIX single-quoted path arguments."""
+    from omnigent.harnesses.codex_native.app_server import _codex_policy_hook_command
+    from omnigent.native import shell as native_shell
+
+    monkeypatch.setattr(native_shell, "IS_WINDOWS", True)
+    command = _codex_policy_hook_command(
+        Path(r"C:\Users\test\Omnigent Native\bridge"),
+        r"C:\Program Files\Python312\python.exe",
+    )
+
+    assert "'" not in command
+    assert "C:/Program Files/Python312/python.exe" in command
+    assert "C:/Users/test/Omnigent Native/bridge" in command

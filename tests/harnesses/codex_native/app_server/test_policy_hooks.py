@@ -200,7 +200,7 @@ def test_user_prompt_submit_carries_the_route_turn_hook(tmp_path: Path) -> None:
     commands = [h for entry in hooks["UserPromptSubmit"] for h in entry["hooks"]]
     routing = [h for h in commands if "route-turn" in h["command"]]
     assert len(routing) == 1
-    assert f"--bridge-dir {bridge_dir}" in routing[0]["command"]
+    assert f"--bridge-dir {bridge_dir.as_posix()}" in routing[0]["command"]
     assert "--harness codex-native" in routing[0]["command"]
     assert routing[0]["timeout"] == HARNESS_HOOK_TIMEOUT_S
     # Trust is filtered by module, so route-turn must ride the policy one.
