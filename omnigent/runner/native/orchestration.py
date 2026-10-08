@@ -61,6 +61,7 @@ from omnigent.native.native_coding_agents import (
 )
 from omnigent.native.native_dispatch import resolve_hook
 from omnigent.process_logging import process_log_reference
+from omnigent.runner.native.windows_env import psmux_claude_env_unset
 from omnigent.runner.resource_registry import (
     ANTIGRAVITY_NATIVE_TERMINAL_ROLE,
     CLAUDE_NATIVE_TERMINAL_ROLE,
@@ -6533,10 +6534,8 @@ def _claude_terminal_env_unset(
         ``["DATABRICKS_CONFIG_PROFILE", "CLAUDECODE", "ANTHROPIC_API_KEY"]``.
     """
     env_unset = ["DATABRICKS_CONFIG_PROFILE", "CLAUDECODE"]
-    if IS_WINDOWS and not os.environ.get("CLAUDE_CONFIG_DIR"):
-        # psmux 3.3.8 turns this absent variable into an empty string in panes.
-        # Claude treats empty as an override and stops finding ~/.claude auth.
-        env_unset.append("CLAUDE_CONFIG_DIR")
+    if IS_WINDOWS:
+        env_unset.extend(psmux_claude_env_unset())
     if claude_config is not None and claude_config.api_key_helper:
         env_unset.append("ANTHROPIC_API_KEY")
     return env_unset

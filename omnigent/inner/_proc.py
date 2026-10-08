@@ -30,6 +30,7 @@ from typing import Protocol, TypedDict
 import psutil  # type: ignore[import-untyped]
 
 from omnigent._platform import IS_LINUX, IS_POSIX, IS_WINDOWS
+from omnigent.inner._windows_shutdown import send_ctrl_break
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +82,6 @@ def malloc_tuning_env() -> dict[str, str]:
 _killpg_fn = getattr(os, "killpg", None)
 _getpgid_fn = getattr(os, "getpgid", None)
 _SIGKILL = getattr(signal, "SIGKILL", signal.SIGTERM)
-# CTRL_BREAK_EVENT only exists on Windows; None elsewhere so this module still
-# imports on POSIX.
-_CTRL_BREAK_EVENT = getattr(signal, "CTRL_BREAK_EVENT", None)
 _CREATE_NEW_PROCESS_GROUP = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
 
 
@@ -211,19 +209,10 @@ def terminate_tree(process: _ProcessLike | None, *, grace: float = 0.0) -> None:
             _wait_gone(pid, grace)
         return
 
-    if IS_WINDOWS and _CTRL_BREAK_EVENT is not None:
-        try:
-            os.kill(pid, _CTRL_BREAK_EVENT)
-        except Exception:  # noqa: BLE001 — pid isn't a real console process
-            # group (e.g. never spawned with CREATE_NEW_PROCESS_GROUP, or
-            # already gone) — fall through to the psutil-based fallback
-            # below instead of giving up, so a delivery failure doesn't
-            # silently skip termination entirely.
-            pass
-        else:
-            if grace:
-                _wait_gone(pid, grace)
-            return
+    if IS_WINDOWS and send_ctrl_break(pid):
+        if grace:
+            _wait_gone(pid, grace)
+        return
 
     procs = _walk_descendants(pid)
     for proc in procs:
