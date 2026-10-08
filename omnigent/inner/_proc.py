@@ -31,7 +31,8 @@ from typing import Protocol, TypedDict
 
 import psutil  # type: ignore[import-untyped]
 
-from omnigent._platform import IS_LINUX, IS_POSIX
+from omnigent._platform import IS_LINUX, IS_POSIX, IS_WINDOWS
+from omnigent.inner._windows_shutdown import send_ctrl_break
 
 logger = logging.getLogger(__name__)
 
@@ -322,10 +323,17 @@ def terminate_tree(process: _ProcessLike | None, *, grace: float = 0.0) -> None:
     """
     Gracefully stop ``process`` and all of its descendants.
 
-    Sends ``SIGTERM`` (POSIX) / ``terminate()`` (Windows ``TerminateProcess``)
-    to the whole tree. On POSIX the process-group fast path is tried first;
-    otherwise (and on Windows) the tree is walked with :mod:`psutil`. Already
-    exited processes are no-ops. All "process gone / not permitted" errors are
+    Sends ``SIGTERM`` (POSIX) to the whole tree via the process-group fast
+    path, or falls back to :mod:`psutil` walking the descendants. On Windows,
+    ``psutil``'s ``terminate()`` is ``TerminateProcess`` — an unconditional
+    hard kill that gives the child no chance to run ASGI lifespan/shutdown
+    cleanup — so this instead delivers ``CTRL_BREAK_EVENT`` to the child's
+    process group (it was spawned with ``CREATE_NEW_PROCESS_GROUP`` via
+    :func:`spawn_kwargs`), which Windows Python surfaces as ``SIGBREAK``; a
+    child that installs a ``SIGBREAK`` handler (see
+    ``omnigent.runtime.harnesses._runner``) can use it to run the same
+    graceful-shutdown path SIGTERM triggers on POSIX. Already exited
+    processes are no-ops. All "process gone / not permitted" errors are
     swallowed — teardown is best-effort.
 
     :param process: A ``Popen``/``asyncio`` process handle, or ``None``.
@@ -349,6 +357,16 @@ def terminate_tree(process: _ProcessLike | None, *, grace: float = 0.0) -> None:
         current = {}
         leader_live = False
     observed = _remember_identities(process, current)
+    if IS_WINDOWS and leader_live and pid > 1 and pid != os.getpid() and pid in observed:
+        # Match the census identity check before signaling the console group.
+        try:
+            same_process = psutil.Process(pid).create_time() == observed[pid]
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            same_process = False
+        if same_process and send_ctrl_break(pid):
+            if grace:
+                _wait_gone(pid, grace)
+            return
     group_is_owned = owned_pgid is None or _identity_in_group(observed, owned_pgid)
     identities = _signal_tree_census(
         process,

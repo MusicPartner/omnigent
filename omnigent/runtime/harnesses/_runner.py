@@ -58,6 +58,7 @@ from fastapi import FastAPI
 
 from omnigent._platform import IS_WINDOWS
 from omnigent.inner import _proc
+from omnigent.inner._windows_shutdown import install_ctrl_break_handler
 from omnigent.process_logging import env_truthy
 from omnigent.runner._zygote import ZYGOTE_HARNESS_FORKED_ENV_VAR
 
@@ -463,7 +464,9 @@ def main(argv: list[str] | None = None) -> None:
             _set_pdeathsig()
         _start_parent_watchdog(args.parent_pid)
     config = _create_uvicorn_config(app, args.socket, args.bind)
-    _HardExitServer(config).run()
+    server = _HardExitServer(config)
+    install_ctrl_break_handler(server.handle_exit)
+    server.run()
 
 
 if __name__ == "__main__":
