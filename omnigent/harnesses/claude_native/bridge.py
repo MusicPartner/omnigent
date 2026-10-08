@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import base64
 import contextlib
 import hashlib
 import ipaddress
@@ -60,6 +59,10 @@ from urllib import request
 from omnigent._platform import IS_WINDOWS, is_wsl, stable_user_id
 from omnigent.harnesses.claude_native.message_display_hook import MESSAGE_DELTAS_FILE
 from omnigent.harnesses.claude_native.status import CONTEXT_RAW_FILE
+from omnigent.harnesses.claude_native.windows_hooks import (
+    message_display_command,
+    status_line_command,
+)
 from omnigent.harnesses.kiro_native.bridge import bridge_root as kiro_bridge_root
 from omnigent.models.claude_model_vocabulary import MODEL_VOCABULARY_ENV_VARS
 from omnigent.models.model_metadata import concrete_reported_model
@@ -2005,16 +2008,7 @@ def build_hook_settings(
     message_display_hook = {
         "type": "command",
         "command": (
-            _shell_join(
-                [
-                    python,
-                    "-I",
-                    "-m",
-                    "omnigent.harnesses.claude_native.message_display_hook",
-                    "--bridge-dir",
-                    str(bridge_dir),
-                ]
-            )
+            message_display_command(python, bridge_dir)
             if IS_WINDOWS
             else (
                 "p=$(cat | tr -d '\\r\\n'); "
@@ -2234,18 +2228,7 @@ def build_hook_settings(
     # claude-hud / their bar still renders.
     chain_command = read_user_status_line_command()
     if IS_WINDOWS:
-        status_parts = [
-            python,
-            "-I",
-            "-m",
-            "omnigent.harnesses.claude_native.status",
-            "--bridge-dir",
-            str(bridge_dir),
-        ]
-        if chain_command is not None:
-            chain_b64 = base64.b64encode(chain_command.encode("utf-8")).decode("ascii")
-            status_parts.extend(["--chain-b64", chain_b64])
-        status_command = _shell_join(status_parts)
+        status_command = status_line_command(python, bridge_dir, chain_command)
     else:
         raw_quoted = _shell_quote(str(bridge_dir / CONTEXT_RAW_FILE))
         status_command = (
