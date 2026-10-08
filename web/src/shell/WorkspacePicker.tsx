@@ -21,10 +21,15 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useCreateHostDirectory, useHostFilesystem } from "@/hooks/useHostFilesystem";
 import { useHostWorktrees } from "@/hooks/useHostWorktrees";
 
-/** True for Windows drive-letter paths such as `C:/Users/me` or `C:\\Users\\me`. */
-export function isWindowsDrivePath(path: string): boolean {
-  return /^[A-Za-z]:[\\/]/.test(path);
-}
+import { basename, isWindowsDrivePath, lastSeparatorIndex, separatorOf } from "./hostPaths";
+import { workspaceBreadcrumbItems, workspaceBreadcrumbSeparator } from "./workspaceBreadcrumbs";
+
+export { basename, isWindowsDrivePath } from "./hostPaths";
+export {
+  type WorkspaceBreadcrumbItem,
+  workspaceBreadcrumbItems,
+  workspaceBreadcrumbSeparator,
+} from "./workspaceBreadcrumbs";
 
 function sameHostDirectory(a: string, b: string): boolean {
   if (isWindowsDrivePath(a) && isWindowsDrivePath(b)) {
@@ -39,17 +44,6 @@ function sameHostDirectory(a: string, b: string): boolean {
  */
 export function isHostAbsolutePath(path: string): boolean {
   return path.startsWith("/") || isWindowsDrivePath(path);
-}
-
-function lastSeparatorIndex(path: string): number {
-  if (isWindowsDrivePath(path)) {
-    return Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
-  }
-  return path.lastIndexOf("/");
-}
-
-function separatorOf(path: string): "/" | "\\" {
-  return path.includes("\\") && !path.slice(path.indexOf(":") + 1).includes("/") ? "\\" : "/";
 }
 
 /**
@@ -167,107 +161,6 @@ export function normalizeTypedPath(input: string, home: string | null = null): s
     return "/";
   }
   return collapsed.endsWith("/") ? collapsed.slice(0, -1) : collapsed;
-}
-
-/**
- * Basename of an absolute path, for the "Select current" label.
- *
- * @param absolutePath Current directory, e.g.
- *   ``"/Users/corey/projects"``, ``"/"``, or ``""`` (home,
- *   pre-resolution).
- * @returns The last path segment (``"projects"``), ``"/"`` for the
- *   root, or ``"~"`` when the path is still the empty placeholder.
- */
-export function basename(absolutePath: string): string {
-  if (absolutePath === "") {
-    return "~";
-  }
-  if (absolutePath === "/") {
-    return "/";
-  }
-  if (/^[A-Za-z]:[\\/]?$/.test(absolutePath)) {
-    return absolutePath.length >= 3 ? absolutePath.slice(0, 3) : `${absolutePath}\\`;
-  }
-  const stripped =
-    absolutePath.endsWith("/") || (isWindowsDrivePath(absolutePath) && absolutePath.endsWith("\\"))
-      ? absolutePath.slice(0, -1)
-      : absolutePath;
-  const sepIdx = lastSeparatorIndex(stripped);
-  if (sepIdx < 0) {
-    return stripped;
-  }
-  return stripped.slice(sepIdx + 1);
-}
-
-export interface WorkspaceBreadcrumbItem {
-  label: string;
-  path: string;
-}
-
-/** Separator shown between breadcrumb segments for the current host path. */
-export function workspaceBreadcrumbSeparator(path: string): "/" | "\\" {
-  return isWindowsDrivePath(path) ? separatorOf(path) : "/";
-}
-
-/** Build clickable breadcrumbs without changing the host's path syntax. */
-export function workspaceBreadcrumbItems(
-  currentAbsolute: string,
-  resolvedHome: string | null,
-): WorkspaceBreadcrumbItem[] {
-  if (currentAbsolute === "") {
-    return [{ label: "~", path: "" }];
-  }
-  if (currentAbsolute === "/") {
-    return [{ label: "/", path: "/" }];
-  }
-
-  if (resolvedHome !== null) {
-    const normalizedCurrent = currentAbsolute.replace(/\\/g, "/");
-    const normalizedHome = resolvedHome.replace(/\\/g, "/").replace(/\/$/, "");
-    const windowsPaths = isWindowsDrivePath(currentAbsolute) && isWindowsDrivePath(resolvedHome);
-    const comparableCurrent = windowsPaths ? normalizedCurrent.toLowerCase() : normalizedCurrent;
-    const comparableHome = windowsPaths ? normalizedHome.toLowerCase() : normalizedHome;
-    if (
-      comparableCurrent === comparableHome ||
-      comparableCurrent.startsWith(`${comparableHome}/`)
-    ) {
-      const relativeParts = normalizedCurrent
-        .slice(normalizedHome.length)
-        .split("/")
-        .filter(Boolean);
-      const sep = separatorOf(resolvedHome);
-      const home = resolvedHome.replace(/[\\/]$/, "");
-      return [
-        { label: basename(resolvedHome), path: resolvedHome },
-        ...relativeParts.map((label, index) => ({
-          label,
-          path: `${home}${sep}${relativeParts.slice(0, index + 1).join(sep)}`,
-        })),
-      ];
-    }
-  }
-
-  if (isWindowsDrivePath(currentAbsolute)) {
-    const sep = separatorOf(currentAbsolute);
-    const root = `${currentAbsolute.slice(0, 2)}${sep}`;
-    const parts = currentAbsolute.slice(3).split(/[\\/]/).filter(Boolean);
-    return [
-      { label: currentAbsolute.slice(0, 2), path: root },
-      ...parts.map((label, index) => ({
-        label,
-        path: `${root}${parts.slice(0, index + 1).join(sep)}`,
-      })),
-    ];
-  }
-
-  const parts = currentAbsolute.split("/").filter(Boolean);
-  return [
-    { label: "/", path: "/" },
-    ...parts.map((label, index) => ({
-      label,
-      path: `/${parts.slice(0, index + 1).join("/")}`,
-    })),
-  ];
 }
 
 /**
