@@ -94,6 +94,7 @@ from omnigent.inner.hook_scripts.subagent_router import (
     AGENT_TOOL_MATCHER as CLAUDE_SUBAGENT_TOOL_MATCHER,
 )
 from omnigent.native import native_bridge_common
+from omnigent.native.mux import terminal_mux_command, terminal_mux_exit_status
 from omnigent.native.shell import shell_join
 from omnigent.tools.base import Tool, ToolContext
 from omnigent.util.reasoning_effort import CLAUDE_EFFORTS
@@ -5311,7 +5312,7 @@ def _run_tmux(socket_path: str, *args: str) -> None:
     """
 
     _check_injection_cancelled()
-    cmd = ["tmux", "-S", socket_path, *args]
+    cmd = [*terminal_mux_command(socket_path, windows=IS_WINDOWS), *args]
     try:
         proc = subprocess.run(
             cmd,
@@ -5347,7 +5348,13 @@ def _capture_pane(socket_path: str, tmux_target: str, *, join_wrapped: bool = Fa
     """
 
     _check_injection_cancelled()
-    args = ["tmux", "-S", socket_path, "capture-pane", "-t", tmux_target, "-p"]
+    args = [
+        *terminal_mux_command(socket_path, windows=IS_WINDOWS),
+        "capture-pane",
+        "-t",
+        tmux_target,
+        "-p",
+    ]
     if join_wrapped:
         args.append("-J")
     try:
@@ -5406,9 +5413,7 @@ def _claude_pane_state(socket_path: str, tmux_target: str) -> _ClaudePaneState:
     try:
         proc = subprocess.run(
             [
-                "tmux",
-                "-S",
-                socket_path,
+                *terminal_mux_command(socket_path, windows=IS_WINDOWS),
                 "list-panes",
                 "-t",
                 tmux_target,
@@ -5436,7 +5441,11 @@ def _claude_pane_state(socket_path: str, tmux_target: str) -> _ClaudePaneState:
         return _ClaudePaneState(True)
     if fields[0] == "1":
         return _ClaudePaneState(
-            False, exited=True, exit_status=fields[1] if len(fields) > 1 else None
+            False,
+            exited=True,
+            exit_status=terminal_mux_exit_status(
+                fields[1] if len(fields) > 1 else None, windows=IS_WINDOWS
+            ),
         )
     return _ClaudePaneState(None)
 

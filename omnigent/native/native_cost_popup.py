@@ -35,12 +35,15 @@ import argparse
 import contextlib
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
 from pathlib import Path
 from urllib import error, request
 
+from omnigent._platform import IS_WINDOWS
+from omnigent.native.mux import terminal_mux_command
 from omnigent.native.shell import shell_join
 
 # Timeout for the (fast, local) ``tmux list-clients`` lookup the launcher
@@ -96,14 +99,10 @@ def _list_tmux_clients(socket_path: str, tmux_target: str) -> list[str]:
         client is attached or the lookup fails (treated as "nothing to
         render on").
     """
-    import subprocess
-
     try:
         proc = subprocess.run(
             [
-                "tmux",
-                "-S",
-                socket_path,
+                *terminal_mux_command(socket_path, windows=IS_WINDOWS),
                 "list-clients",
                 "-t",
                 tmux_target,
@@ -136,14 +135,10 @@ def _tmux_window_activity_at(socket_path: str, tmux_target: str) -> float | None
     :returns: Epoch seconds of the window's last activity, or ``None`` when
         the tmux server/target is gone or the value is unparseable.
     """
-    import subprocess
-
     try:
         proc = subprocess.run(
             [
-                "tmux",
-                "-S",
-                socket_path,
+                *terminal_mux_command(socket_path, windows=IS_WINDOWS),
                 "display-message",
                 "-p",
                 "-t",
@@ -184,14 +179,10 @@ def _tmux_last_client_input_at(socket_path: str, tmux_target: str) -> float | No
         attached clients, or ``None`` when none is attached, the tmux
         server/target is gone, or the output is unparseable.
     """
-    import subprocess
-
     try:
         proc = subprocess.run(
             [
-                "tmux",
-                "-S",
-                socket_path,
+                *terminal_mux_command(socket_path, windows=IS_WINDOWS),
                 "list-clients",
                 "-t",
                 tmux_target,
@@ -264,8 +255,6 @@ def launch_cost_popup(
         valid on the host the tmux server runs on).
     :returns: None.
     """
-    import subprocess
-
     clients = _list_tmux_clients(socket_path, tmux_target)
     if not clients:
         return
@@ -294,9 +283,7 @@ def launch_cost_popup(
         # percentage args are tmux >= 3.2). The inner command is one
         # shell-string run via /bin/sh.
         cmd = [
-            "tmux",
-            "-S",
-            socket_path,
+            *terminal_mux_command(socket_path, windows=IS_WINDOWS),
             "display-popup",
             "-E",
             "-c",
@@ -344,8 +331,6 @@ def launch_blocked_notice(
         :data:`sys.executable`.
     :returns: None.
     """
-    import subprocess
-
     clients = _list_tmux_clients(socket_path, tmux_target)
     if not clients:
         return
@@ -364,9 +349,7 @@ def launch_blocked_notice(
     inner_cmd = shell_join(argv)
     for client in clients:
         cmd = [
-            "tmux",
-            "-S",
-            socket_path,
+            *terminal_mux_command(socket_path, windows=IS_WINDOWS),
             "display-popup",
             "-E",
             "-c",

@@ -16,6 +16,7 @@ import tempfile
 from pathlib import Path
 
 from omnigent._platform import IS_WINDOWS
+from omnigent.inner.claude_windows import prefer_native_claude_exe
 from omnigent.inner.datamodel import OSEnvSpec, TerminalEnvSpec
 from omnigent.inner.os_env import OSEnvironment, create_os_environment
 from omnigent.inner.sandbox import with_additional_read_roots
@@ -61,6 +62,10 @@ class PsmuxTerminalInstance(TerminalInstance):
     def _tmux_base_cmd(self) -> list[str]:
         return ["psmux", "-S", str(self.socket_path)]
 
+    def _exit_status_is_pending(self, fields: str) -> bool:
+        """psmux exposes placeholder status/signal fields, so leave both unknown."""
+        return False
+
     async def launch(self, *, cwd: Path | None = None) -> None:
         if self.running:
             return
@@ -85,7 +90,7 @@ class PsmuxTerminalInstance(TerminalInstance):
             logger.debug("Terminal lifecycle correlation unavailable (%s)", type(exc).__name__)
         env = strip_runner_auth_secrets(env)
 
-        executable = shutil.which(self.command) or self.command
+        executable = prefer_native_claude_exe(shutil.which(self.command) or self.command)
         command_args = [executable, *self.args]
         if self.env_unset:
             wrapper_path = (self.private_dir / "launch.py").resolve()

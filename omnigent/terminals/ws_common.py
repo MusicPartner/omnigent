@@ -9,6 +9,9 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Final
 
+from omnigent._platform import IS_WINDOWS
+from omnigent.native.mux import terminal_mux_command
+
 if TYPE_CHECKING:
     from fastapi import WebSocket
 
@@ -45,9 +48,7 @@ async def _tmux_session_alive(socket_path: str, tmux_target: str) -> bool:
     """
     try:
         proc = await asyncio.create_subprocess_exec(
-            "tmux",
-            "-S",
-            socket_path,
+            *terminal_mux_command(socket_path, windows=IS_WINDOWS),
             "list-panes",
             "-t",
             tmux_target,
@@ -77,9 +78,7 @@ async def _check_pane_dead_definitive(socket_path: str, tmux_target: str) -> boo
     """Return pane liveness, or ``None`` when the probe is inconclusive."""
     try:
         proc = await asyncio.create_subprocess_exec(
-            "tmux",
-            "-S",
-            socket_path,
+            *terminal_mux_command(socket_path, windows=IS_WINDOWS),
             "list-panes",
             "-t",
             tmux_target,

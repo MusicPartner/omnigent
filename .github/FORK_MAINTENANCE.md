@@ -66,9 +66,11 @@ Windows-specific mechanics live in leaf modules so shared modules keep only thei
 | psmux terminal backend | `omnigent/terminals/psmux.py` | `omnigent/terminals/backend.py` re-exports the psmux classes unconditionally | `tests/terminals/test_windows_psmux.py` |
 | Web workspace breadcrumbs | `web/src/shell/hostPaths.ts`, `web/src/shell/workspaceBreadcrumbs.ts` | `web/src/shell/WorkspacePicker.tsx` re-exports them | `web/src/shell/workspaceBreadcrumbs.test.ts` (existing helper tests remain in `WorkspacePicker.test.tsx`) |
 | Host listing | `omnigent/host/host_listing.py` | `omnigent/host/connect.py` (`_handle_list_dir`) | `tests/host/test_host_listing.py` |
-| Runner python probe | `omnigent/runner/python_probe.py` | `omnigent/runner/environment_filesystem.py` (`_python_shell_command`) | `tests/runner/test_python_probe.py` |
+| Runner python probe | `omnigent/runner/python_probe.py` | `omnigent/runner/environment_filesystem.py` (`_run_python_probe`) | `tests/runner/test_python_probe.py` |
 | Command parsing | `omnigent/native/shell.py` (`split_command()`) | `omnigent/inner/acp_executor.py`, `omnigent/update_check.py`, `omnigent/native/_native_resume_hint.py` | `tests/test_native_shell.py` |
 | Codex CLI | `omnigent/inner/codex_windows.py` | `omnigent/inner/codex_executor.py` (`_find_codex_cli`) | `tests/inner/test_codex_windows.py` |
+| Claude CLI | `omnigent/inner/claude_windows.py` | `omnigent/terminals/psmux.py` (launch), `omnigent/inner/claude_sdk_executor.py` (`_find_system_claude`) | `tests/inner/test_claude_windows.py`, `tests/terminals/test_windows_psmux.py` |
+| Native terminal control | `omnigent/native/mux.py` | Claude bridge, native attach/preflight, cost popups, WebSocket liveness select the platform mux | `tests/test_native_mux.py`, `tests/terminals/test_windows_psmux.py` |
 | Claude hooks | `omnigent/harnesses/claude_native/windows_hooks.py` | `omnigent/harnesses/claude_native/bridge.py` (readiness/lifecycle policy stays here) | `tests/harnesses/claude_native/test_claude_native_windows_hooks.py` |
 | Shutdown | `omnigent/inner/_windows_shutdown.py` | `omnigent/inner/_proc.py` (`terminate_tree`), `omnigent/runtime/harnesses/_runner.py` | `tests/inner/test_windows_shutdown.py` |
 | Native env | `omnigent/runner/native/windows_env.py` | `omnigent/runner/native/orchestration.py` (`_claude_terminal_env_unset`) | `tests/runner/test_native_windows_env.py` |
@@ -85,3 +87,47 @@ Rules:
 - New Windows mechanics go into a leaf module, not a shared module.
 - Psmux tests that monkeypatch `IS_WINDOWS` or `shutil` must patch `omnigent.terminals.psmux`.
 - `workspaceBreadcrumbs.ts` and `hostPaths.ts` must not import `WorkspacePicker.tsx` (oxlint `import/no-cycle`).
+
+
+## Windows launch follow-up (2026-10-08)
+
+Claude npm shims now prefer the installed native executable in the psmux and
+SDK paths. Claude bridge control, attach/preflight, cost popups, and terminal
+WebSocket liveness select psmux on Windows and tmux on POSIX. Regression checks
+cover both selections and a real psmux bridge round trip. The fork workflow and
+stable Windows subset include the new coverage.
+
+The latest failed [UI run](https://github.com/MusicPartner/omnigent/actions/runs/37820784465)
+counted the expected undelivered-message notice as an assistant reply. Both
+attempts' Claude transcripts contained exactly two replies. The corrected
+assertion passed when replayed against the failed browser DOM and still rejected
+a duplicated reply. The Linux reconnect journey has not been rerun remotely.
+The [fork validation run](https://github.com/MusicPartner/omnigent/actions/runs/37822928820)
+on committed revision `1f40f896c` passed; it predates this follow-up.
+
+Local focused validation: 587 passed, 2 skipped, and 6 Unix-only checks
+were deselected. The previously failing exit-status assertion exposed a dependency
+limitation: [psmux 3.3.8 hardcodes status and signal fields](https://github.com/psmux/psmux/blob/66cf613/src/format.rs#L1416)
+to zero. The Windows backend and Claude bridge now leave the exit status unknown
+instead of reporting successful completion. The real-psmux test confirms pane
+death, exact argv, environment removal, and cwd; the standalone Python launcher
+still must preserve exit status 37. The fix passed on its first attempt.
+
+Deferred pending a clear caller contract:
+
+- Replace sandbox `%*` batch forwarding: some callers accept only an executable
+  filename, so a Python executable plus launcher arguments needs an API change.
+- Select quoting by the consuming shell instead of the host OS, including popups.
+- Capture a real Claude pane's `pane_start_command` and Win32 command line with
+  its full settings JSON; the current real-psmux argv check uses a Python child.
+
+To repeat the new Windows checks from this worktree:
+
+```powershell
+.venv\Scripts\python.exe -m pytest tests/inner/test_claude_windows.py tests/test_native_mux.py tests/terminals/test_windows_psmux.py -n 0 -p no:cacheprovider -q
+```
+
+For a manual bridge check,
+start a Claude Code session on this Windows host, switch between Terminal and
+Chat, send `Reply exactly: parity ; %PATH% Å`, and confirm one matching reply
+and a connected terminal.

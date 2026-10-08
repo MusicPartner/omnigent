@@ -142,11 +142,11 @@ for (const [filename, missing] of [
     assert.deepEqual(analyzeSource(filename, source), []);
     const mutated = source
       .replace(
-        /^\s*visibility: (?:visibility \?\? )?"(?:all|mine|shared|archived)",\n/gm,
+        /^\s*visibility: (?:visibility \?\? )?"(?:all|mine|shared|archived)",\r?\n/gm,
         "",
       )
-      .replace(/    visibility,\n    pinned: "true",/, '    pinned: "true",')
-      .replace(/^\s*query\.set\("visibility", "all"\);\n/gm, "");
+      .replace(/    visibility,\r?\n    pinned: "true",/, '    pinned: "true",')
+      .replace(/^\s*query\.set\("visibility", "all"\);\r?\n/gm, "");
     assert.equal(analyzeSource(filename, mutated).length, missing);
   });
 }

@@ -22,7 +22,9 @@ import subprocess
 import sys
 import uuid
 
+from omnigent._platform import IS_WINDOWS
 from omnigent.llms.adapters._content import redact_binary_payloads
+from omnigent.native.mux import terminal_mux_command
 from omnigent.runtime.tool_result_replay import (
     blocks_from_parsed_list,
     image_payloads_in_blocks,
@@ -3798,7 +3800,8 @@ def _can_attach_direct_tmux(prepared: PreparedClaudeTerminal) -> bool:
         prepared.tmux_socket is not None
         and prepared.tmux_target is not None
         and prepared.tmux_socket.exists()
-        and shutil.which("tmux") is not None
+        and shutil.which(terminal_mux_command(str(prepared.tmux_socket), windows=IS_WINDOWS)[0])
+        is not None
     )
 
 
@@ -3836,9 +3839,7 @@ async def _attach_direct_tmux(
     env.pop("TMUX", None)
     startup_profiler.mark("starting tmux attach subprocess", detail=f"target={tmux_target}")
     process = await asyncio.create_subprocess_exec(
-        "tmux",
-        "-S",
-        str(socket_path),
+        *terminal_mux_command(str(socket_path), windows=IS_WINDOWS),
         "-f",
         os.devnull,
         "attach",
@@ -6145,10 +6146,11 @@ def _preflight_local_tools(command: str) -> None:
         validate_claude_hook_interpreter_compatibility(resolved_command)
     except ClaudeNativeHookInterpreterMismatchError as exc:
         raise click.ClickException(str(exc)) from exc
-    if shutil.which("tmux") is None:
+    mux = terminal_mux_command("", windows=IS_WINDOWS)[0]
+    if shutil.which(mux) is None:
         raise click.ClickException(
-            "tmux was not found on local PATH. The native Claude wrapper "
-            "launches Claude through the local runner's tmux terminal."
+            f"{mux} was not found on local PATH. The native Claude wrapper "
+            f"launches Claude through the local runner's {mux} terminal."
         )
 
 

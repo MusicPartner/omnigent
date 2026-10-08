@@ -57,6 +57,8 @@ Invoke-Step "stable Windows unit subset" @(
     'tests/scripts/test_install_oss_ps1.py',
     'tests/host/test_host_listing.py',
     'tests/inner/test_codex_windows.py',
+    'tests/inner/test_claude_windows.py',
+    'tests/test_native_mux.py',
     'tests/inner/test_windows_shutdown.py',
     'tests/runner/test_native_windows_env.py',
     'tests/runner/test_python_probe.py',

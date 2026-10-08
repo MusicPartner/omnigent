@@ -47,6 +47,7 @@ from omnigent.cli_invocation import cli_invocation
 from omnigent.databricks_ai_gateway import is_databricks_ai_gateway_url
 from omnigent.inner import _proc
 from omnigent.inner.bundle_skills import ensure_bundle_plugin_manifest
+from omnigent.inner.claude_windows import prefer_native_claude_exe
 from omnigent.inner.hook_scripts import subagent_router
 from omnigent.llms._usage_observer import notify_from_dict as _notify_usage_from_dict
 from omnigent.llms.adapters._content import parse_data_uri as _parse_replay_data_uri
@@ -994,7 +995,10 @@ def _find_system_claude() -> str | None:
     beta flags the Databricks gateway doesn't support. Returns the absolute
     path, or ``None`` if not found.
     """
-    return resolve_cli_binary("claude", env_var=_CLAUDE_PATH_ENV)
+    resolved = resolve_cli_binary("claude", env_var=_CLAUDE_PATH_ENV)
+    if resolved is not None and sys.platform == "win32":
+        return prefer_native_claude_exe(resolved)
+    return resolved
 
 
 # DATABRICKS-PATCH(claude-sdk-live-model-discovery)

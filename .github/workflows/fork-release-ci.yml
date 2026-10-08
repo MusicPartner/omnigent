@@ -54,6 +54,8 @@ jobs:
           omnigent/host/host_listing.py
           omnigent/inner/_windows_shutdown.py
           omnigent/inner/codex_windows.py
+          omnigent/inner/claude_windows.py
+          omnigent/native/mux.py
           omnigent/inner/sandbox_capabilities.py
           omnigent/native/shell.py
           omnigent/runner/native/windows_env.py
@@ -70,6 +72,8 @@ jobs:
           omnigent/terminals/psmux.py
           tests/host/test_host_listing.py
           tests/inner/test_codex_windows.py
+          tests/inner/test_claude_windows.py
+          tests/test_native_mux.py
           tests/inner/test_windows_shutdown.py
           tests/runner/test_native_windows_env.py
           tests/runner/test_python_probe.py
@@ -82,6 +86,8 @@ jobs:
           uv run pytest -q -p no:cacheprovider
           tests/host/test_host_listing.py
           tests/inner/test_codex_windows.py
+          tests/inner/test_claude_windows.py
+          tests/test_native_mux.py
           tests/inner/test_sandbox_capabilities.py
           tests/inner/test_windows_shutdown.py
           tests/runner/test_native_windows_env.py
@@ -151,7 +157,11 @@ jobs:
           tests/terminals/test_windows_psmux.py::test_windows_psmux_backend_launch_send_read_close
           tests/terminals/test_windows_psmux.py::test_windows_psmux_backend_strips_runner_auth_secrets
           tests/terminals/test_windows_psmux.py::test_psmux_backend_reexport_preserves_identity
-          -p no:cacheprovider -q
+          tests/terminals/test_windows_psmux.py::test_psmux_python_launcher_preserves_argv_environment_and_exit_status
+          tests/terminals/test_windows_psmux.py::test_psmux_launch_resolves_native_claude_before_spawning
+          tests/terminals/test_windows_psmux.py::test_windows_claude_bridge_controls_psmux_pane
+          tests/terminals/test_windows_psmux.py::test_windows_psmux_preserves_json_argv_and_clears_existing_server_env
+          -n 0 -p no:cacheprovider -q
 
       # Non-blocking, like upstream's windows.yml: v0.17.0 unit tests still
       # assume POSIX-only APIs (os.O_DIRECTORY, signer CODEX_HOME paths).

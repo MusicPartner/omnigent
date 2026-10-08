@@ -581,10 +581,10 @@ async def test_windows_psmux_preserves_json_argv_and_clears_existing_server_env(
             if seed_path.exists():
                 break
             await asyncio.sleep(0.1)
-        assert json.loads(seed_path.read_text()) == {
-            "config": "server-config",
-            "unset": "server-unset",
-        }
+        seeded = json.loads(seed_path.read_text())
+        # psmux can replace CLAUDE_CONFIG_DIR with an empty string in the pane.
+        assert seeded["config"] in {"server-config", ""}
+        assert seeded["unset"] == "server-unset"
         await instance._tmux("set-option", "-gq", "remain-on-exit", "on")
         await instance.launch(cwd=tmp_path)
         for _ in range(100):
@@ -598,11 +598,107 @@ async def test_windows_psmux_preserves_json_argv_and_clears_existing_server_env(
             "cwd": str(tmp_path),
         }
         for _ in range(100):
-            await instance._refresh_exit_status()
-            if instance.last_exit_status() is not None:
+            fields = await instance._tmux_output(
+                "list-panes", "-t", instance.tmux_target, "-F", "#{pane_dead}"
+            )
+            if fields.strip() == "1":
                 break
             await asyncio.sleep(0.1)
-        assert instance.last_exit_status() == 37
+        assert fields.strip() == "1"
+        await instance._refresh_exit_status()
+        # psmux hardcodes the pane's wait-status fields; do not report success.
+        assert instance.last_exit_status() is None
+        assert instance.last_exit_signal() is None
     finally:
         await instance.close()
         await seed.close()
+
+
+async def test_psmux_launch_resolves_native_claude_before_spawning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    shim = tmp_path / "claude.cmd"
+    native = tmp_path / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
+    native.parent.mkdir(parents=True)
+    native.write_bytes(b"MZnative")
+    instance = PsmuxTerminalInstance(
+        name="claude",
+        session_key="s",
+        socket_path=tmp_path / "sock",
+        private_dir=tmp_path,
+        command="claude",
+        args=['{"command":"echo 2>> log"}'],
+    )
+    monkeypatch.setattr(psmux_module, "shutil", SimpleNamespace(which=lambda command: str(shim)))
+    process = SimpleNamespace(returncode=0, communicate=AsyncMock(return_value=(b"", b"")))
+    spawn = AsyncMock(return_value=process)
+    monkeypatch.setattr(
+        psmux_module,
+        "asyncio",
+        SimpleNamespace(create_subprocess_exec=spawn, subprocess=asyncio.subprocess),
+    )
+    await instance.launch(cwd=tmp_path)
+    argv = spawn.call_args.args
+    assert argv[argv.index("--") + 1 :] == (str(native), *instance.args)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows psmux test")
+@pytest.mark.skipif(shutil.which("psmux") is None, reason="psmux not installed")
+async def test_windows_claude_bridge_controls_psmux_pane(tmp_path: Path) -> None:
+    from omnigent.harnesses.claude_native import bridge
+
+    instance = PsmuxTerminalInstance(
+        name="bridge",
+        session_key="s",
+        socket_path=tmp_path / "sock",
+        private_dir=tmp_path,
+        command=sys.executable,
+        env={"PYTHONIOENCODING": "utf-8"},
+        args=[
+            "-I",
+            "-u",
+            "-c",
+            "import time; print('BRIDGE_READY'); print('ECHO:' + input()); time.sleep(60)",
+        ],
+    )
+    socket = str(instance.socket_path)
+    try:
+        await instance.launch(cwd=tmp_path)
+        for _ in range(100):
+            pane = await asyncio.to_thread(bridge._capture_pane, socket, instance.tmux_target)
+            if "BRIDGE_READY" in pane:
+                break
+            await asyncio.sleep(0.1)
+        assert "BRIDGE_READY" in pane
+        state = await asyncio.to_thread(bridge._claude_pane_state, socket, instance.tmux_target)
+        assert state.alive is True
+        message = "ping ; %PATH% Å"
+        await asyncio.to_thread(
+            bridge._run_tmux, socket, "send-keys", "-l", "-t", instance.tmux_target, message
+        )
+        await asyncio.to_thread(
+            bridge._run_tmux, socket, "send-keys", "-t", instance.tmux_target, "Enter"
+        )
+        for _ in range(100):
+            pane = await asyncio.to_thread(bridge._capture_pane, socket, instance.tmux_target)
+            if "ECHO:" + message in pane:
+                break
+            await asyncio.sleep(0.1)
+        assert "ECHO:" + message in pane
+    finally:
+        await instance.close()
+
+
+@pytest.mark.parametrize("fields", ["0|0|0", "1|0|0"])
+def test_psmux_does_not_infer_exit_status_or_signal_from_placeholders(
+    tmp_path: Path, fields: str
+) -> None:
+    instance = PsmuxTerminalInstance(
+        name="probe", session_key="s", socket_path=tmp_path / "sock", private_dir=tmp_path
+    )
+    assert instance._exit_status_is_pending(fields) is False
+    assert instance.last_exit_status() is None
+    assert instance.last_exit_signal() is None

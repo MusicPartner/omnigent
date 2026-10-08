@@ -4185,7 +4185,7 @@ def test_inject_user_message_pastes_content_then_submits(
     # \n (not CR) is the anthropics/claude-code#52126 multi-line collapse.
     assert loaded_payloads == [expected_payload]
     assert load[:6] == [
-        "tmux",
+        "psmux" if claude_native_bridge.IS_WINDOWS else "tmux",
         "-S",
         str(socket_path),
         "load-buffer",
@@ -4195,7 +4195,7 @@ def test_inject_user_message_pastes_content_then_submits(
     # -p (bracketed-paste markers) dropped = newlines submit per-line in
     # the TUI; -d dropped = stale buffer copies accumulate server-side.
     assert paste == [
-        "tmux",
+        "psmux" if claude_native_bridge.IS_WINDOWS else "tmux",
         "-S",
         str(socket_path),
         "paste-buffer",
@@ -4207,7 +4207,7 @@ def test_inject_user_message_pastes_content_then_submits(
         "claude:0.0",
     ]
     assert submit == [
-        "tmux",
+        "psmux" if claude_native_bridge.IS_WINDOWS else "tmux",
         "-S",
         str(socket_path),
         "send-keys",
@@ -5227,7 +5227,7 @@ def test_inject_interrupt_sends_escape_keystroke(
     # Enter or extra key was appended; if 0, the call was skipped.
     assert len(captured) == 1, f"Expected 1 tmux send-keys call, got {len(captured)}."
     assert captured[0] == [
-        "tmux",
+        "psmux" if claude_native_bridge.IS_WINDOWS else "tmux",
         "-S",
         str(socket_path),
         "send-keys",
@@ -5344,7 +5344,7 @@ def test_kill_session_issues_kill_session_on_target(
     # name, it's the interrupt path and wouldn't terminate the pane.
     assert len(captured) == 1, f"Expected 1 tmux kill-session call, got {len(captured)}."
     assert captured[0] == [
-        "tmux",
+        "psmux" if claude_native_bridge.IS_WINDOWS else "tmux",
         "-S",
         str(socket_path),
         "kill-session",
@@ -5480,7 +5480,7 @@ def test_inject_slash_command_clears_draft_pastes_literal_then_enter(
     )
     clear, paste, submit = keystrokes
     assert clear == [
-        "tmux",
+        "psmux" if claude_native_bridge.IS_WINDOWS else "tmux",
         "-S",
         str(socket_path),
         "send-keys",
@@ -5489,7 +5489,7 @@ def test_inject_slash_command_clears_draft_pastes_literal_then_enter(
         "C-u",
     ]
     assert paste == [
-        "tmux",
+        "psmux" if claude_native_bridge.IS_WINDOWS else "tmux",
         "-S",
         str(socket_path),
         "send-keys",
@@ -5499,7 +5499,7 @@ def test_inject_slash_command_clears_draft_pastes_literal_then_enter(
         "/effort high",
     ]
     assert submit == [
-        "tmux",
+        "psmux" if claude_native_bridge.IS_WINDOWS else "tmux",
         "-S",
         str(socket_path),
         "send-keys",
@@ -8407,6 +8407,7 @@ def test_display_cost_approval_popup_builds_detached_tmux_command(
     it silently wouldn't work.
     """
     monkeypatch.setattr("omnigent.native.shell.IS_WINDOWS", False)
+    monkeypatch.setattr(native_cost_popup, "IS_WINDOWS", False)
     bridge_dir = tmp_path / "bridge"
     bridge_dir.mkdir()
     (bridge_dir / "tmux.json").write_text(
@@ -9638,6 +9639,7 @@ def test_claude_pane_state_distinguishes_dead_pane_from_unanswered_probe(
     resolve, so "tmux told us nothing" would read as "the pane is dead"
     and end a healthy slow boot at the base budget.
     """
+    monkeypatch.setattr(claude_native_bridge, "IS_WINDOWS", False)
     responses: dict[str, Any] = {}
 
     def fake_run(cmd: list[str], **kwargs: Any) -> SimpleNamespace:
