@@ -202,6 +202,7 @@ class TestSetupHermesHome:
         assert (home / "omnigent-policy-hook.sh").is_file()
         assert not (bridge_dir / "hermes_home").exists()  # no creds under the bridge dir
 
+    @pytest.mark.posix_only
     def test_home_is_owner_only(self, setup) -> None:
         """The private HERMES_HOME is 0700 (mkdtemp default) — it holds credentials."""
         import stat

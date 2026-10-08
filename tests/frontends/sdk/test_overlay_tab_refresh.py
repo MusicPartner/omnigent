@@ -33,7 +33,19 @@ Without the fix, the second ``expect`` would time out because
 the new content never gets painted.
 """
 
+# ruff: noqa: E402 - Windows module skip must run before POSIX-only imports.
+
 from __future__ import annotations
+
+import os
+
+import pytest
+
+pytestmark = pytest.mark.posix_only
+
+if os.name == "nt":
+    pytest.skip("POSIX-only test; requires PTY/tmux/pexpect", allow_module_level=True)
+
 
 import sys
 import time
@@ -114,9 +126,9 @@ sys.path.insert(0, str(_DRIVER.parent))
 # That's intentional: the driver is a throwaway script the pexpect
 # subprocess executes, and the only thing the test itself needs
 # from it is the two sentinel strings.
-import contextlib  # noqa: E402 — must come after the sys.path insert above so mypy picks up the driver module reliably
+import contextlib
 
-from _overlay_tab_driver import (  # type: ignore[import-not-found]  # noqa: E402
+from _overlay_tab_driver import (  # type: ignore[import-not-found]
     _MAIN_SENTINEL,
     _SUB_SENTINEL,
 )

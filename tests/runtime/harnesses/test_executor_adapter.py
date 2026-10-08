@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import json
 import shutil
+import tempfile
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
@@ -101,8 +102,14 @@ def register_fixture_harness() -> Iterator[None]:
 
 @pytest.fixture
 def short_tmp_parent() -> Iterator[Path]:
-    """Per-test parent directory under /tmp with a short path."""
-    parent = Path("/tmp") / f"omni-ia-{uuid.uuid4().hex[:8]}"
+    """Per-test parent directory under the system tempdir with a short path.
+
+    Uses ``tempfile.gettempdir()`` rather than a hardcoded ``/tmp`` so this
+    resolves to a real, writable directory on Windows too (there is no
+    ``/tmp`` there; ``gettempdir()`` is what production's
+    ``_default_tmp_parent`` falls back to on that platform).
+    """
+    parent = Path(tempfile.gettempdir()) / f"omni-ia-{uuid.uuid4().hex[:8]}"
     parent.mkdir(mode=0o700)
     try:
         yield parent

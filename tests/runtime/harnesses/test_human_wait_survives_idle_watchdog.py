@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+import tempfile
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
@@ -119,13 +120,28 @@ def register_fixture_harness() -> Iterator[None]:
 
 @pytest.fixture
 def short_tmp_parent() -> Iterator[Path]:
-    """Per-test parent directory under /tmp with a short path."""
-    parent = Path("/tmp") / f"hw-wd-{uuid.uuid4().hex[:8]}"
-    parent.mkdir(mode=0o700)
-    try:
-        yield parent
-    finally:
-        shutil.rmtree(parent, ignore_errors=True)
+    """Per-test parent directory under a short writable temp root."""
+    roots = [Path("/tmp")]
+    temp_root = Path(tempfile.gettempdir())
+    if temp_root not in roots:
+        roots.append(temp_root)
+
+    last_error: OSError | None = None
+    for root in roots:
+        parent = root / f"hw-wd-{uuid.uuid4().hex[:8]}"
+        try:
+            parent.mkdir(mode=0o700)
+        except OSError as exc:
+            last_error = exc
+            continue
+        try:
+            yield parent
+        finally:
+            shutil.rmtree(parent, ignore_errors=True)
+        return
+
+    assert last_error is not None
+    raise last_error
 
 
 @pytest.fixture
@@ -250,6 +266,7 @@ async def test_heartbeat_does_not_reset_watchdog_normally(
     )
 
 
+@pytest.mark.posix_only
 @pytest.mark.asyncio
 async def test_heartbeat_resets_watchdog_while_elicitation_pending(
     use_parking_elicit_fast_heartbeat_short_idle: None,
@@ -344,6 +361,7 @@ async def test_heartbeat_resets_watchdog_while_elicitation_pending(
     )
 
 
+@pytest.mark.posix_only
 @pytest.mark.asyncio
 async def test_elicit_counter_brackets_the_pending_wait(
     use_parking_elicit_fast_heartbeat_normal_idle: None,

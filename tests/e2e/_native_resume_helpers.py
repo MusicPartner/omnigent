@@ -38,7 +38,19 @@ test files (``test_claude_native_cli_resume_e2e.py`` /
 ``test_codex_native_cli_resume_e2e.py``) stay thin and free of duplication.
 """
 
+# ruff: noqa: E402 - Windows module skip must run before POSIX-only imports.
+
 from __future__ import annotations
+
+import os
+
+import pytest
+
+pytestmark = pytest.mark.posix_only
+
+if os.name == "nt":
+    pytest.skip("POSIX-only test; requires PTY/tmux/pexpect", allow_module_level=True)
+
 
 import contextlib
 import os

@@ -174,6 +174,7 @@ def test_allowlisted_dotdir_is_not_masked(tmp_path: Path) -> None:
     assert _entry_for(entries, venv) is None
 
 
+@pytest.mark.posix_only
 def test_wildcard_allows_created_dotpaths_but_still_masks_escape(
     tmp_path: Path,
 ) -> None:
@@ -780,6 +781,7 @@ def test_missing_cwd_returns_empty_list(tmp_path: Path) -> None:
     assert entries == []
 
 
+@pytest.mark.posix_only
 def test_unreadable_subdirectory_is_skipped_silently(tmp_path: Path) -> None:
     """
     A subdirectory that can't be opened (e.g. permission denied)

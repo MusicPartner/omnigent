@@ -520,6 +520,7 @@ policies:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             f.flush()
+            f.close()
             try:
                 a = load_agent_def(f.name)
                 self.assertEqual(a.policies["block_sleep"].on, ["tool_call"])
@@ -558,6 +559,7 @@ runtime: true
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             f.flush()
+            f.close()
             try:
                 a = load_agent_def(f.name)
                 self.assertEqual(a.name, "data_analyst")
@@ -589,6 +591,7 @@ tools:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             f.flush()
+            f.close()
             try:
                 a = load_agent_def(f.name)
                 self.assertIsInstance(a.tools["google"], MCPTool)
@@ -758,6 +761,7 @@ os_env:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             f.flush()
+            f.close()
             try:
                 agent = load_agent_def(f.name)
             finally:
@@ -786,6 +790,7 @@ os_env:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             f.flush()
+            f.close()
             try:
                 with self.assertRaisesRegex(ValueError, "egress_rules requires"):
                     load_agent_def(f.name)
@@ -805,6 +810,7 @@ os_env:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             f.flush()
+            f.close()
             try:
                 with self.assertRaisesRegex(ValueError, "start_in_scratch requires"):
                     load_agent_def(f.name)
@@ -823,6 +829,7 @@ os_env:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             f.flush()
+            f.close()
             try:
                 with self.assertRaisesRegex(ValueError, "mutually exclusive"):
                     load_agent_def(f.name)
@@ -855,6 +862,7 @@ terminals:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             f.flush()
+            f.close()
             try:
                 with self.assertRaisesRegex(
                     ValueError, "allow_sandbox_override.*incompatible.*egress_rules"
@@ -884,6 +892,7 @@ terminals:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             f.flush()
+            f.close()
             try:
                 with self.assertRaisesRegex(
                     ValueError, "allow_sandbox_override.*incompatible.*egress_rules"
@@ -905,6 +914,7 @@ os_env:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             f.flush()
+            f.close()
             try:
                 with self.assertRaisesRegex(TypeError, "must be a boolean"):
                     load_agent_def(f.name)
@@ -941,6 +951,7 @@ os_env:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             f.flush()
+            f.close()
             try:
                 agent = load_agent_def(f.name)
             finally:
@@ -982,6 +993,7 @@ os_env:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             f.flush()
+            f.close()
             try:
                 with self.assertRaisesRegex(ValueError, r"requires os_env\.sandbox\.egress_rules"):
                     load_agent_def(f.name)
@@ -1012,6 +1024,7 @@ os_env:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             f.flush()
+            f.close()
             try:
                 with self.assertRaisesRegex(
                     ValueError, r"credential_proxy requires sandbox\.type"
@@ -1048,6 +1061,7 @@ os_env:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             f.flush()
+            f.close()
             try:
                 with self.assertRaisesRegex(ValueError, r"gh_basic' does not work on macOS"):
                     load_agent_def(f.name)

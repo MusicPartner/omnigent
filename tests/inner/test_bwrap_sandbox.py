@@ -53,6 +53,8 @@ from omnigent.inner.bwrap_sandbox import (
 from omnigent.inner.datamodel import OSEnvSandboxSpec, OSEnvSpec
 from omnigent.inner.sandbox import SandboxPolicy, with_denied_unix_sockets
 
+pytestmark = pytest.mark.posix_only
+
 BWRAP_AVAILABLE = shutil.which("bwrap") is not None
 
 # Skip anything that reaches real bwrap resolution/execution when bwrap is not

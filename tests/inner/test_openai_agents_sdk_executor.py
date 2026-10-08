@@ -18,7 +18,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import base64
 
-import databricks.sdk.config as _sdk_config_mod
+try:
+    import databricks.sdk.config as _sdk_config_mod
+except ImportError:
+    _sdk_config_mod = None
 
 from omnigent.inner.executor import (
     ExecutorConfig,
@@ -39,6 +42,10 @@ from omnigent.inner.openai_agents_sdk_executor import (
     _wrap_client_for_reasoning_models,
 )
 from omnigent.llms.errors import is_context_length_exceeded as _is_context_length_exceeded
+
+_requires_databricks_sdk = pytest.mark.skipif(
+    _sdk_config_mod is None, reason="databricks-sdk not installed"
+)
 
 
 def _run(coro):
@@ -1573,6 +1580,7 @@ class TestOpenAIAgentsSDKExecutor(unittest.TestCase):
 # requested workspace is ignored.
 
 
+@_requires_databricks_sdk
 def test_get_openai_client_profile_uses_callback_auth(monkeypatch):
     """Explicit ``profile`` uses httpx callback auth, not a static ``api_key``.
 
@@ -1880,6 +1888,7 @@ def test_get_openai_client_databricks_model_still_uses_ambient_auth(monkeypatch)
     )
 
 
+@_requires_databricks_sdk
 def test_get_openai_client_invalid_profile_raises_auth_error(monkeypatch):
     """An invalid profile raises ``DatabricksAuthError`` with login instructions.
 
@@ -1904,6 +1913,7 @@ def test_get_openai_client_invalid_profile_raises_auth_error(monkeypatch):
         _get_openai_async_client(profile="dogfood")
 
 
+@_requires_databricks_sdk
 def test_get_openai_client_invalid_profile_with_env_fallback_warns(monkeypatch, caplog):
     """Profile auth failure with OPENAI_BASE_URL available warns and falls through.
 

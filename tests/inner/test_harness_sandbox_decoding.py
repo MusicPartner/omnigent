@@ -78,6 +78,7 @@ def test_harness_credential_proxy_resolves_parent_secret(
     decoded = decode_sandbox(sandbox)
     # Only resolve the policy; no bwrap process is spawned in this unit test.
     monkeypatch.setattr(bwrap_sandbox, "sys", SimpleNamespace(platform="linux"))
+    monkeypatch.setattr(bwrap_sandbox.os, "name", "posix")
     monkeypatch.setattr(bwrap_sandbox, "shutil", SimpleNamespace(which=lambda _: "/usr/bin/bwrap"))
     policy = resolve_sandbox(OSEnvSpec(sandbox=decoded), tmp_path)
     assert policy.active

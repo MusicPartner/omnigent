@@ -1863,6 +1863,7 @@ async def test_launch_preserves_prompt_and_following_args_real_tmux(
         await instance.close()
 
 
+@pytest.mark.posix_only
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="requires a real tmux binary")
 @pytest.mark.parametrize("exit_status", [0, 255])
 @pytest.mark.asyncio
@@ -2330,6 +2331,7 @@ def test_require_supported_tmux_rejects_old_or_unknown_version(
         terminal_mod._require_supported_tmux()
 
 
+@pytest.mark.posix_only
 @pytest.mark.parametrize("keep_alive", [True, False])
 def test_create_terminal_instance_propagates_keep_alive_after_exit(
     tmp_path: Path,
