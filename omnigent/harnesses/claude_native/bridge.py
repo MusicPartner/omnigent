@@ -43,10 +43,10 @@ import os
 import queue
 import re
 import secrets
-import shlex
 import socket
 import socketserver
 import stat
+import subprocess
 import sys
 import tempfile
 import threading
@@ -71,6 +71,10 @@ from omnigent.harnesses.claude_native import delivery_diagnostics
 from omnigent.harnesses.claude_native.failure_telemetry import claude_failure_context
 from omnigent.harnesses.claude_native.message_display_hook import MESSAGE_DELTAS_FILE
 from omnigent.harnesses.claude_native.status import CONTEXT_RAW_FILE
+from omnigent.harnesses.claude_native.windows_hooks import (
+    message_display_command,
+    status_line_command,
+)
 from omnigent.harnesses.diagnostics import detect_sign_in_prompt, sign_in_next_step
 from omnigent.harnesses.kiro_native import bridge as kiro_bridge
 from omnigent.models.claude_model_vocabulary import MODEL_VOCABULARY_ENV_VARS
@@ -90,6 +94,7 @@ from omnigent.inner.hook_scripts.subagent_router import (
     AGENT_TOOL_MATCHER as CLAUDE_SUBAGENT_TOOL_MATCHER,
 )
 from omnigent.native import native_bridge_common
+from omnigent.native.shell import shell_join
 from omnigent.tools.base import Tool, ToolContext
 from omnigent.util.reasoning_effort import CLAUDE_EFFORTS
 
@@ -214,6 +219,7 @@ _TOOL_RELAY_FILE = "tool_relay.json"
 # on every relay start, so hooks survive runner restarts (new port).
 _TOOL_RELAY_ENV_FILE = "tool_relay.env"
 _TMUX_FILE = "tmux.json"
+_PROMPT_READY_FILE = "prompt-ready"
 _PERMISSION_HOOK_FILE = "permission_hook.json"
 _CONTEXT_FILE = "context.json"
 _USER_CLAUDE_SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
@@ -421,6 +427,11 @@ _AUTO_MODE_BILLING_NOTICE = re.compile(
         ).replace(" ", "")
     )
 )
+# Claude 2.1.266 can still show this gate even when its legacy
+# ``projects[workspace].hasTrustDialogAccepted`` state was pre-seeded.
+_WORKSPACE_TRUST_HINT = "Quick safety check: Is this a project you created or one you trust?"
+_WORKSPACE_TRUST_NO = "No, exit"
+_WORKSPACE_TRUST_YES = "Yes, I trust this folder"
 # Footer rows the ctrl+r prompt-history search renders directly under the
 # input box's closing rule since Claude Code 2.1.212, where the search rides
 # the framed composer as its filter field instead of drawing its own overlay.
@@ -1230,15 +1241,21 @@ def _start_bridge_http_server(
     though a sandbox allowlisting only the pool cannot reach that fallback.
     """
     bind_host, advertised_host = _bridge_bind_hosts()
+
+    class _BridgeHTTPServer(ThreadingHTTPServer):
+        """HTTP server that never aliases an already-running relay port."""
+
+        allow_reuse_address = False
+
     httpd: ThreadingHTTPServer | None = None
     for port in _bridge_port_pool():
         try:
-            httpd = ThreadingHTTPServer((bind_host, port), handler_cls)
+            httpd = _BridgeHTTPServer((bind_host, port), handler_cls)
         except OSError:
             continue
         break
     if httpd is None:
-        httpd = ThreadingHTTPServer((bind_host, 0), handler_cls)
+        httpd = _BridgeHTTPServer((bind_host, 0), handler_cls)
     _, port = _http_server_host_port(httpd)
     return httpd, f"http://{advertised_host}:{port}"
 
@@ -1261,12 +1278,18 @@ class ClaudeNativeToolRelay:
     :param bridge_dir: Bridge directory containing
         ``tool_relay.json``, e.g. ``/tmp/omnigent/claude-native/x``.
     :param httpd: Started HTTP server for tool calls.
-    :param advertised_url: Base URL written to ``tool_relay.json``; it
-        identifies this relay's advertisement on close.
+    :param advertised_url: Base URL written to ``tool_relay.json``.
+    :param relay_token: Bearer token written to ``tool_relay.json``; together
+        with *advertised_url* it identifies this relay's advertisement on close.
     """
 
     def __init__(
-        self, *, bridge_dir: Path, httpd: ThreadingHTTPServer, advertised_url: str
+        self,
+        *,
+        bridge_dir: Path,
+        httpd: ThreadingHTTPServer,
+        advertised_url: str,
+        relay_token: str,
     ) -> None:
         """
         Initialize the relay handle.
@@ -1275,18 +1298,20 @@ class ClaudeNativeToolRelay:
             advertisement, e.g. ``Path("/tmp/omnigent/...")``.
         :param httpd: Started HTTP server for tool calls.
         :param advertised_url: Base URL advertised in ``tool_relay.json``.
+        :param relay_token: Bearer token advertised by this relay.
         :returns: None.
         """
         self._bridge_dir = bridge_dir
         self._httpd = httpd
         self._advertised_url = advertised_url
+        self._relay_token = relay_token
 
     def close(self) -> None:
         """
         Stop the relay's HTTP server and remove its advertisement file.
 
         Only unlinks ``tool_relay.json`` when it still advertises *this*
-        relay (its ``url`` matches this server's bound address). Sessions
+        relay (its ``url`` and ``token`` match this server). Sessions
         that fork/clear/resume keep the same ``bridge_id`` — hence the same
         bridge dir and relay file — so a newer session's relay may have
         overwritten the file with its own address. Unlinking unconditionally
@@ -1297,10 +1322,13 @@ class ClaudeNativeToolRelay:
         :returns: None.
         """
         relay_file = self._bridge_dir / _TOOL_RELAY_FILE
-        # A newer relay that overwrote the file advertises a different url
-        # (this relay's socket is still bound, so its port is unique), so the
-        # file is left for that relay to own.
-        if _read_json_file(relay_file).get("url") == self._advertised_url:
+        # URL equality alone is insufficient when an OS reuses a port after
+        # a relay restart; the per-relay token is the ownership identity.
+        advertised = _read_json_file(relay_file)
+        if (
+            advertised.get("url") == self._advertised_url
+            and advertised.get("token") == self._relay_token
+        ):
             with contextlib.suppress(FileNotFoundError):
                 relay_file.unlink()
         self._httpd.shutdown()
@@ -2133,14 +2161,26 @@ def build_mcp_config(bridge_dir: Path, *, python_executable: str | None = None) 
     }
 
 
+def _shell_join(parts: list[str]) -> str:
+    """Quote an argv vector for the shell Claude uses to run hooks."""
+    return shell_join(parts)
+
+
+def _shell_quote(value: str) -> str:
+    """Quote one shell value for a generated hook command."""
+    return _shell_join([value])
+
+
 def _pin_runner_tmpdir(command: str) -> str:
-    """Run a generated command with the runner's temp root."""
-    return f"env TMPDIR={shlex.quote(str(_TRUSTED_PARENT))} {command}"
+    """Run a generated POSIX command with the runner's temp root."""
+    if IS_WINDOWS:
+        return command
+    return f"env TMPDIR={_shell_quote(str(_TRUSTED_PARENT))} {command}"
 
 
 def _python_hook_command(parts: list[str]) -> str:
     """Build a Python hook command pinned to the runner's temp root."""
-    return _pin_runner_tmpdir(shlex.join(parts))
+    return _pin_runner_tmpdir(_shell_join(parts))
 
 
 def build_hook_settings(
@@ -2228,7 +2268,7 @@ def build_hook_settings(
     ]
     # Claude owns command-hook stderr, so it does not reach the runner logs.
     # Persist it for the forwarder to relay with the Omnigent session id.
-    observer_stderr = shlex.quote(str(bridge_dir / OBSERVER_HOOK_STDERR_FILE))
+    observer_stderr = _shell_quote(str(bridge_dir / OBSERVER_HOOK_STDERR_FILE))
     command = f"{_python_hook_command(command_parts)} 2>> {observer_stderr}"
     hook = {"type": "command", "command": command}
     framework_context_parts = [
@@ -2249,17 +2289,20 @@ def build_hook_settings(
         "command": command,
     }
     # ``MessageDisplay`` fires once per streamed assistant-text chunk and
-    # Claude blocks on the hook, so the hot path must not even pay an
-    # interpreter spawn: a /bin/sh appender writes Claude's raw payload
-    # (flattened to one line — JSON strings never carry literal newlines)
-    # to ``message_deltas.jsonl``. The reader parses records by key and
-    # skips non-delta lines, so raw envelopes need no Python-side shaping.
-    deltas_quoted = shlex.quote(str(bridge_dir / MESSAGE_DELTAS_FILE))
+    # Claude blocks on the hook. POSIX uses a shell appender to avoid an
+    # interpreter spawn; native Windows uses the stdlib hook directly because
+    # its command shell has no portable equivalent of the POSIX pipeline.
+    deltas_quoted = _shell_quote(str(bridge_dir / MESSAGE_DELTAS_FILE))
     message_display_hook = {
         "type": "command",
         "command": (
-            "p=$(cat | tr -d '\\r\\n'); "
-            f'[ -n "$p" ] && printf \'%s\\n\' "$p" >> {deltas_quoted}; :'
+            message_display_command(python, bridge_dir)
+            if IS_WINDOWS
+            else (
+                "p=$(cat | tr -d '\\r\\n'); "
+                f'[ -n "$p" ] && printf \'%s\\n\' "$p" >> '
+                f"{deltas_quoted}; :"
+            )
         ),
     }
     hooks: dict[str, list[_JsonObject]] = {
@@ -2371,7 +2414,7 @@ def build_hook_settings(
         # replayed into the Python hook, which owns the direct-server
         # path and the phase-aware fail-closed contract — exactly the
         # pre-curl behavior.
-        relay_env_quoted = shlex.quote(str(bridge_dir / _TOOL_RELAY_ENV_FILE))
+        relay_env_quoted = _shell_quote(str(bridge_dir / _TOOL_RELAY_ENV_FILE))
         evaluate_policy_python = _python_hook_command(
             [
                 python,
@@ -2384,14 +2427,18 @@ def build_hook_settings(
             ]
         )
         evaluate_policy_command = (
-            "p=$(cat); "
-            f"if [ -r {relay_env_quoted} ]; then . {relay_env_quoted}; "
-            "out=$(printf '%s' \"$p\" | curl -sf --max-time 86400 "
-            '-H "Authorization: Bearer $OMNIGENT_RELAY_TOKEN" '
-            "-H 'Content-Type: application/json' --data-binary @- "
-            '"$OMNIGENT_RELAY_URL/hook/claude/evaluate-policy" 2>/dev/null) '
-            "&& { printf '%s' \"$out\"; exit 0; }; fi; "
-            f"printf '%s' \"$p\" | {evaluate_policy_python}"
+            evaluate_policy_python
+            if IS_WINDOWS
+            else (
+                "p=$(cat); "
+                f"if [ -r {relay_env_quoted} ]; then . {relay_env_quoted}; "
+                "out=$(printf '%s' \"$p\" | curl -sf --max-time 86400 "
+                '-H "Authorization: Bearer $OMNIGENT_RELAY_TOKEN" '
+                "-H 'Content-Type: application/json' --data-binary @- "
+                '"$OMNIGENT_RELAY_URL/hook/claude/evaluate-policy" 2>/dev/null) '
+                "&& { printf '%s' \"$out\"; exit 0; }; fi; "
+                f"printf '%s' \"$p\" | {evaluate_policy_python}"
+            )
         )
         evaluate_policy_hook: _JsonObject = {
             "type": "command",
@@ -2476,14 +2523,17 @@ def build_hook_settings(
     # blocking statusLine path — the forwarder normalizes it into
     # ``context.json``) and chains to whatever the user had globally so
     # claude-hud / their bar still renders.
-    raw_quoted = shlex.quote(str(bridge_dir / CONTEXT_RAW_FILE))
-    status_command = (
-        f"p=$(cat); printf '%s' \"$p\" > {raw_quoted}.$$.tmp"
-        f" && mv -f {raw_quoted}.$$.tmp {raw_quoted}"
-    )
     chain_command = read_user_status_line_command()
-    if chain_command is not None:
-        status_command += f"; printf '%s' \"$p\" | ( {chain_command} )"
+    if IS_WINDOWS:
+        status_command = status_line_command(python, bridge_dir, chain_command)
+    else:
+        raw_quoted = _shell_quote(str(bridge_dir / CONTEXT_RAW_FILE))
+        status_command = (
+            f"p=$(cat); printf '%s' \"$p\" > {raw_quoted}.$$.tmp"
+            f" && mv -f {raw_quoted}.$$.tmp {raw_quoted}"
+        )
+        if chain_command is not None:
+            status_command += f"; printf '%s' \"$p\" | ( {chain_command} )"
     settings["statusLine"] = {"type": "command", "command": status_command}
     return settings
 
@@ -3627,7 +3677,9 @@ def stop_hook_seen_since(bridge_dir: Path, start_event_count: int) -> bool:
                     transcript_path = (
                         payload.get("transcript_path") if isinstance(payload, dict) else None
                     )
-                    if isinstance(transcript_path, str) and "/subagents/" in transcript_path:
+                    if isinstance(
+                        transcript_path, str
+                    ) and "/subagents/" in transcript_path.replace("\\", "/"):
                         continue
                     if isinstance(payload, dict) and payload.get("agent_id"):
                         continue
@@ -3986,7 +4038,37 @@ def write_tmux_target(
     }
     if pid is not None:
         payload["pid"] = pid
+    # A replacement pane must prove readiness again before recovery code is
+    # allowed to send Escape at a composer-less screen.
+    with contextlib.suppress(OSError):
+        (bridge_dir / _PROMPT_READY_FILE).unlink(missing_ok=True)
     _write_json_file(bridge_dir / _TMUX_FILE, payload)
+
+
+def _prepare_prompt_for_injection(
+    bridge_dir: Path,
+    socket_path: str,
+    tmux_target: str,
+    *,
+    timeout_s: float,
+) -> None:
+    """Wait for first boot before allowing occupied-input recovery."""
+    ready_marker = bridge_dir / _PROMPT_READY_FILE
+    established = ready_marker.exists()
+    if established:
+        _restore_occupied_input(socket_path, tmux_target, bridge_dir=bridge_dir)
+    delivery_diagnostics.set_stage("waiting_for_prompt")
+    _wait_for_claude_prompt_ready(
+        socket_path,
+        tmux_target,
+        timeout_s=timeout_s,
+        bridge_dir=bridge_dir,
+        accept_workspace_trust=not established,
+    )
+    try:
+        ready_marker.touch(exist_ok=True)
+    except OSError:
+        _logger.debug("Could not record Claude prompt readiness", exc_info=True)
 
 
 @delivery_diagnostics.trace_delivery(
@@ -4060,19 +4142,13 @@ def inject_user_message(
     delivery_diagnostics.set_stage("waiting_for_tmux")
     info = _wait_for_tmux_info(bridge_dir, timeout_s=timeout_s)
     delivery_diagnostics.set_stage("restoring_input")
-    # A surface left occupying the composer swallows everything typed
-    # below — and hides the input box, wedging the readiness gate — so
-    # reclaim the input box before waiting on it.
-    _restore_occupied_input(info["socket_path"], info["tmux_target"], bridge_dir=bridge_dir)
-    # tmux.json only means the tmux session exists; Claude Code's input
-    # box mounts a few seconds later. Block until the prompt renders so
-    # the first message isn't typed into a still-booting TUI and dropped.
-    delivery_diagnostics.set_stage("waiting_for_prompt")
-    _wait_for_claude_prompt_ready(
+    # Fresh panes must finish startup before any recovery Escape; established
+    # panes reclaim the composer before waiting for prompt readiness.
+    _prepare_prompt_for_injection(
+        bridge_dir,
         info["socket_path"],
         info["tmux_target"],
         timeout_s=timeout_s,
-        bridge_dir=bridge_dir,
     )
     # Escape unsupported slash commands (e.g. ``/help``, ``/exit``) so the
     # Claude Code TUI treats them as user text instead of invoking a state
@@ -4537,7 +4613,12 @@ def inject_slash_command(
     tmux_target = info["tmux_target"]
     # Same reclaim as inject_user_message: a surface left occupying the
     # composer would swallow the C-u and the typed command.
-    _restore_occupied_input(socket_path, tmux_target, bridge_dir=bridge_dir)
+    _prepare_prompt_for_injection(
+        bridge_dir,
+        socket_path,
+        tmux_target,
+        timeout_s=timeout_s,
+    )
     if has_pending_user_prompt(bridge_dir):
         raise ClaudeUserPromptPending(
             "Answer the pending Claude question or permission request before changing settings."
@@ -5228,7 +5309,6 @@ def _run_tmux(socket_path: str, *args: str) -> None:
     :raises RuntimeError: If the subprocess exits non-zero or times
         out.
     """
-    import subprocess
 
     _check_injection_cancelled()
     cmd = ["tmux", "-S", socket_path, *args]
@@ -5238,6 +5318,8 @@ def _run_tmux(socket_path: str, *args: str) -> None:
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_TMUX_SEND_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired as exc:
@@ -5263,7 +5345,6 @@ def _capture_pane(socket_path: str, tmux_target: str, *, join_wrapped: bool = Fa
         back whole.
     :returns: The pane's visible text, or ``""`` if capture failed.
     """
-    import subprocess
 
     _check_injection_cancelled()
     args = ["tmux", "-S", socket_path, "capture-pane", "-t", tmux_target, "-p"]
@@ -5275,6 +5356,8 @@ def _capture_pane(socket_path: str, tmux_target: str, *, join_wrapped: bool = Fa
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_TMUX_SEND_TIMEOUT_S,
         )
     except (subprocess.SubprocessError, OSError):
@@ -5318,7 +5401,6 @@ def _claude_pane_state(socket_path: str, tmux_target: str) -> _ClaudePaneState:
         for an affirmed ``#{pane_dead}``, with ``exit_status`` carrying the
         pane's wait-status when tmux reported one.
     """
-    import subprocess
 
     _check_injection_cancelled()
     try:
@@ -5336,6 +5418,8 @@ def _claude_pane_state(socket_path: str, tmux_target: str) -> _ClaudePaneState:
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_TMUX_SEND_TIMEOUT_S,
         )
     except (subprocess.SubprocessError, OSError):
@@ -5929,6 +6013,7 @@ def _wait_for_claude_prompt_ready(
     *,
     timeout_s: float,
     bridge_dir: Path | None = None,
+    accept_workspace_trust: bool = False,
 ) -> None:
     """
     Block until Claude Code's TUI input box is ready for keystrokes.
@@ -5954,6 +6039,9 @@ def _wait_for_claude_prompt_ready(
         :data:`_TMUX_READY_SLOW_BOOT_TIMEOUT_S`; a dead pane or rejected
         query ends the wait at the next liveness check.
     :param bridge_dir: Protect live permission-hook waits when delivering a message.
+    :param accept_workspace_trust: Confirm Claude's exact first-launch trust
+        dialog. The workspace was explicitly selected for this host session;
+        this does not affect tool permission prompts.
     :returns: None.
     :raises ClaudeTerminalExited: If tmux affirms the pane's process has
         exited, carrying the pane's wait-status so a clean quit is
@@ -6008,6 +6096,11 @@ def _wait_for_claude_prompt_ready(
             last_nonempty = pane
         else:
             empty_polls += 1
+        if accept_workspace_trust and _accept_workspace_trust_prompt(
+            pane, socket_path, tmux_target
+        ):
+            time.sleep(_CLAUDE_READY_POLL_INTERVAL_S)
+            continue
         if _claude_prompt_rendered(pane):
             return
         billing_notice = auto_mode_billing_notice_visible(pane)
@@ -6075,6 +6168,22 @@ def _wait_for_claude_prompt_ready(
         f"{empty_polls} empty captures). The message was not delivered."
         + _format_terminal_failure_tail(last_nonempty)
     )
+
+
+def _accept_workspace_trust_prompt(pane: str, socket_path: str, tmux_target: str) -> bool:
+    """Accept Claude's exact startup trust gate for the selected workspace."""
+    if not all(
+        hint in pane for hint in (_WORKSPACE_TRUST_HINT, _WORKSPACE_TRUST_NO, _WORKSPACE_TRUST_YES)
+    ):
+        return False
+    lines = [line.strip() for line in pane.splitlines()]
+    if any(line.startswith(f"❯ {_WORKSPACE_TRUST_NO}") for line in lines):
+        _run_tmux(socket_path, "send-keys", "-t", tmux_target, "Down")
+    elif not any(line.startswith(f"❯ {_WORKSPACE_TRUST_YES}") for line in lines):
+        return False
+    _logger.info("claude-native: confirming workspace selected for this session")
+    _run_tmux(socket_path, "send-keys", "-t", tmux_target, "Enter")
+    return True
 
 
 def _paste_payload_bytes(text: str) -> bytes:
@@ -6215,7 +6324,12 @@ def start_tool_relay(
         daemon=True,
     )
     thread.start()
-    return ClaudeNativeToolRelay(bridge_dir=bridge_dir, httpd=httpd, advertised_url=advertised_url)
+    return ClaudeNativeToolRelay(
+        bridge_dir=bridge_dir,
+        httpd=httpd,
+        advertised_url=advertised_url,
+        relay_token=token,
+    )
 
 
 def main(argv: list[str] | None = None) -> None:

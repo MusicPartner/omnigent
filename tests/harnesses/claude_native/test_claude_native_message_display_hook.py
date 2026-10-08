@@ -100,7 +100,8 @@ def test_message_display_hook_writes_owner_only_file(
         monkeypatch,
     )
     mode = (bridge_dir / hook.MESSAGE_DELTAS_FILE).stat().st_mode
-    assert oct(mode & 0o777) == "0o600"
+    if os.name != "nt":
+        assert oct(mode & 0o777) == "0o600"
 
 
 @pytest.mark.parametrize(
