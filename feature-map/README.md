@@ -140,6 +140,8 @@ map an area, remove it here in the same change.
 - Host import review: `tests/e2e_ui/onboarding/`
 - Visual snapshots: `tests/e2e_ui/visual/`
 - Onboarding: `tests/e2e_ui/onboarding/`
+- Windows psmux terminal evidence (manual, gated by `OMNIGENT_WINDOWS_EVIDENCE=1`):
+  `tests/e2e_ui/windows/`
 
 **CLI commands:**
 
