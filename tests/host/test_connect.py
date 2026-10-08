@@ -7,6 +7,7 @@ import contextlib
 import errno
 import json
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -425,6 +426,7 @@ async def test_handle_model_options_serves_the_claude_catalog(
                 "model": "system.ai.claude-sonnet-5",
                 "displayName": "Sonnet 5",
                 "isDefault": True,
+                "source": {"kind": "subscription", "label": "Subscription", "name": "claude"},
             }
         ],
         routable_models=[
@@ -4241,7 +4243,8 @@ def test_handle_list_dir_returns_sorted_entries(tmp_path: Path) -> None:
     (tmp_path / "README.md").write_text("hello")
     (tmp_path / "build").mkdir()
 
-    result = host._handle_list_dir(HostListDirFrame(request_id="r1", path=str(tmp_path)))
+    requested = str(tmp_path).replace("\\", "/")
+    result = host._handle_list_dir(HostListDirFrame(request_id="r1", path=requested))
 
     assert isinstance(result, HostListDirResultFrame)
     assert result.status == "ok"
@@ -4260,6 +4263,7 @@ def test_handle_list_dir_returns_sorted_entries(tmp_path: Path) -> None:
     assert by_name["README.md"].bytes == 5  # len("hello")
     assert by_name["src"].bytes is None
     assert by_name["build"].bytes is None
+    assert by_name["src"].path == os.path.normpath(str(tmp_path / "src"))
 
 
 def test_handle_list_dir_missing_path_returns_error(tmp_path: Path) -> None:
@@ -4349,6 +4353,31 @@ def test_handle_list_dir_skips_dangling_symlink_per_entry(
     # Good entry survived; dangling was silently skipped.
     assert "good.txt" in names
     assert "dangling" not in names
+
+
+def test_handle_list_dir_skips_unbrowsable_windows_junction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Legacy Windows junctions must not look like selectable directories."""
+    blocked = tmp_path / "My Documents"
+    blocked.mkdir()
+    visible = tmp_path / "Documents"
+    visible.mkdir()
+    real_scandir = os.scandir
+
+    def _scandir(path: object):
+        if Path(path) == blocked:
+            raise PermissionError("access denied")
+        return real_scandir(path)
+
+    monkeypatch.setattr(os.path, "isjunction", lambda path: Path(path) == blocked)
+    monkeypatch.setattr(os, "scandir", _scandir)
+    host = _make_host_process()
+
+    result = host._handle_list_dir(HostListDirFrame(request_id="junction", path=str(tmp_path)))
+
+    assert result.status == "ok"
+    assert [entry.name for entry in result.entries] == ["Documents"]
 
 
 def test_handle_list_dir_expands_tilde(tmp_path: Path, monkeypatch) -> None:

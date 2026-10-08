@@ -124,6 +124,7 @@ from omnigent.host.git_worktree import (
     list_worktrees,
     remove_worktree,
 )
+from omnigent.host.host_listing import host_native_path, is_untraversable_junction
 from omnigent.host.identity import HostIdentity, load_or_create_host_identity
 from omnigent.host.maintenance import HostMaintenanceJanitor
 from omnigent.host.runner_zygote import ZygoteManager, ZygoteRunnerProc, ZygoteUnavailable
@@ -2785,6 +2786,8 @@ class HostProcess:
             except OSError:
                 continue
             if S_ISDIR(st.st_mode):
+                if is_untraversable_junction(de.path):
+                    continue
                 entry_type = "directory"
                 size: int | None = None
             elif S_ISREG(st.st_mode):
@@ -2796,7 +2799,7 @@ class HostProcess:
             entries.append(
                 HostListDirEntry(
                     name=de.name,
-                    path=de.path,
+                    path=host_native_path(de.path),
                     type=entry_type,
                     bytes=size,
                     modified_at=int(st.st_mtime),
