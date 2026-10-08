@@ -33,7 +33,9 @@ vi.mock("@/components/blocks/TerminalView", () => ({
         data-terminal-id={terminalId}
         data-read-only={String(readOnly ?? false)}
         data-instance={String(instance.current)}
-      />
+      >
+        <div className="xterm" data-testid="xterm-surface" />
+      </div>
     );
   },
 }));
@@ -107,6 +109,29 @@ afterEach(() => {
 });
 
 describe("TerminalsPanel navigation", () => {
+  it("leaves Escape to a focused terminal instead of closing the panel", async () => {
+    const onClose = vi.fn();
+    mockTerminalList([makeTerminal("terminal_main", "main", "s1")]);
+    render(
+      <TerminalsPanel
+        open
+        conversationId="conv_terminal"
+        initialTerminalKey="terminal:terminal_main"
+        onClose={onClose}
+      />,
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(180);
+    });
+
+    fireEvent.keyDown(screen.getByTestId("xterm-surface"), { key: "Escape" });
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it("opens to the list view with all terminals visible and no terminal mounted", () => {
     renderPanel();
 
