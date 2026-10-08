@@ -1258,11 +1258,14 @@ def create_exec_launcher(
         )
 
     if os.name == "nt":
-        # Windows resolves ``.py`` through PATHEXT; keep the ``#!`` line so
-        # the ``py`` launcher (a common .py association) picks the *current*
-        # interpreter rather than the machine default.
-        fd, path = tempfile.mkstemp(prefix="omnigent-sandbox-", suffix=".py")
-        script = f"#!{interpreter}\n{inline}\n"
+        # CreateProcess cannot run .py associations; use a batch launcher
+        # that invokes the current interpreter instead.
+        fd, path = tempfile.mkstemp(prefix="omnigent-sandbox-", suffix=".cmd")
+        # A bare ``%`` in a batch file is expanded as a variable reference
+        # even inside a quoted argument; double it so the embedded source
+        # round-trips unchanged.
+        escaped_inline = inline.replace("%", "%%")
+        script = f'@echo off\r\n"{interpreter}" -c "{escaped_inline}" %*\r\n'
     else:
         # ``/bin/sh`` is the only interpreter guaranteed to be a native
         # executable. Naming ``sys.executable`` in a shebang instead
@@ -1272,7 +1275,10 @@ def create_exec_launcher(
         fd, path = tempfile.mkstemp(prefix="omnigent-sandbox-", suffix=".sh")
         script = f'#!/bin/sh\nexec {shlex.quote(interpreter)} -c {shlex.quote(inline)} "$@"\n'
 
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    # ``newline=""`` disables text-mode newline translation: the ``.cmd``
+    # branch already embeds literal ``\r\n``, and on real Windows the
+    # default translation would double it into ``\r\r\n``.
+    with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
         fh.write(script)
     os.chmod(path, 0o755)
     return path

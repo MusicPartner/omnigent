@@ -606,8 +606,10 @@ def test_containment_prefix_appends_exactly_one_separator() -> None:
     """The trailing separator is what makes a prefix comparison sound, so it
     must be added exactly once — and never doubled on the filesystem root,
     which would turn "/" into "//" and match nothing."""
-    assert containment_prefix("/data") == "/data" + os.sep
-    assert containment_prefix(Path("/data")) == "/data" + os.sep
+    root = Path.cwd() / "data"
+    expected = str(root) + os.sep
+    assert containment_prefix(str(root)) == expected
+    assert containment_prefix(root) == expected
     assert containment_prefix(os.sep) == os.sep
 
 
