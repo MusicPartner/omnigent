@@ -1,7 +1,8 @@
 # Windows parity: remaining work and decisions
 
 Research date: 2026-10-08. Branch: `windows-parity/v0.17-integration`.
-Current pushed code: `28db4f72c973b15a96b00de29e11f3f93509c246`.
+Latest validated build: `489665868933fab513199060fd2349bc65d7ea01`.
+The final release evidence and remaining Windows test gaps are recorded below.
 Previously validated baseline: `2d43e9d95c28d4cb623f98d3d49de1af959f90cc`.
 This record separates the new consumer fixes and blocked decisions from the
 baseline validation retained below.
@@ -23,8 +24,9 @@ It does not establish a regression in the legacy launcher.
 The separate native candidate is now integrated behind the Windows
 `create_exec_launcher` selector, with legacy `.cmd` behavior still the default.
 Clean-wheel packaging and local x64 lifecycle evidence are recorded below.
-There is no signed release artifact or remote CI result yet, no ARM/x86 runtime
-claim, and no filesystem/network isolation. Existing credential refusals and
+Remote x64 CI and matching fork artifacts passed as recorded below. There is
+no signed native release artifact, ARM/x86 runtime claim, or filesystem/network
+isolation. Existing credential refusals and
 brokered-signer boundaries remain unchanged.
 
 Package B adopts direct executable + args for eligible Windows command hooks,
@@ -51,7 +53,7 @@ historical prototype evidence; the current candidate watches its immediate
 parent. Brokered-signer isolation remains unsupported, and no filesystem/network
 isolation or ARM/x86 runtime support is claimed. v0.14 remains excluded.
 
-## Current-pass validation
+## Earlier consumer validation
 
 | Check | Result and limit |
 | --- | --- |
@@ -1028,3 +1030,116 @@ Quit the existing desktop, stop its owning host/server, install the core bundle,
 and start the extracted desktop before repeating the three-harness PowerShell,
 Stop/resume, and desktop Quit checks above. Merely updating the Python wheels
 cannot update an already packaged Electron desktop.
+
+### 2026-10-09 shutdown and PowerShell release validation
+
+Feature code was pushed directly in `6e7aab88002d166e98893982e3b3621c855c2dda`.
+The matching release source is `489665868933fab513199060fd2349bc65d7ea01`.
+Subsequent commits repaired CI invocation and native test assertions/cleanup;
+the final update ports two Unix-dependent test fixtures and pins Lightning CSS
+1.33.0. The shutdown and shell-discovery feature code is unchanged. No PR,
+main merge, public package release, or Docker image publication was performed.
+
+| Workflow | Source and result |
+| --- | --- |
+| [Fork release validation](https://github.com/MusicPartner/omnigent/actions/runs/37962935896) | Success on `489665868`; both OS gates and matching CLI/desktop builds passed. |
+| [Integration](https://github.com/MusicPartner/omnigent/actions/runs/37954666470) | Success on feature commit `6e7aab880`; all harness matrix legs passed. |
+| [E2E](https://github.com/MusicPartner/omnigent/actions/runs/37954670494) | Success on `6e7aab880`; all four shards passed. |
+| [E2E UI](https://github.com/MusicPartner/omnigent/actions/runs/37962959935) | Success on `489665868`; Browser Contract UI and all ten shards passed. |
+| [Docker build](https://github.com/MusicPartner/omnigent/actions/runs/37954680499) | Success on `6e7aab880`; build-only, publishing skipped. |
+
+Integration, E2E, and Docker were not rerun after the CI/test corrections and
+CSS parser update; their Python feature source is unchanged. E2E UI was rerun
+for the parser update; its earlier run `37954675337` also passed all ten shards
+and Browser Contract UI on the feature commit. Conclusions include each workflow's
+existing
+test retry policy and are not a claim that every test passed its first attempt.
+The failed release runs were diagnosed and corrected on new commits:
+
+- `37954644151`: Node 22 rejected `--test-isolation=none`; use ordinary `--test`.
+- `37954994893`: Windows rendered administrator SDDL as `LA`; compare actual
+  SID identities and exact protected ACL entries instead of presentation text.
+- `37955892125`: the psmux test deleted its executable before awaiting the
+  native supervisor. It now records and awaits that exact owned launcher too.
+- `37957267551`: the CLI bundle and all required checks passed, but PowerShell
+  split unquoted dotted builder options. All desktop config options are quoted.
+
+The exploratory Windows sweep remains separate from required checks. In
+`37957267551`, its 3,950-item selection stopped on pytest-timeout in
+`tests/inner/test_model_auth.py::test_cancelled_ucode_mint_terminates_helper`.
+Its Actions conclusion was normalized to success by `continue-on-error`; the
+underlying sweep did not pass. This is the previously recorded Windows helper
+cancellation portability gap, not a clean whole-Windows-suite result.
+
+The first complete matching CLI/desktop run
+[37959695922](https://github.com/MusicPartner/omnigent/actions/runs/37959695922)
+passed on `cf8f9a333`. Both downloaded artifacts were independently inspected:
+ten Python modules and four Electron modules matched that source commit, the
+native binary matched its manifest digest, and desktop version/build/source
+metadata matched. The manifest records reproducible x64 builds with MSVC
+14.44.35207 and Windows SDK 10.0.26100.0, without signing/release approval.
+
+The final downloaded artifacts from `37962935896` passed the same independent
+source/metadata checks on `489665868` (ten Python and four Electron modules):
+
+- [CLI bundle, artifact 11633160483](https://github.com/MusicPartner/omnigent/actions/runs/37962935896/artifacts/11633160483).
+- [Desktop ZIP, artifact 11632913523](https://github.com/MusicPartner/omnigent/actions/runs/37962935896/artifacts/11632913523).
+
+Required Linux results: 130 regression tests passed with 21 platform skips,
+1,040 focused integration tests passed with 13 skips, and 23 desktop tests
+passed. Required Windows results: 150 new regression tests passed with one
+skip, 23 desktop tests passed, 50 upstream hard tests passed with ten skips,
+88 native lifecycle tests passed, 250 stable tests passed with 23 skips and
+two deselections, 34 hook/shell tests passed with one deselection, eight real
+psmux tests passed, and the argv-helper test passed. Applicable staged hooks
+passed; Linux-target Pyrefly reported zero errors. The local Windows hook
+launcher cannot execute its Unix shebang, so that check used the installed
+Windows executable with the same project configuration.
+
+CI web build also emitted no highlight/Lightning CSS warnings. The packaged
+desktop is `Omnigent Dev` 0.17.0 with upstream updates disabled and its exact
+source commit embedded. The native candidate hash remains
+`3d2564228c78a637c5c47bc350937cb2474e61ca6a855b272e0191cac6984c03`.
+
+### Broader Windows findings and follow-ups
+
+The final follow-up replaces the cancellation test's Unix shell script with a
+real Python subprocess and a bounded readiness handshake. It verifies the exact
+helper exits after cancellation on Windows and is included in both required OS
+gates. ACP fake-agent source files now explicitly use UTF-8; both local mocked
+conversation regressions passed. Neither fix changes production authentication.
+
+Lightning CSS 1.32.0 warned on the standard `::highlight(name)` syntax even while
+preserving it in generated CSS. The pinned 1.33.0 parser fixes both warnings:
+local Vite production build passed with both search selectors preserved and no
+highlight warnings, and 16 preview-search tests passed. No CSS/runtime workaround
+was added. The unrelated large-chunk build advisory remains.
+
+The diagnostic sweep is not a Windows production acceptance gate. Local focused
+reproduction found existing native attachment failures at `os.O_DIRECTORY` /
+`os.O_NOFOLLOW` and descriptor-relative operations. Windows attachment delivery
+needs a native-handle implementation preserving reparse-point, directory, and
+file-identity checks; replacing those flags with ordinary path writes is unsafe.
+This affects attachment-dependent Claude/Codex workflows and remains open.
+Other reproduced gaps include POSIX chmod assertions, Linux-only bubblewrap
+tests, and signer-home refusals in mocked Codex SDK tests. Retain credential
+refusals and isolate those platform support tasks from shutdown/shell selection.
+The earlier quiet run's progress markers do not identify every failure; current
+diagnostic output prints names, and complete sweep status is recorded below.
+
+In the final run, the auth cancellation and both ACP regressions passed. The
+broader 3,950-test selection recorded 99 `FAILED` cases before a hard timeout
+at approximately 61% in
+`test_cancelled_close_contains_worker_and_retains_incomplete_signer_cleanup`.
+The mock's Unix paths fail readiness validation on Windows; startup then awaits
+its intentionally blocking cleanup before any worker starts. This is separate
+from the real signer's bounded shutdown. There is no complete suite summary.
+[The maintained failure inventory](BROADER-TEST-FINDINGS-2026-10-09.md) records
+confirmed node IDs and separates reproduced support gaps from unverified causes.
+
+Install the matching CLI bundle and extracted Electron ZIP, then perform the
+Claude/Codex/Copilot PowerShell, Stop/resume, desktop Quit, and independently
+owned-session checks above. Live desktop acceptance with all three harnesses
+remains a human check. The native private-job candidate remains unsigned,
+explicitly opt-in, and refused by production `native` mode pending signing and
+release approval.
