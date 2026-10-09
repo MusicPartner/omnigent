@@ -223,30 +223,25 @@ def test_private_file_has_explicit_protected_user_system_dacl(native_stubs, tmp_
             )
             == 0
         )
-        text = ctypes.wintypes.LPWSTR()
-        security.ConvertSecurityDescriptorToStringSecurityDescriptorW.argtypes = [
-            ctypes.wintypes.LPVOID,
-            ctypes.wintypes.DWORD,
-            ctypes.wintypes.DWORD,
-            ctypes.POINTER(ctypes.wintypes.LPWSTR),
-            ctypes.wintypes.LPVOID,
-        ]
-        security.ConvertSecurityDescriptorToStringSecurityDescriptorW.restype = (
-            ctypes.wintypes.BOOL
-        )
         try:
-            assert security.ConvertSecurityDescriptorToStringSecurityDescriptorW(
-                descriptor, 1, 5, ctypes.byref(text), None
+            assert launcher._sid_text(kernel, security, owner) == user
+            control, revision = ctypes.wintypes.WORD(), ctypes.wintypes.DWORD()
+            assert security.GetSecurityDescriptorControl(
+                descriptor, ctypes.byref(control), ctypes.byref(revision)
             )
-            try:
-                sddl = text.value
-                assert sddl.startswith(f"O:{user}D:P")
-                assert sddl.count("(A;") == 2
-                assert f"(A;;FA;;;{user})" in sddl
-                assert "(A;;FA;;;SY)" in sddl
-                assert ";ID;" not in sddl
-            finally:
-                kernel.LocalFree(text)
+            assert control.value & 0x1000  # SE_DACL_PROTECTED
+            assert dacl.value is not None
+            assert ctypes.wintypes.WORD.from_address(dacl.value + 4).value == 2
+            trustees = set()
+            for index in range(2):
+                ace = ctypes.wintypes.LPVOID()
+                assert security.GetAce(dacl, index, ctypes.byref(ace))
+                assert ace.value is not None
+                assert ctypes.c_ubyte.from_address(ace.value).value == 0  # ACCESS_ALLOWED_ACE
+                assert ctypes.c_ubyte.from_address(ace.value + 1).value == 0
+                assert ctypes.wintypes.DWORD.from_address(ace.value + 4).value == 0x1F01FF
+                trustees.add(launcher._sid_text(kernel, security, ace.value + 8))
+            assert trustees == {user, "S-1-5-18"}
         finally:
             kernel.LocalFree(descriptor)
     finally:
