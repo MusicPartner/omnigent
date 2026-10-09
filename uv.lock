@@ -3311,6 +3311,7 @@ vertex = [
 dev = [
     { name = "boto3" },
     { name = "build" },
+    { name = "distlib", marker = "sys_platform == 'win32'" },
     { name = "filelock" },
     { name = "grpcio-tools" },
     { name = "hindsight-client" },
@@ -3340,6 +3341,7 @@ lint = [
 test = [
     { name = "boto3" },
     { name = "build" },
+    { name = "distlib", marker = "sys_platform == 'win32' or (extra == 'extra-8-omnigent-antigravity' and extra == 'extra-8-omnigent-cwsandbox') or (extra == 'extra-8-omnigent-antigravity' and extra == 'extra-8-omnigent-databricks') or (extra == 'extra-8-omnigent-antigravity' and extra == 'extra-8-omnigent-modal') or (extra == 'extra-8-omnigent-antigravity' and extra == 'group-8-omnigent-dev') or (extra == 'extra-8-omnigent-antigravity' and extra == 'group-8-omnigent-lint')" },
     { name = "filelock" },
     { name = "hindsight-client" },
     { name = "moto", extra = ["s3"] },
@@ -3459,6 +3461,7 @@ provides-extras = ["claude-sdk", "openai-agents", "cockroachdb", "all", "bedrock
 dev = [
     { name = "boto3", specifier = ">=1.30,<2" },
     { name = "build", specifier = ">=1.2" },
+    { name = "distlib", marker = "sys_platform == 'win32'", specifier = ">=0.4" },
     { name = "filelock", specifier = ">=3.0" },
     { name = "grpcio-tools", specifier = ">=1.68,<=1.81.1" },
     { name = "hindsight-client", specifier = ">=0.4.0" },
@@ -3488,6 +3491,7 @@ lint = [
 test = [
     { name = "boto3", specifier = ">=1.30,<2" },
     { name = "build", specifier = ">=1.2" },
+    { name = "distlib", marker = "sys_platform == 'win32'", specifier = ">=0.4" },
     { name = "filelock", specifier = ">=3.0" },
     { name = "hindsight-client", specifier = ">=0.4.0" },
     { name = "moto", extras = ["s3"], specifier = ">=5,<6" },
