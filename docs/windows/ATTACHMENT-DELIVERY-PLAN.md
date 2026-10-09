@@ -114,6 +114,21 @@ network-read reliability; it does not change Windows filesystem storage or
 directory handling. Review that upstream blob and issue history separately
 before reusing it as evidence for this Windows fix.
 
+## Codex sandbox acceptance limit
+
+Codex 0.162.0 snapshots `localImage` files through a direct host-process read
+([official source](https://github.com/openai/codex/blob/rust-v0.162.0/codex-rs/protocol/src/local_media.rs));
+when app-server runs as the attachment owner, image ingestion does not require
+sandbox-account access. A ZIP path sent as text is not a filesystem permission
+grant. Elevated commands use dedicated sandbox accounts, and their readable
+roots come from the permission policy
+([official source](https://github.com/openai/codex/blob/rust-v0.162.0/codex-rs/windows-sandbox-rs/src/setup.rs)).
+Reading the private cache through those accounts still needs live acceptance
+testing; a successful image response does not establish ZIP shell access. Keep
+the private DACL intact and do not silently switch to full access. If Codex
+requests native approval to read an attachment, granting that access must be an
+explicit user decision.
+
 ## Manual acceptance on Windows
 
 Use a fresh local Claude native session and then a fresh Codex native session

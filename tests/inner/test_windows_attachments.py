@@ -59,7 +59,7 @@ def _symlink(path: Path, target: Path) -> None:
         raise
 
 
-def _assert_private(path: Path) -> None:
+def _assert_private(path: Path, *, expected_owner: str | None = None) -> None:
     kernel, security = security_helpers._windows()
     descriptor, owner, dacl = (ctypes.wintypes.LPVOID() for _ in range(3))
     security.GetNamedSecurityInfoW.argtypes = [
@@ -88,7 +88,7 @@ def _assert_private(path: Path) -> None:
     )
     try:
         user = security_helpers._current_user_sid(kernel, security)
-        assert security_helpers._sid_text(kernel, security, owner) == user
+        assert security_helpers._sid_text(kernel, security, owner) == (expected_owner or user)
         control, revision = ctypes.wintypes.WORD(), ctypes.wintypes.DWORD()
         assert security.GetSecurityDescriptorControl(
             descriptor, ctypes.byref(control), ctypes.byref(revision)
@@ -287,9 +287,11 @@ def test_existing_owned_cache_migrates_to_private_non_executable_files(tmp_path)
     directory.mkdir()
     path = directory / "report.txt"
     path.write_bytes(b"existing")
+    directory_owner = _trusted_existing_owner(directory)
+    file_owner = _trusted_existing_owner(path)
     assert windows_attachments.materialize_attachment(directory, path.name, b"existing") == path
-    _assert_private(directory)
-    _assert_private(path)
+    _assert_private(directory, expected_owner=directory_owner)
+    _assert_private(path, expected_owner=file_owner)
 
 
 def test_foreign_writable_cache_is_refused_without_acl_upgrade(tmp_path):
@@ -639,6 +641,36 @@ def test_attribute_only_mutation_before_relative_create_cannot_redirect_bytes(
             target.rmdir()
 
 
+def _trusted_existing_owner(path: Path) -> str:
+    kernel, security = security_helpers._windows()
+    handle = kernel.CreateFileW(str(path), 0x20000, 7, None, 3, 0x02200000, None)
+    assert handle != ctypes.c_void_p(-1).value
+    descriptor, owner = ctypes.wintypes.LPVOID(), ctypes.wintypes.LPVOID()
+    try:
+        assert (
+            security.GetSecurityInfo(
+                handle,
+                1,
+                1,
+                ctypes.byref(owner),
+                None,
+                None,
+                None,
+                ctypes.byref(descriptor),
+            )
+            == 0
+        )
+        try:
+            actual = security_helpers._sid_text(kernel, security, owner)
+            user = security_helpers._current_user_sid(kernel, security)
+            assert actual in {user, "S-1-5-18", "S-1-5-32-544"}
+            return actual
+        finally:
+            kernel.LocalFree(descriptor)
+    finally:
+        kernel.CloseHandle(handle)
+
+
 def _acl_trustees(path: Path) -> set[str]:
     kernel, security = security_helpers._windows()
     handle = kernel.CreateFileW(str(path), 0x20000, 7, None, 3, 0x02200000, None)
@@ -675,10 +707,11 @@ def _acl_trustees(path: Path) -> set[str]:
 
 def test_python_private_directory_owner_rights_is_upgraded_to_actual_user_acl(tmp_path):
     directory = Path(tempfile.mkdtemp(dir=tmp_path))
+    owner = _trusted_existing_owner(directory)
     assert "S-1-3-4" in _acl_trustees(directory)
     path = windows_attachments.materialize_attachment(directory, "report.txt", b"private payload")
     assert path is not None and path.read_bytes() == b"private payload"
-    _assert_private(directory)
+    _assert_private(directory, expected_owner=owner)
     _assert_private(path)
     assert "S-1-3-4" not in _acl_trustees(directory)
 
