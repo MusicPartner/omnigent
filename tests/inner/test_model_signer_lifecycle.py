@@ -65,9 +65,11 @@ class _Signer:
         self,
         order: list[str],
         *,
+        public_dir: Path,
         start_error: Exception | None = None,
     ) -> None:
         self.order = order
+        self.public_dir = public_dir
         self.start_error = start_error
         self.exited = asyncio.Event()
         self.closed = False
@@ -78,8 +80,8 @@ class _Signer:
             raise self.start_error
         return SignerReadiness(
             relay_port=43123,
-            socket_path=Path("/private/signer/relay.sock"),
-            ca_bundle_path=Path("/private/signer/ca.pem"),
+            socket_path=self.public_dir / "relay.sock",
+            ca_bundle_path=self.public_dir / "ca.pem",
             placeholder="oa_cred_session",
         )
 
@@ -94,8 +96,8 @@ class _Signer:
 
 
 class _BlockingSigner(_Signer):
-    def __init__(self, order: list[str]) -> None:
-        super().__init__(order)
+    def __init__(self, order: list[str], *, public_dir: Path) -> None:
+        super().__init__(order, public_dir=public_dir)
         self.starting = asyncio.Event()
 
     async def start(self) -> SignerReadiness:
@@ -106,14 +108,17 @@ class _BlockingSigner(_Signer):
 
 
 class _BlockingCloseSigner(_Signer):
-    def __init__(self, order: list[str]) -> None:
-        super().__init__(order)
+    def __init__(self, order: list[str], *, public_dir: Path) -> None:
+        super().__init__(order, public_dir=public_dir)
         self.closing = asyncio.Event()
+        self.release_close = asyncio.Event()
 
     async def close(self) -> None:
         self.order.append("signer-close")
         self.closing.set()
-        await asyncio.sleep(3600)
+        await asyncio.wait_for(self.release_close.wait(), timeout=5)
+        self.closed = True
+        self.exited.set()
 
 
 def _session(tmp_path: Path, signer: _Signer) -> _CodexAppServerSession:
@@ -130,9 +135,10 @@ def _session(tmp_path: Path, signer: _Signer) -> _CodexAppServerSession:
 async def test_signer_preflights_before_codex_state_and_worker_spawn(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    mock_codex_session_home: None,
 ) -> None:
     order: list[str] = []
-    signer = _Signer(order)
+    signer = _Signer(order, public_dir=tmp_path / "signer")
     process = _Process()
 
     def _populate(*args: object, **kwargs: object) -> None:
@@ -170,8 +176,9 @@ async def test_signer_preflights_before_codex_state_and_worker_spawn(
 async def test_required_catalog_failure_stops_before_worker_preparation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    mock_codex_session_home: None,
 ) -> None:
-    signer = _Signer([])
+    signer = _Signer([], public_dir=tmp_path / "signer")
     prepare = Mock()
     spawn = AsyncMock()
     monkeypatch.setattr(
@@ -193,8 +200,9 @@ async def test_required_catalog_failure_stops_before_worker_preparation(
 async def test_signer_exit_before_worker_spawn_fails_startup(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    mock_codex_session_home: None,
 ) -> None:
-    signer = _Signer([])
+    signer = _Signer([], public_dir=tmp_path / "signer")
     spawn = AsyncMock()
 
     def _prepare(**kwargs: object) -> CodexWorkerLaunch:
@@ -218,8 +226,9 @@ async def test_signer_exit_before_worker_spawn_fails_startup(
 async def test_signer_exit_during_worker_spawn_tears_worker_down(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    mock_codex_session_home: None,
 ) -> None:
-    signer = _Signer([])
+    signer = _Signer([], public_dir=tmp_path / "signer")
     process = _Process()
     terminate = Mock()
 
@@ -250,8 +259,9 @@ async def test_signer_exit_during_worker_spawn_tears_worker_down(
 async def test_signer_backed_home_excludes_host_credential_files(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    mock_codex_session_home: None,
 ) -> None:
-    signer = _Signer([])
+    signer = _Signer([], public_dir=tmp_path / "signer")
     process = _Process()
     populate = Mock()
     monkeypatch.setattr("omnigent.inner.codex_executor._populate_codex_home_config", populate)
@@ -278,11 +288,12 @@ async def test_signer_backed_home_excludes_host_credential_files(
     await session.close()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX private signer-home permissions")
 async def test_signer_backed_home_is_private_and_outside_workspace(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    signer = _Signer([])
+    signer = _Signer([], public_dir=tmp_path / "signer")
     process = _Process()
     monkeypatch.setattr("omnigent.inner.codex_executor._populate_codex_home_config", Mock())
     monkeypatch.setattr(
@@ -306,6 +317,7 @@ async def test_signer_backed_home_is_private_and_outside_workspace(
     assert not codex_home.exists()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX private signer-home permissions")
 async def test_signer_backed_home_rejects_symlink_temp_root(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -314,7 +326,7 @@ async def test_signer_backed_home_rejects_symlink_temp_root(
     real_root.mkdir(mode=0o700)
     symlink_root = tmp_path / "temp-link"
     symlink_root.symlink_to(real_root, target_is_directory=True)
-    signer = _Signer([])
+    signer = _Signer([], public_dir=tmp_path / "signer")
     monkeypatch.setattr("tempfile.gettempdir", lambda: os.fspath(symlink_root))
     session = _session(tmp_path, signer)
 
@@ -353,7 +365,9 @@ async def test_signer_preflight_failure_never_creates_codex_home_or_worker(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    signer = _Signer([], start_error=RuntimeError("PROVIDER_AUTH_REQUIRED"))
+    signer = _Signer(
+        [], public_dir=tmp_path / "signer", start_error=RuntimeError("PROVIDER_AUTH_REQUIRED")
+    )
     spawn = AsyncMock()
     monkeypatch.setattr("omnigent.inner.codex_executor._create_subprocess_exec", spawn)
     session = _session(tmp_path, signer)
@@ -369,8 +383,9 @@ async def test_signer_preflight_failure_never_creates_codex_home_or_worker(
 async def test_failure_after_signer_readiness_closes_signer_and_state(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    mock_codex_session_home: None,
 ) -> None:
-    signer = _Signer([])
+    signer = _Signer([], public_dir=tmp_path / "signer")
     spawn = AsyncMock()
     monkeypatch.setattr(
         "omnigent.inner.codex_executor._populate_codex_home_config",
@@ -391,10 +406,13 @@ async def test_failure_after_signer_readiness_closes_signer_and_state(
 async def test_retry_uses_a_fresh_signer_after_failed_preflight(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    mock_codex_session_home: None,
 ) -> None:
     order: list[str] = []
-    failed = _Signer(order, start_error=RuntimeError("PROVIDER_AUTH_REQUIRED"))
-    ready = _Signer(order)
+    failed = _Signer(
+        order, public_dir=tmp_path / "signer", start_error=RuntimeError("PROVIDER_AUTH_REQUIRED")
+    )
+    ready = _Signer(order, public_dir=tmp_path / "signer")
     signers = iter((failed, ready))
     process = _Process()
     monkeypatch.setattr("omnigent.inner.codex_executor._populate_codex_home_config", Mock())
@@ -429,8 +447,9 @@ async def test_retry_uses_a_fresh_signer_after_failed_preflight(
 async def test_signer_exit_terminates_worker(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    mock_codex_session_home: None,
 ) -> None:
-    signer = _Signer([])
+    signer = _Signer([], public_dir=tmp_path / "signer")
     process = _Process()
     terminate = Mock()
     monkeypatch.setattr(
@@ -458,8 +477,9 @@ async def test_signer_exit_terminates_worker(
 async def test_signer_exit_escalates_to_kill_for_term_ignoring_worker(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    mock_codex_session_home: None,
 ) -> None:
-    signer = _Signer([])
+    signer = _Signer([], public_dir=tmp_path / "signer")
     process = _TermIgnoringProcess()
     terminate = Mock()
 
@@ -496,9 +516,10 @@ async def test_signer_exit_escalates_to_kill_for_term_ignoring_worker(
 async def test_runner_close_terminates_worker_without_waiting_for_signer(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    mock_codex_session_home: None,
 ) -> None:
     order: list[str] = []
-    signer = _Signer(order)
+    signer = _Signer(order, public_dir=tmp_path / "signer")
     process = _Process()
 
     def _terminate(proc: object) -> None:
@@ -528,8 +549,9 @@ async def test_runner_close_terminates_worker_without_waiting_for_signer(
 async def test_cancelled_close_contains_worker_and_retains_incomplete_signer_cleanup(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    mock_codex_session_home: None,
 ) -> None:
-    signer = _BlockingCloseSigner([])
+    signer = _BlockingCloseSigner([], public_dir=tmp_path / "signer")
     process = _Process()
     terminate = Mock(side_effect=lambda proc: setattr(proc, "returncode", 0))
     monkeypatch.setattr(
@@ -548,7 +570,7 @@ async def test_cancelled_close_contains_worker_and_retains_incomplete_signer_cle
     await session.start()
 
     close_task = asyncio.create_task(session.close())
-    await signer.closing.wait()
+    await asyncio.wait_for(signer.closing.wait(), timeout=5)
     close_task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await close_task
@@ -557,13 +579,16 @@ async def test_cancelled_close_contains_worker_and_retains_incomplete_signer_cle
     assert not session.cleaned
     assert session._proc is None
     assert session._signer is signer
+    signer.release_close.set()
+    await session.close()
 
 
 async def test_cancelled_start_reclaims_worker_prepared_in_background_thread(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    mock_codex_session_home: None,
 ) -> None:
-    signer = _Signer([])
+    signer = _Signer([], public_dir=tmp_path / "signer")
     worker = Mock(launch_path="/private/sandbox-launcher", sandboxed=True)
     started = threading.Event()
     release = threading.Event()
@@ -595,8 +620,9 @@ async def test_cancelled_start_reclaims_worker_prepared_in_background_thread(
 async def test_concurrent_close_during_spawn_reaps_returned_worker(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    mock_codex_session_home: None,
 ) -> None:
-    signer = _Signer([])
+    signer = _Signer([], public_dir=tmp_path / "signer")
     worker = Mock(launch_path="/private/sandbox-launcher", sandboxed=True)
     process = _Process()
     spawning = asyncio.Event()
@@ -619,7 +645,7 @@ async def test_concurrent_close_during_spawn_reaps_returned_worker(
     session = _session(tmp_path, signer)
 
     start_task = asyncio.create_task(session.start())
-    await spawning.wait()
+    await asyncio.wait_for(spawning.wait(), timeout=5)
     close_task = asyncio.create_task(session.close())
     release.set()
     with pytest.raises(RuntimeError, match="closed during worker spawn"):
@@ -632,7 +658,7 @@ async def test_concurrent_close_during_spawn_reaps_returned_worker(
 
 
 async def test_cancelled_start_closes_partially_started_signer(tmp_path: Path) -> None:
-    signer = _BlockingSigner([])
+    signer = _BlockingSigner([], public_dir=tmp_path / "signer")
     session = _session(tmp_path, signer)
 
     start = asyncio.create_task(session.start())
@@ -646,7 +672,7 @@ async def test_cancelled_start_closes_partially_started_signer(tmp_path: Path) -
 
 
 async def test_worker_stdout_eof_invalidates_signer(tmp_path: Path) -> None:
-    signer = _Signer([])
+    signer = _Signer([], public_dir=tmp_path / "signer")
     process = _Process()
     process.stdout = _EofPipe()
     session = _session(tmp_path, signer)
@@ -657,3 +683,23 @@ async def test_worker_stdout_eof_invalidates_signer(tmp_path: Path) -> None:
 
     assert signer.closed
     assert session._signer is None
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows private signer-home refusal")
+async def test_windows_signer_home_refuses_before_worker_spawn(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    signer = _Signer([], public_dir=tmp_path / "signer")
+    spawn = AsyncMock()
+    prepare = Mock()
+    monkeypatch.setattr("omnigent.inner.codex_executor.prepare_codex_worker", prepare)
+    monkeypatch.setattr("omnigent.inner.codex_executor._create_subprocess_exec", spawn)
+    session = _session(tmp_path, signer)
+
+    with pytest.raises(OSError, match=r"unsafe signer (session temp root|CODEX_HOME)"):
+        await session.start()
+
+    prepare.assert_not_called()
+    spawn.assert_not_awaited()
+    assert signer.closed
+    assert session._codex_home_dir is None

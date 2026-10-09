@@ -7,6 +7,7 @@ import os
 import stat
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -30,6 +31,27 @@ def _write_ucode(path: Path, body: str) -> Path:
     return path
 
 
+def _use_python_helper(monkeypatch: pytest.MonkeyPatch, source: str) -> None:
+    executable = Path(sys.executable).resolve()
+    info = executable.stat()
+    trusted = _TrustedExecutable(executable, (info.st_dev, info.st_ino))
+    monkeypatch.setattr("omnigent.inner.model_auth._resolve_ucode_executable", lambda: trusted)
+    monkeypatch.setattr(
+        "omnigent.inner.model_auth._ucode_auth_token_argv",
+        lambda path, **kwargs: [
+            str(path),
+            "-c",
+            source,
+            "auth-token",
+            "--host",
+            kwargs["host"],
+            "--profile",
+            kwargs["profile"],
+            "--force-refresh",
+        ],
+    )
+
+
 def test_ucode_argv_is_fixed_and_contains_only_validated_authority(tmp_path: Path) -> None:
     executable = _write_ucode(tmp_path / "ucode", "exit 0\n").resolve()
 
@@ -44,6 +66,7 @@ def test_ucode_argv_is_fixed_and_contains_only_validated_authority(tmp_path: Pat
     ]
 
 
+@pytest.mark.posix_only(reason="ownership and writable-mode checks use POSIX uid/mode semantics")
 def test_ucode_resolution_rejects_writable_parent(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -58,6 +81,7 @@ def test_ucode_resolution_rejects_writable_parent(
         _resolve_ucode_executable()
 
 
+@pytest.mark.posix_only(reason="symlink provenance checks depend on POSIX ownership and modes")
 def test_ucode_resolution_rejects_unsafe_symlink_chain(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -128,13 +152,14 @@ async def test_ucode_adapter_uses_hermetic_environment_and_fixed_argv(
 ) -> None:
     args_file = tmp_path / "args"
     env_file = tmp_path / "env"
-    script = f"""
-printf '%s\\n' "$@" > {args_file}
-env > {env_file}
-printf 'opaque-token-value\\n'
-"""
-    _write_ucode(tmp_path / "ucode", script)
-    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}/usr/bin:/bin")
+    source = (
+        "import os,sys; "
+        f"open({str(args_file)!r}, 'w').write('\\n'.join(sys.argv[1:])); "
+        f"open({str(env_file)!r}, 'w').write('\\n'.join("
+        "str(k)+'='+str(v) for k,v in os.environ.items())); "
+        "sys.stdout.buffer.write(b'opaque-token-value\\n')"
+    )
+    _use_python_helper(monkeypatch, source)
     for name in (
         "HTTP_PROXY",
         "HTTPS_PROXY",
@@ -153,6 +178,20 @@ printf 'opaque-token-value\\n'
     ):
         monkeypatch.setenv(name, "attacker-controlled")
 
+    import omnigent.inner.model_auth as model_auth
+
+    observed: dict[str, object] = {}
+    original = asyncio.create_subprocess_exec
+
+    async def _spawn(*argv: str, **kwargs: object):
+        observed.update(argv=argv, kwargs=kwargs)
+        return await original(*argv, **kwargs)
+
+    monkeypatch.setattr(
+        model_auth,
+        "asyncio",
+        SimpleNamespace(**(vars(asyncio) | {"create_subprocess_exec": _spawn})),
+    )
     assert await mint_ucode_token(host=_HOST, profile=_PROFILE) == "opaque-token-value"
     assert args_file.read_text(encoding="utf-8").splitlines() == [
         "auth-token",
@@ -165,22 +204,33 @@ printf 'opaque-token-value\\n'
     child_env = env_file.read_text(encoding="utf-8")
     assert "attacker-controlled" not in child_env
     assert f"NETRC={os.devnull}" in child_env
+    if os.name == "posix":
+        assert observed["kwargs"]["start_new_session"] is True
+    else:
+        assert "creationflags" in observed["kwargs"]
 
 
 async def test_ucode_helper_gets_an_owned_process_group(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    _write_ucode(tmp_path / "ucode", "printf 'opaque-token-value\\n'\n")
-    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}/usr/bin:/bin")
-    original = asyncio.create_subprocess_exec
+    _use_python_helper(
+        monkeypatch, "import sys; sys.stdout.buffer.write(b'opaque-token-value\\n')"
+    )
+    import omnigent.inner.model_auth as model_auth
+
     observed_kwargs: dict[str, object] = {}
+    original = asyncio.create_subprocess_exec
 
     async def _spawn(*argv: str, **kwargs: object) -> asyncio.subprocess.Process:
         observed_kwargs.update(kwargs)
         return await original(*argv, **kwargs)
 
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", _spawn)
+    monkeypatch.setattr(
+        model_auth,
+        "asyncio",
+        SimpleNamespace(**(vars(asyncio) | {"create_subprocess_exec": _spawn})),
+    )
 
     assert await mint_ucode_token(host=_HOST, profile=_PROFILE) == "opaque-token-value"
     if os.name == "posix":
@@ -246,7 +296,10 @@ async def test_cancelled_ucode_mint_terminates_helper(
                 await helper.wait()
 
 
-@pytest.mark.skipif(os.name != "posix", reason="forked helper acceptance is POSIX-only")
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="the shell fixture forks a descendant and validates POSIX process-group cleanup",
+)
 async def test_nonzero_helper_leader_exit_does_not_leave_descendants(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

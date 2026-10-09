@@ -474,8 +474,8 @@ def test_signer_readiness_adds_only_relay_and_public_ca(
 def test_signer_readiness_rejects_ordinary_egress_rules(tmp_path: Path) -> None:
     readiness = SignerReadiness(
         relay_port=43123,
-        socket_path=Path("/private/signer/relay.sock"),
-        ca_bundle_path=Path("/private/signer/ca-bundle.pem"),
+        socket_path=tmp_path / "signer" / "relay.sock",
+        ca_bundle_path=tmp_path / "signer" / "ca-bundle.pem",
         placeholder="oa_cred_session",
     )
 
@@ -502,8 +502,8 @@ def test_signer_readiness_rejects_ordinary_egress_rules(tmp_path: Path) -> None:
 def test_signer_readiness_rejects_unwrapped_worker(tmp_path: Path) -> None:
     readiness = SignerReadiness(
         relay_port=43123,
-        socket_path=Path("/private/signer/relay.sock"),
-        ca_bundle_path=Path("/private/signer/ca-bundle.pem"),
+        socket_path=tmp_path / "signer" / "relay.sock",
+        ca_bundle_path=tmp_path / "signer" / "ca-bundle.pem",
         placeholder="oa_cred_session",
     )
 
@@ -549,6 +549,7 @@ def test_explicit_none_sandbox_keeps_direct_worker_path(tmp_path: Path) -> None:
 async def test_session_containment_failure_prevents_worker_spawn(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    mock_codex_session_home: None,
 ) -> None:
     spawn = AsyncMock()
     monkeypatch.setattr(
@@ -576,6 +577,7 @@ async def test_session_containment_failure_prevents_worker_spawn(
 async def test_session_spawns_owned_launcher_and_releases_it(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    mock_codex_session_home: None,
 ) -> None:
     worker = Mock(launch_path="/private/sandbox-launcher", sandboxed=True)
     process = Mock(
@@ -606,9 +608,13 @@ async def test_session_spawns_owned_launcher_and_releases_it(
     await session.start()
 
     assert spawn.await_args is not None
-    assert Path(spawn.await_args.args[1]).name == "_liveness_exec.py"
+    if os.name == "posix":
+        assert Path(spawn.await_args.args[1]).name == "_liveness_exec.py"
+        assert spawn.await_args.kwargs["pass_fds"]
+    else:
+        assert spawn.await_args.args == ("/private/sandbox-launcher", "app-server")
+        assert spawn.await_args.kwargs["pass_fds"] == ()
     assert "/private/sandbox-launcher" in spawn.await_args.args
-    assert spawn.await_args.kwargs["pass_fds"]
     assert session._containment_confirmed
     await session.close()
     worker.close.assert_called_once_with()
@@ -617,6 +623,7 @@ async def test_session_spawns_owned_launcher_and_releases_it(
 async def test_spawn_failure_releases_launcher_and_private_home(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    mock_codex_session_home: None,
 ) -> None:
     worker = Mock(launch_path="/private/sandbox-launcher", sandboxed=True)
     monkeypatch.setattr(

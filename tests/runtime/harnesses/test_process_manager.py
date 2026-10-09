@@ -493,11 +493,12 @@ async def test_release_reaps_term_resistant_process_when_graceful_wait_is_cancel
         "-c",
         (
             "import signal, sys, time; "
-            "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
-            "print('ready', flush=True); "
+            "signal.signal(getattr(signal, 'SIGBREAK', signal.SIGTERM), signal.SIG_IGN); "
+            "sys.stdout.buffer.write(b'ready\\n'); sys.stdout.buffer.flush(); "
             "time.sleep(60)"
         ),
         stdout=asyncio.subprocess.PIPE,
+        **process_manager_module._proc.spawn_kwargs(),
     )
     try:
         assert process.stdout is not None

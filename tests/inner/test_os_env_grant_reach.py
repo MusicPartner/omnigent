@@ -38,6 +38,15 @@ from omnigent.inner.sandbox import (
 from omnigent.runner.environment_filesystem import resolve_browse_target
 
 
+def _symlink_or_skip(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        if os.name == "nt" and exc.winerror == 1314:
+            pytest.skip("Windows symlink creation requires Developer Mode or symlink privilege")
+        raise
+
+
 def _grant_policy(
     *,
     read_roots: list[Path] | None = None,
@@ -283,7 +292,7 @@ def test_symlink_inside_grant_cannot_escape_grant(tmp_path: Path) -> None:
 
     # A symlink that lives inside the grant but points OUTSIDE it.
     link = grant / "escape.txt"
-    link.symlink_to(secret)
+    _symlink_or_skip(link, secret)
 
     policy = _grant_policy(write_roots=[grant])
 
@@ -634,7 +643,7 @@ def test_contained_realpath_decides_on_the_symlink_target(tmp_path: Path) -> Non
     root.mkdir()
     outside = tmp_path / "secret.txt"
     outside.write_text("secret")
-    (root / "escape.txt").symlink_to(outside)
+    _symlink_or_skip(root / "escape.txt", outside)
     prefix = containment_prefix(root)
 
     assert contained_realpath(str(root / "escape.txt"), prefix) is None
@@ -680,8 +689,8 @@ def test_contained_realpath_admits_a_symlink_loop_but_it_reaches_nothing(
     """
     root = (tmp_path / "ws").resolve()
     root.mkdir()
-    (root / "a").symlink_to(root / "b")
-    (root / "b").symlink_to(root / "a")
+    _symlink_or_skip(root / "a", root / "b")
+    _symlink_or_skip(root / "b", root / "a")
 
     admitted = contained_realpath(str(root / "a"), containment_prefix(root))
 

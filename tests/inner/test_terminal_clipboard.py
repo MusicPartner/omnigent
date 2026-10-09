@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import contextlib
 import gc
+import io
 import os
 import socket
 import struct
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -34,6 +36,7 @@ def bridge(monkeypatch: pytest.MonkeyPatch) -> Iterator[clipboard.TerminalClipbo
             instance.close()
 
 
+@pytest.mark.posix_only
 def test_native_helper_submits_exact_text_without_host_clipboard_access(
     bridge: clipboard.TerminalClipboardBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -75,6 +78,7 @@ def test_native_helper_submits_exact_text_without_host_clipboard_access(
 
 
 @pytest.mark.parametrize("args", [[], ["-pboard", "find"], ["-Prefer", "rtf"], ["--read"]])
+@pytest.mark.posix_only
 def test_helper_fails_closed_without_a_bridge(
     bridge: clipboard.TerminalClipboardBridge, args: list[str]
 ) -> None:
@@ -103,6 +107,7 @@ def test_client_rejects_non_text_and_oversize_payloads(
     assert not clipboard._copy_to_terminal(str(bridge.socket_path), payload)
 
 
+@pytest.mark.posix_only
 def test_native_helper_rejects_empty_copies_explicitly(
     bridge: clipboard.TerminalClipboardBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -136,6 +141,7 @@ def test_native_helper_rejects_empty_copies_explicitly(
     ],
     ids=["empty", "oversized", "invalid-utf8", "truncated-body", "truncated-header"],
 )
+@pytest.mark.posix_only
 def test_listener_rejects_invalid_requests_and_keeps_serving(
     bridge: clipboard.TerminalClipboardBridge,
     monkeypatch: pytest.MonkeyPatch,
@@ -156,6 +162,7 @@ def test_listener_rejects_invalid_requests_and_keeps_serving(
     run.assert_called_once()
 
 
+@pytest.mark.posix_only
 def test_slow_request_has_a_total_deadline(
     bridge: clipboard.TerminalClipboardBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -178,6 +185,7 @@ def test_slow_request_has_a_total_deadline(
     assert clipboard._copy_to_terminal(str(bridge.socket_path), b"not stalled")
 
 
+@pytest.mark.posix_only
 def test_close_stops_worker_and_can_restart(bridge: clipboard.TerminalClipboardBridge) -> None:
     bridge.start()
     worker = bridge._thread
@@ -195,6 +203,7 @@ def test_close_stops_worker_and_can_restart(bridge: clipboard.TerminalClipboardB
     assert bridge.socket_path.exists()
 
 
+@pytest.mark.posix_only
 def test_abandoned_bridge_stops_worker(bridge: clipboard.TerminalClipboardBridge) -> None:
     abandoned = clipboard.TerminalClipboardBridge(bridge.bin_dir.parent, bridge.tmux_socket)
     abandoned.start()
@@ -209,6 +218,7 @@ def test_abandoned_bridge_stops_worker(bridge: clipboard.TerminalClipboardBridge
     assert not bridge.socket_path.exists()
 
 
+@pytest.mark.posix_only
 def test_thread_start_failure_cleans_up_socket(
     bridge: clipboard.TerminalClipboardBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -222,6 +232,7 @@ def test_thread_start_failure_cleans_up_socket(
     bridge.close()
 
 
+@pytest.mark.posix_only
 def test_tmux_failure_is_reported_without_native_fallback(
     bridge: clipboard.TerminalClipboardBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -230,3 +241,34 @@ def test_tmux_failure_is_reported_without_native_fallback(
     bridge.start()
     assert not clipboard._copy_to_terminal(str(bridge.socket_path), b"failed")
     run.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "args,expected", [([], 1), (["-pboard", "find"], 2), (["-Prefer", "rtf"], 2), (["--read"], 2)]
+)
+def test_helper_cli_fails_closed_without_a_bridge(
+    monkeypatch: pytest.MonkeyPatch, args: list[str], expected: int
+) -> None:
+    copy = Mock(return_value=False)
+    monkeypatch.setattr(clipboard, "_copy_to_terminal", copy)
+    monkeypatch.setattr(sys, "argv", ["pbcopy", "missing-bridge", *args])
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(b"must not copy")))
+
+    assert clipboard._main() == expected
+    if args:
+        copy.assert_not_called()
+    else:
+        copy.assert_called_once_with("missing-bridge", b"must not copy")
+
+
+def test_helper_cli_rejects_empty_copies_without_contacting_bridge(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    copy = Mock()
+    monkeypatch.setattr(clipboard, "_copy_to_terminal", copy)
+    monkeypatch.setattr(sys, "argv", ["pbcopy", "missing-bridge"])
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(b"")))
+
+    assert clipboard._main() == 1
+    assert "does not support clearing the clipboard" in capsys.readouterr().err
+    copy.assert_not_called()

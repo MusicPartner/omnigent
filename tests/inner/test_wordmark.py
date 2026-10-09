@@ -56,7 +56,14 @@ def test_render_lockup_plain_console_has_no_ansi() -> None:
 def test_render_lockup_color_console_emits_ansi() -> None:
     """A color terminal renders the lockup with ANSI color codes."""
 
-    console = Console(force_terminal=True, width=120, file=_StringFile())
+    console = Console(
+        force_terminal=True,
+        legacy_windows=False,
+        color_system="truecolor",
+        no_color=False,
+        width=120,
+        file=_StringFile(),
+    )
     wordmark.render_lockup(console, gradient=True)
     assert "\x1b[" in console.file.getvalue()  # type: ignore[attr-defined]
 

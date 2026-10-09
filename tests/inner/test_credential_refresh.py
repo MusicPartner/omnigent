@@ -33,6 +33,15 @@ from omnigent.inner.sandbox import SandboxPolicy, resolve_sandbox
 from omnigent.spec.parser import _parse_credential_proxy
 
 
+def _symlink_to(link: Path, target: Path, *, target_is_directory: bool = False) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except OSError as exc:
+        if sys.platform == "win32" and getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows symlink creation requires Developer Mode or privilege")
+        raise
+
+
 @pytest.fixture
 def sandbox(tmp_path: Path) -> SandboxPolicy:
     workspace = tmp_path / "workspace"
@@ -230,12 +239,12 @@ def test_rejects_sandbox_writable_refresh_sources(
         candidate = workspace / "token"
     elif unsafe == "symlink-out":
         candidate = workspace / "token"
-        candidate.symlink_to(token)
+        _symlink_to(candidate, token)
     elif unsafe == "symlink-in":
         candidate = private / "link"
-        candidate.symlink_to(workspace / "token")
+        _symlink_to(candidate, workspace / "token")
     elif unsafe == "parent-link":
-        (private / "link").symlink_to(workspace, target_is_directory=True)
+        _symlink_to(private / "link", workspace, target_is_directory=True)
         candidate = private / "link" / "token"
     elif unsafe == "write-file":
         sandbox.write_files.append(token)
@@ -250,19 +259,23 @@ def test_rejects_sandbox_writable_refresh_sources(
         RefreshingSecretProvider(spec, parent_env={}, sandbox=sandbox).resolve()
 
 
-def test_refresh_requires_a_policy_and_revalidates_rotation(
-    tmp_path: Path, sandbox: SandboxPolicy
-) -> None:
+def test_refresh_requires_a_policy(tmp_path: Path) -> None:
+    source = CredentialSourceSpec(
+        kind="file", path=str(tmp_path / "token"), refresh_interval_seconds=60
+    )
+    with pytest.raises(ValueError, match="active sandbox policy"):
+        RefreshingSecretProvider(source, parent_env={})
+
+
+def test_refresh_revalidates_rotation(tmp_path: Path, sandbox: SandboxPolicy) -> None:
     token = tmp_path / "token"
     token.write_text("initial")
     source = CredentialSourceSpec(kind="file", path=str(token), refresh_interval_seconds=60)
-    with pytest.raises(ValueError, match="active sandbox policy"):
-        RefreshingSecretProvider(source, parent_env={})
     clock = Mock(return_value=0.0)
     provider = RefreshingSecretProvider(source, parent_env={}, sandbox=sandbox, clock=clock)
     assert provider.resolve() == "initial"
     token.unlink()
-    token.symlink_to(sandbox.write_roots[0] / "replacement")
+    _symlink_to(token, sandbox.write_roots[0] / "replacement")
     clock.return_value = 60.0
     with pytest.raises(ValueError, match="sandbox-writable"):
         provider.resolve()
@@ -325,10 +338,10 @@ def test_rejects_sandbox_readable_refresh_sources(
     cwd = sandbox.write_roots[0]
     if mode == "source-alias":
         candidate = tmp_path / "alias"
-        candidate.symlink_to(token)
+        _symlink_to(candidate, token)
     elif mode == "root-alias":
         alias = tmp_path / "alias"
-        alias.symlink_to(readable, target_is_directory=True)
+        _symlink_to(alias, readable, target_is_directory=True)
         sandbox.read_roots = [alias]
     elif mode == "readonly-cwd":
         cwd = readable
@@ -378,7 +391,7 @@ def test_refresh_rejects_changed_private_symlink_target(
     target = tmp_path / "replacement"
     target.write_text("replacement")
     alias = tmp_path / "alias"
-    alias.symlink_to(original)
+    _symlink_to(alias, original)
     clock = Mock(return_value=0.0)
     provider = RefreshingSecretProvider(
         CredentialSourceSpec(kind="file", path=str(alias), refresh_interval_seconds=60),
@@ -389,7 +402,7 @@ def test_refresh_rejects_changed_private_symlink_target(
     assert provider.resolve() == "initial"
     assert sandbox.credential_source_paths == [original.resolve()]
     alias.unlink()
-    alias.symlink_to(target)
+    _symlink_to(alias, target)
     clock.return_value = 60.0
     with pytest.raises(ValueError, match="symlink target changed"):
         provider.resolve()

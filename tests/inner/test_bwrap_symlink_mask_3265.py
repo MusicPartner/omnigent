@@ -9,6 +9,7 @@ the sandbox view where an escaping target is unmounted or separately masked.
 
 from __future__ import annotations
 
+import os
 import pathlib
 import shutil
 import subprocess
@@ -35,6 +36,16 @@ def _mask_args_for(tmp_path: pathlib.Path) -> list[str]:
     return _dotfile_and_symlink_mask_args(tmp_path, [], policy)
 
 
+def _make_symlink(link: pathlib.Path, target: pathlib.Path, *, is_dir: bool = False) -> None:
+    """Skip only when Windows denies symlink creation without Developer Mode."""
+    try:
+        link.symlink_to(target, target_is_directory=is_dir)
+    except OSError as exc:
+        if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows symlink creation requires the SeCreateSymbolicLinkPrivilege")
+        raise
+
+
 def test_no_mask_targets_a_symlink(tmp_path: pathlib.Path) -> None:
     """No emitted mount may point at a symlink, for either mask shape."""
     tasks = tmp_path / "proj" / "sess" / "tasks"
@@ -46,8 +57,8 @@ def test_no_mask_targets_a_symlink(tmp_path: pathlib.Path) -> None:
     escaping_dir = pathlib.Path.home() / ".claude"
     # A symlink to a file (the `tasks/<id>.output` shape) and one to a
     # directory — the dir shape aborts too, via `--tmpfs <link>`.
-    (tasks / "abc.output").symlink_to(escaping_file)
-    (tasks / "dirlink").symlink_to(escaping_dir)
+    _make_symlink(tasks / "abc.output", escaping_file)
+    _make_symlink(tasks / "dirlink", escaping_dir, is_dir=True)
 
     args = _mask_args_for(tmp_path)
     destinations = [

@@ -43,6 +43,22 @@ def short_tmp_parent() -> Iterator[pathlib.Path]:
         shutil.rmtree(parent, ignore_errors=True)
 
 
+@pytest.fixture
+def mock_codex_session_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """Isolate transport/lifecycle tests from the POSIX private-home contract."""
+    from omnigent.inner.codex_executor import _CodexAppServerSession
+    from omnigent.inner.codex_staging import CODEX_HOME_PREFIX
+
+    def _stage(session: _CodexAppServerSession) -> None:
+        session._codex_home_dir = pathlib.Path(
+            tempfile.mkdtemp(prefix=CODEX_HOME_PREFIX, dir=tmp_path)
+        )
+        home_stat = session._codex_home_dir.lstat()
+        session._codex_home_identity = (home_stat.st_dev, home_stat.st_ino)
+
+    monkeypatch.setattr(_CodexAppServerSession, "_stage_codex_home", _stage)
+
+
 @pytest.fixture(autouse=True)
 def _stub_executor_catalog_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep executor unit tests deterministic without catalog auth or network access."""

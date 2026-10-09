@@ -60,6 +60,38 @@ summary. This does not establish a clean whole-Windows-suite result or resolve
 unverified causes of other historical failures. The 99-name inventory below is
 retained as the earlier build's observation.
 
+## Broader-suite repair in progress
+
+The original upstream reviewed for this repair is `omnigent-ai/omnigent` main
+`ed7c5d600684c70c226ac0b87e87df0f21fbcea0`. The earlier inventories below
+remain historical observations. A completed native rerun and Linux CI proof
+are required before declaring this selection accepted.
+
+| Family | Reproduced cause and correction | Retained coverage |
+| --- | --- | --- |
+| Signer lifecycle / worker containment | Fake `/private` readiness paths are not absolute on Windows. Unrelated inline private-home checks prevented lifecycle tests from reaching worker startup. Extracted the staging method without changing its security checks; explicit fixtures replace that method only in transport/lifecycle tests. Bounded blocking-close fixture and cleanup handshake. | Worker refusal, credential exclusion, cancellation, escalation and failed-start cleanup remain portable. Real POSIX home permissions remain active on Linux. New Windows startup refusal proves no worker preparation/spawn. |
+| Codex executor / hooks / catalog / staging | Private `0700` assertions and symlink-only fixture assumptions. Portable routing/version tests use explicit staging fixture; permission tests have precise platform scope. Hooks retain exact payload assertions when copied. | Real staging tests remain POSIX; Windows refusal and real junction skill linking remain covered. Symlink-only tests skip only actual privilege error 1314. Catalog content and credential assertions are separate from POSIX file modes. |
+| Copy-on-write | Mock Linux fixtures changed shared `sys.platform` but omitted the module's OS capability check; other mocks called absent `uname`. Module-local OS/platform stand-ins keep policy tests portable. | Real unsupported-backend refusal remains. Linux keeper/xattr and namespace descriptor tests retain Linux coverage. Failure reaping and validation execute on Windows. |
+| Model authentication | POSIX provenance checks and executable shell fixtures. Real Python helpers now verify child argv/environment and process spawn options. | Ownership/mode and forked descendant tests retain POSIX scope; real cancellation/reaping remains portable. No authentication policy change. |
+| Optional Databricks tests | Four SDK-dependent tests lacked the adjacent tests' optional dependency guard. Added the same guard. | No SDK installed or provider enabled locally; standard CI can skip the optional dependency. User does not use Databricks. |
+| Grant reach / tree copy / cwd scan / bubblewrap masks / credential refresh | Symlink fixtures fail with actual Windows privilege error 1314. | Only that exact error skips; capable Windows and Linux runners still execute security checks. |
+| Pi | Real Windows npm batch wrapper truncated multiline composed instructions. Known Pi npm shims now launch their verified package entry through Node directly. Fixture retains Windows bootstrap variables and isolated user home. | All 16 real prompt variants passed locally with request/framework ordering and context assertions. Dedicated argv tests cover both npm package names, append/replace and shell metacharacters. Unknown launchers retain existing behavior. |
+| Qwen | Gateway authentication hardcoded `sh`; Windows uses existing platform shell dispatch. Mock initialized agent omitted its active model and waited 30 seconds for an unanswered switch. | Real auth success/failure/empty-token tests use portable shell commands; POSIX continues using `sh`. Initialized fixture now reports the selected model. |
+| Terminal / clipboard / wordmark | Real tmux, Unix sockets and shell fixtures require POSIX. ANSI test accidentally used Rich's legacy Windows output mode. | Portable terminal state/payload/ownership validation remains active. Native psmux required checks remain separate. ANSI fixture explicitly requests ANSI output. |
+| Runtime process cleanup | Readiness used text-mode CRLF, and child lacked its own Windows console group. | Binary readiness, owned process-group spawn, platform graceful-signal refusal and real cancellation/force-reap assertions. |
+
+Relevant original upstream history includes signer `5fa3bebe` (#6770), Windows
+junction support `83da28cd` (#6487), copy-on-write `6b87d7b5`, Pi prompt modes
+`bd607dfc` (#8349), clipboard `b9d4502b` (#7934), terminal ownership `1b1407a6`
+(#7495), and cancelled runtime cleanup `8cdefbe0` (#9106). No equivalent
+Windows private-home ACL contract was found. The existing signer refusal is
+retained; the attachment ACL implementation is not reused as a sandbox claim.
+
+A diagnostic tail run completed before the later repairs: 1,425 passed,
+78 failed, 65 skipped and 128 deselected, with two passing subtests in 527.41s.
+Its failures exposed the additional terminal, Pi, Qwen and process fixtures
+above; this intermediate result is not a final acceptance result.
+
 ## Observed failures before the timeout
 
 ```text

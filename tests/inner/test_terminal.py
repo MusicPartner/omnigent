@@ -1824,6 +1824,7 @@ async def test_is_alive_false_when_probe_communication_fails(
         "test",
     ],
 )
+@pytest.mark.posix_only(reason="real tmux uses POSIX sockets and shell scripts")
 async def test_launch_preserves_prompt_and_following_args_real_tmux(
     tmp_path: Path, short_tmp_parent: Path, prompt: str, start_on_attach: bool
 ) -> None:
@@ -1867,6 +1868,7 @@ async def test_launch_preserves_prompt_and_following_args_real_tmux(
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="requires a real tmux binary")
 @pytest.mark.parametrize("exit_status", [0, 255])
 @pytest.mark.asyncio
+@pytest.mark.posix_only(reason="real tmux uses POSIX sockets and shell scripts")
 async def test_server_survives_inner_process_exit_real_tmux(
     tmp_path: Path, short_tmp_parent: Path, exit_status: int
 ) -> None:
@@ -1954,6 +1956,7 @@ async def test_server_survives_inner_process_exit_real_tmux(
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="requires a real tmux binary")
 @pytest.mark.parametrize("height", [24, 40, 41, 45, 60])
 @pytest.mark.parametrize("width", [20, 80])
+@pytest.mark.posix_only(reason="real tmux uses POSIX sockets and shell scripts")
 async def test_exit_history_preserves_error_in_tall_pane_real_tmux(
     tmp_path: Path, short_tmp_parent: Path, height: int, width: int
 ) -> None:
@@ -1999,6 +2002,7 @@ async def test_exit_history_preserves_error_in_tall_pane_real_tmux(
 
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="requires a real tmux binary")
 @pytest.mark.parametrize("detection", ["is_alive", "async_watcher", "threaded_watcher"])
+@pytest.mark.posix_only(reason="real tmux uses POSIX sockets and shell scripts")
 async def test_exit_history_retains_scrolled_startup_error_real_tmux(
     tmp_path: Path,
     short_tmp_parent: Path,
@@ -2063,6 +2067,7 @@ async def test_exit_history_retains_scrolled_startup_error_real_tmux(
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="requires a real tmux binary")
 @pytest.mark.parametrize("detection", ["is_alive", "async_watcher", "threaded_watcher"])
 @pytest.mark.parametrize("scrollback", [10000, 101])
+@pytest.mark.posix_only(reason="real tmux uses POSIX sockets and shell scripts")
 async def test_exit_history_omits_wrapped_credential_without_its_prefix_real_tmux(
     tmp_path: Path,
     short_tmp_parent: Path,

@@ -67,7 +67,14 @@ class TestCopyTree(unittest.TestCase):
     def test_symlinks_are_copied_as_symlinks(self):
         self.src.mkdir()
         (self.src / "target.txt").write_text("target")
-        (self.src / "link.txt").symlink_to("target.txt")
+        try:
+            (self.src / "link.txt").symlink_to("target.txt")
+        except OSError as exc:
+            if os.name == "nt" and exc.winerror == 1314:
+                self.skipTest(
+                    "Windows symlink creation requires Developer Mode or symlink privilege"
+                )
+            raise
 
         _copy_tree(self.src, self.dst)
         self.assertTrue((self.dst / "link.txt").is_symlink())

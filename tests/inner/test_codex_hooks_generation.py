@@ -27,6 +27,25 @@ from omnigent.inner.codex_executor import (
 )
 from omnigent.inner.hook_scripts.subagent_router import REQUEST_TIMEOUT_S
 
+
+def _symlinks_available(tmp_path: Path) -> bool:
+    source = tmp_path / "symlink-probe-source"
+    source.write_text("probe")
+    try:
+        (tmp_path / "symlink-probe-link").symlink_to(source)
+    except OSError as exc:
+        if sys.platform == "win32" and exc.winerror == 1314:
+            return False
+        raise
+    return True
+
+
+@pytest.fixture
+def codex_hooks_symlink_support(tmp_path: Path) -> None:
+    if not _symlinks_available(tmp_path):
+        pytest.skip("Windows account lacks symlink privilege (WinError 1314)")
+
+
 _USER_HOOKS = {
     "hooks": {
         "PreToolUse": [{"hooks": [{"type": "command", "command": "user-pre"}]}],
@@ -107,6 +126,7 @@ def test_merge_user_hooks_tolerates_malformed_user_file(tmp_path: Path) -> None:
     assert merge_codex_user_hooks(payload, user_hooks) == payload
 
 
+@pytest.mark.usefixtures("codex_hooks_symlink_support")
 def test_write_router_hooks_file_replaces_symlink_and_merges(tmp_path: Path) -> None:
     source = _write_user_home(tmp_path, hooks=_USER_HOOKS)
     codex_home = tmp_path / "private"
@@ -140,10 +160,11 @@ def test_populate_skips_hooks_symlink_when_hooks_are_injected(tmp_path: Path) ->
     _populate_codex_home_config(codex_home, source, inject_hooks=True)
 
     assert not (codex_home / "hooks.json").exists()
-    assert (codex_home / "auth.json").is_symlink()
+    assert (codex_home / "auth.json").is_symlink() == _symlinks_available(tmp_path)
     assert (codex_home / "config.toml").is_file()
 
 
+@pytest.mark.usefixtures("codex_hooks_symlink_support")
 def test_populate_symlinks_hooks_when_none_are_injected(tmp_path: Path) -> None:
     source = _write_user_home(tmp_path, hooks=_USER_HOOKS)
     codex_home = tmp_path / "private"
@@ -278,6 +299,7 @@ def _start_app_server(
     return captured[0]
 
 
+@pytest.mark.usefixtures("mock_codex_session_home")
 def test_app_server_argv_carries_no_hook_trust_flag(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -301,13 +323,15 @@ def test_app_server_argv_carries_no_hook_trust_flag(
     assert "--session-id conv_abc" in payload["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
 
 
+@pytest.mark.usefixtures("mock_codex_session_home")
 def test_app_server_keeps_symlinked_hooks_when_routing_off(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     argv, hooks = _start_app_server(tmp_path, monkeypatch, env={})
 
     assert argv[:2] == ("/bin/echo", "app-server")
-    assert hooks.is_symlink
+    assert hooks.is_symlink == _symlinks_available(tmp_path)
+    assert hooks.payload == _USER_HOOKS
 
 
 # ── The three codex session classes (SDK arm) ───────────────────────
@@ -328,6 +352,7 @@ def test_app_server_keeps_symlinked_hooks_when_routing_off(
 # gets the spawn-routing hook too.
 
 
+@pytest.mark.usefixtures("mock_codex_session_home")
 def test_a_plain_codex_session_gets_no_probe_and_keeps_its_hooks_symlink(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -338,11 +363,12 @@ def test_a_plain_codex_session_gets_no_probe_and_keeps_its_hooks_symlink(
     assert probes == []
     assert not home.catalog_written
     assert not home.config_names_catalog
-    assert home.is_symlink
+    assert home.is_symlink == _symlinks_available(tmp_path)
     # The file codex reads is the user's own, byte for byte.
     assert home.payload == _USER_HOOKS
 
 
+@pytest.mark.usefixtures("mock_codex_session_home")
 def test_a_pinned_smart_routing_codex_session_gets_the_catalog_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -358,11 +384,12 @@ def test_a_pinned_smart_routing_codex_session_gets_the_catalog_only(
     assert probes == ["/bin/codex"]
     assert home.catalog_written
     assert home.config_names_catalog
-    # No hooks were injected, so the user's file is still the live one.
-    assert home.is_symlink
+    # No hooks were injected; the user's hooks survive linking or copying.
+    assert home.is_symlink == _symlinks_available(tmp_path)
     assert home.payload == _USER_HOOKS
 
 
+@pytest.mark.usefixtures("mock_codex_session_home")
 def test_an_auto_harness_codex_session_gets_the_catalog_and_the_spawn_gate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -399,6 +426,7 @@ def test_an_auto_harness_codex_session_gets_the_catalog_and_the_spawn_gate(
 # than in the launch check so an older codex still launches.
 
 
+@pytest.mark.usefixtures("mock_codex_session_home")
 def test_an_old_codex_cli_registers_no_spawn_gate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -416,12 +444,13 @@ def test_an_old_codex_cli_registers_no_spawn_gate(
             codex_version="0.139.0",
         )
 
-    # Routing no-ops: the user's own hooks file is still the live one.
-    assert home.is_symlink
+    # Routing no-ops: the user's own hooks remain intact.
+    assert home.is_symlink == _symlinks_available(tmp_path)
     assert home.payload == _USER_HOOKS
     assert "smart routing spawn gate disabled" in caplog.text
 
 
+@pytest.mark.usefixtures("mock_codex_session_home")
 def test_a_new_enough_codex_cli_registers_the_spawn_gate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -463,6 +492,7 @@ def test_the_routing_hook_floor_reads_the_probed_version(
         assert "smart routing spawn gate disabled" in reason
 
 
+@pytest.mark.usefixtures("mock_codex_session_home")
 def test_an_old_codex_cli_keeps_the_sdk_harness_hooks_symlinked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -496,7 +526,7 @@ def test_an_old_codex_cli_keeps_the_sdk_harness_hooks_symlinked(
         asyncio.run(session.start())
 
     assert seen, "the app-server was never launched"
-    assert seen[0].is_symlink
+    assert seen[0].is_symlink == _symlinks_available(tmp_path)
     assert seen[0].payload == _USER_HOOKS
 
 

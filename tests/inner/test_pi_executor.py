@@ -1950,6 +1950,14 @@ def test_gateway_seeds_managed_settings_from_global_agent(
         encoding="utf-8",
     )
     (global_agent / "npm").mkdir()
+    probe = tmp_path / "symlink-probe"
+    try:
+        probe.symlink_to(global_agent / "npm", target_is_directory=True)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows symlink privilege is required for Pi resource linking")
+        raise
+    probe.unlink()
     monkeypatch.setattr(
         "omnigent.inner.pi_settings.DEFAULT_PI_AGENT_DIR",
         global_agent,

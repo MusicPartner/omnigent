@@ -58,6 +58,24 @@ from omnigent.models.model_fallbacks import CODEX_DEFAULT_MODEL
 from omnigent.native import _native_forwarder_health as native_forwarder_health
 
 
+def _codex_symlinks_available(tmp_path: Path) -> bool:
+    source = tmp_path / "symlink-probe-source"
+    source.write_text("probe")
+    try:
+        (tmp_path / "symlink-probe-link").symlink_to(source)
+    except OSError as exc:
+        if sys.platform == "win32" and exc.winerror == 1314:
+            return False
+        raise
+    return True
+
+
+@pytest.fixture
+def codex_executor_symlink_support(tmp_path: Path) -> None:
+    if not _codex_symlinks_available(tmp_path):
+        pytest.skip("Windows account lacks symlink privilege (WinError 1314)")
+
+
 def _run(coro):
     loop = asyncio.new_event_loop()
     try:
@@ -1343,6 +1361,7 @@ class TestCodexExecutor(unittest.TestCase):
 
         _run(_t())
 
+    @pytest.mark.usefixtures("mock_codex_session_home")
     def test_app_server_uses_workspace_cwd(self):
         async def _t():
             fake_proc = _FakeProcess()
@@ -1375,6 +1394,7 @@ class TestCodexExecutor(unittest.TestCase):
 
         _run(_t())
 
+    @pytest.mark.posix_only
     def test_app_server_uses_isolated_codex_home_and_cleans_it_up(self):
         """Codex subprocess must receive a private CODEX_HOME, not ~/.codex/."""
 
@@ -3233,7 +3253,10 @@ def test_populate_codex_skills_all(tmp_path: Path) -> None:
     # (host-only) — the failure message would name the missing
     # entry.
     assert sorted(p.name for p in target.iterdir()) == ["alpha", "beta", "gamma"]
-    assert all((target / name).is_symlink() for name in ["alpha", "beta", "gamma"])
+    assert all(
+        (target / name).is_symlink() or (target / name).is_junction()
+        for name in ["alpha", "beta", "gamma"]
+    )
 
 
 def test_populate_codex_skills_none(tmp_path: Path) -> None:
@@ -3350,6 +3373,7 @@ def test_populate_codex_skills_copy_mode_materializes_real_directories(
 
 
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="requires symlink support")
+@pytest.mark.usefixtures("codex_executor_symlink_support")
 def test_populate_codex_skills_copy_mode_keeps_skill_symlinks_as_links(
     tmp_path: Path,
 ) -> None:
@@ -3380,6 +3404,7 @@ def test_populate_codex_skills_copy_mode_keeps_skill_symlinks_as_links(
 
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="requires symlink support")
 @pytest.mark.parametrize("linked_entry", ["skill_dir", "skills_root"])
+@pytest.mark.usefixtures("codex_executor_symlink_support")
 def test_populate_codex_skills_copy_mode_never_materializes_linked_skills(
     tmp_path: Path, linked_entry: str
 ) -> None:
@@ -3596,6 +3621,7 @@ def test_populate_codex_skills_from_bundle_none_leaves_no_dir(tmp_path: Path) ->
         "credential-helper --token sk-sentinel-do-not-use",
     ],
 )
+@pytest.mark.usefixtures("mock_codex_session_home")
 async def test_embedded_codex_materializes_provider_auth_outside_argv(
     tmp_path: Path,
     auth_command: str,
@@ -3666,6 +3692,7 @@ async def test_embedded_codex_materializes_provider_auth_outside_argv(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("codex_executor_symlink_support")
 def test_populate_codex_home_config_symlinks_auth_and_config(tmp_path: Path) -> None:
     """``auth.json`` is symlinked; ``config.toml`` is copied (not symlinked).
 
@@ -3700,6 +3727,7 @@ def test_populate_codex_home_config_symlinks_auth_and_config(tmp_path: Path) -> 
     assert (target / "config.toml").read_text() == '[default]\nmodel = "gpt-5.4"'
 
 
+@pytest.mark.usefixtures("codex_executor_symlink_support")
 def test_populate_codex_home_config_symlinks_remote_mcp_oauth(tmp_path: Path) -> None:
     """``.credentials.json`` and its lock dir are symlinked, not left behind.
 
@@ -3728,6 +3756,7 @@ def test_populate_codex_home_config_symlinks_remote_mcp_oauth(tmp_path: Path) ->
     assert (target / "mcp-oauth-locks" / "file-store.lock").is_file()
 
 
+@pytest.mark.usefixtures("codex_executor_symlink_support")
 def test_populate_codex_home_config_symlinks_memories(tmp_path: Path) -> None:
     """``memories_1.sqlite``, ``memories/``, and ``rules/`` are symlinked.
 
@@ -3763,6 +3792,7 @@ def test_populate_codex_home_config_symlinks_memories(tmp_path: Path) -> None:
     ).read_text() == 'prefix_rule(pattern=["git"], decision="allow")'
 
 
+@pytest.mark.usefixtures("codex_executor_symlink_support")
 def test_populate_codex_home_config_symlinks_plugins_cache(tmp_path: Path) -> None:
     """``plugins/cache`` is symlinked to the shared home to dedupe it.
 
@@ -3833,7 +3863,8 @@ def test_populate_codex_home_config_minimal_mode_keeps_only_provider_routing(
 
     _populate_codex_home_config(target, source)
 
-    assert (target / "auth.json").is_symlink()
+    assert (target / "auth.json").is_symlink() == _codex_symlinks_available(tmp_path)
+    assert (target / "auth.json").read_text() == (source / "auth.json").read_text()
     assert not (target / "AGENTS.md").exists()
     config_text = (target / "config.toml").read_text()
     assert 'model_provider = "Databricks"' in config_text
@@ -3996,6 +4027,7 @@ def test_populate_codex_home_config_missing_source_dir(tmp_path: Path) -> None:
     assert list(target.iterdir()) == []
 
 
+@pytest.mark.usefixtures("codex_executor_symlink_support")
 def test_populate_codex_home_config_symlinks_hooks_json(tmp_path: Path) -> None:
     """``hooks.json`` is symlinked so user hooks fire inside the private home."""
     from omnigent.inner.codex_executor import _populate_codex_home_config
@@ -4049,7 +4081,8 @@ def test_populate_codex_home_config_partial_files(tmp_path: Path) -> None:
 
     _populate_codex_home_config(target, source)
 
-    assert (target / "auth.json").is_symlink()
+    assert (target / "auth.json").is_symlink() == _codex_symlinks_available(tmp_path)
+    assert (target / "auth.json").read_text() == (source / "auth.json").read_text()
     assert not (target / "config.toml").exists()
 
 
@@ -4064,6 +4097,7 @@ def test_populate_codex_home_config_partial_files(tmp_path: Path) -> None:
         (None, False),
     ],
 )
+@pytest.mark.usefixtures("mock_codex_session_home")
 def test_app_server_negotiates_direct_tools_from_server_version(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -4127,6 +4161,7 @@ def test_app_server_negotiates_direct_tools_from_server_version(
     _run(_t())
 
 
+@pytest.mark.usefixtures("mock_codex_session_home")
 def test_app_server_start_uses_real_home_for_private_inherited_codex_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -4144,6 +4179,7 @@ def test_app_server_start_uses_real_home_for_private_inherited_codex_home(
         inherited ``CODEX_HOME``.
     :returns: None.
     """
+    symlinks_available = _codex_symlinks_available(tmp_path)
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
@@ -4178,7 +4214,7 @@ def test_app_server_start_uses_real_home_for_private_inherited_codex_home(
             assert recorded_env is not None
             target_at_spawn = Path(recorded_env["CODEX_HOME"])
             assert target_at_spawn != inherited
-            assert (target_at_spawn / "auth.json").is_symlink()
+            assert (target_at_spawn / "auth.json").is_symlink() == symlinks_available
             assert not (target_at_spawn / "config.toml").is_symlink()
             assert (target_at_spawn / "config.toml").is_file()
             assert (target_at_spawn / "auth.json").read_text() == '{"auth_mode": "api_key"}'
@@ -4209,6 +4245,8 @@ def test_app_server_start_uses_real_home_for_private_inherited_codex_home(
     _run(_t())
 
 
+@pytest.mark.usefixtures("mock_codex_session_home")
+@pytest.mark.usefixtures("codex_executor_symlink_support")
 def test_app_server_start_preserves_custom_home_from_inherited_private_symlink(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -4227,6 +4265,7 @@ def test_app_server_start_preserves_custom_home_from_inherited_private_symlink(
     """
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     custom_home = tmp_path / "custom-codex-home"
     custom_home.mkdir()
     (custom_home / "auth.json").write_text('{"auth_mode": "custom"}')
@@ -5046,6 +5085,7 @@ class TestCodexAppServerSessionHomeStaging(unittest.TestCase):
 
         return _run(_t())
 
+    @pytest.mark.posix_only
     def test_start_stages_home_under_the_staging_root_not_cwd(self):
         """A writable cwd must NOT host the codex home: staging inside the
         workspace dirties the user's clone and hides the published skill
@@ -5060,6 +5100,7 @@ class TestCodexAppServerSessionHomeStaging(unittest.TestCase):
             self.assertEqual(dir_used, str(codex_home_staging_root()))
             self.assertFalse(dir_used.startswith(writable_dir))
 
+    @pytest.mark.posix_only
     def test_start_falls_back_to_tempdir_when_staging_root_uncreatable(self):
         """An uncreatable staging root must not break session start — the
         home falls back to the plain system temp directory.
@@ -5112,13 +5153,14 @@ class TestCodexAppServerSessionHomeStaging(unittest.TestCase):
 
         _run(_t())
 
+    @pytest.mark.usefixtures("mock_codex_session_home")
     def test_start_stages_empty_skills_before_worker_spawn_when_disabled(self):
         """Disabled skills still have a real directory to mount read-only."""
 
         def _check(codex_home: Path) -> None:
             skills = codex_home / "skills"
             self.assertTrue(skills.is_dir())
-            self.assertTrue(skills.is_symlink())
+            self.assertTrue(skills.is_symlink() or skills.is_junction())
             self.assertTrue(skills.resolve().name.startswith("omnigent-codex-skills-"))
             self.assertEqual(list(skills.iterdir()), [])
 
@@ -5149,6 +5191,7 @@ class TestCodexAppServerSessionHomeStaging(unittest.TestCase):
             ):
                 self._start_until_worker_spawn(_check, bundle_dir=bundle, skills_filter=["alpha"])
 
+    @pytest.mark.usefixtures("mock_codex_session_home")
     def test_start_copies_skills_into_the_home_when_no_link_is_possible(self):
         """Without any directory link, Codex must still start and discover the
         bundle's skills, and the degraded sandbox visibility must be reported.
@@ -5539,5 +5582,26 @@ def test_run_turn_clears_stale_gateway_error_at_turn_start():
         # normally rather than fast-failing on it.
         assert any(isinstance(e, TurnComplete) for e in events), events
         assert not any(isinstance(e, ExecutorError) for e in events), events
+
+    _run(_t())
+
+
+@pytest.mark.windows_only
+def test_app_server_refuses_home_without_posix_privacy_before_worker_spawn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows mode bits cannot establish the private-home security contract."""
+    monkeypatch.setattr("omnigent.inner.codex_executor.codex_home_staging_root", lambda: tmp_path)
+    session = _CodexAppServerSession(
+        codex_path="unused-codex", cwd=str(tmp_path), env={}, tool_executor=None
+    )
+    spawn = AsyncMock()
+    monkeypatch.setattr("omnigent.inner.codex_executor._create_subprocess_exec", spawn)
+
+    async def _t() -> None:
+        with pytest.raises(OSError, match="unsafe signer CODEX_HOME"):
+            await session.start()
+        spawn.assert_not_awaited()
+        assert not list(tmp_path.glob("omnigent-codex-home-*"))
 
     _run(_t())

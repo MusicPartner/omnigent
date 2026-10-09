@@ -49,6 +49,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, NotRequired, Protocol, TypeAlias, TypedDict, cast
 from urllib.parse import urlparse as _urlparse
 
+from omnigent._platform import IS_WINDOWS
 from omnigent.harnesses.pi_native.credentials import (
     _databricks_workspace_url_for_gateway,
     _is_databricks_ai_gateway_url,
@@ -1022,6 +1023,43 @@ def _databricks_model_wire_catalog(
     return catalog
 
 
+def _pi_spawn_argv(pi_path: str, env: Mapping[str, str]) -> list[str]:
+    """Invoke a recognized Windows npm Pi shim through Node without batch parsing."""
+    shim = pathlib.Path(pi_path)
+    if not IS_WINDOWS or shim.suffix.lower() not in {".cmd", ".bat"} or shim.stem.lower() != "pi":
+        return [pi_path]
+    try:
+        shim_text = shim.read_text(encoding="utf-8").replace("\\", "/")
+    except (OSError, UnicodeError):
+        return [pi_path]
+    for package_name in ("@earendil-works/pi-coding-agent", "@mariozechner/pi-coding-agent"):
+        package_root = shim.parent / "node_modules" / package_name
+        try:
+            metadata = json.loads((package_root / "package.json").read_text(encoding="utf-8"))
+            if not isinstance(metadata, dict) or not isinstance(metadata.get("bin"), dict):
+                continue
+            entry = metadata["bin"].get("pi")
+            if not isinstance(entry, str):
+                continue
+            script = (package_root / entry).resolve()
+            if not script.is_relative_to(package_root.resolve()) or not script.is_file():
+                continue
+            if f"/node_modules/{package_name}/{entry}" not in shim_text:
+                continue
+        except (OSError, ValueError, UnicodeError):
+            continue
+        adjacent_node = shim.parent / "node.exe"
+        node = (
+            str(adjacent_node)
+            if adjacent_node.is_file()
+            else shutil.which("node.exe", path=env.get("PATH", ""))
+        )
+        if node:
+            # cmd.exe truncates multiline arguments and expands shell metacharacters.
+            return [node, str(script)]
+    return [pi_path]
+
+
 async def _create_subprocess_exec(*args: Any, **kwargs: Any) -> asyncio.subprocess.Process:  # type: ignore[explicit-any]
     """
     Indirection point for ``asyncio.create_subprocess_exec``.
@@ -1121,7 +1159,7 @@ class _PiRpcSession:
         :param extra_args: Extra CLI tokens (``--extension``,
             ``--tools``, ...). ``None`` appends nothing.
         """
-        args = [pi_path, "--mode", "rpc", "--no-session"]
+        args = [*_pi_spawn_argv(pi_path, env), "--mode", "rpc", "--no-session"]
         if model:
             pi_coding_agent_dir = env.get("PI_CODING_AGENT_DIR")
             args.extend(

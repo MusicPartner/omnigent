@@ -48,6 +48,7 @@ def _executor_for_agent() -> QwenExecutor:
     ex = QwenExecutor(model=spec.executor.model)
     ex._initialized = True
     ex._session_id = _SESSION_ID
+    ex._active_model = spec.executor.model
     ex._proc = MagicMock()
     ex._proc.returncode = None
     return ex

@@ -381,7 +381,7 @@ def test_a_users_own_catalog_choice_wins(tmp_path: Path) -> None:
     assert config.read_text() == 'model_catalog_json = "/mine.json"\n'
 
 
-def test_required_brokered_catalog_is_bundled_private_and_credential_free(
+def test_required_brokered_catalog_is_bundled_and_credential_free(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -413,12 +413,28 @@ def test_required_brokered_catalog_is_bundled_private_and_credential_free(
     assert "HTTP_PROXY" not in env
     assert "HTTPS_PROXY" not in env
     assert json.loads(catalog_path.read_text()) == _catalog()
-    assert catalog_path.stat().st_mode & 0o777 == 0o600
 
     import tomllib
 
     config = tomllib.loads((tmp_path / "config.toml").read_text())
     assert config["model_catalog_json"] == str(catalog_path)
+
+
+@pytest.mark.posix_only
+def test_required_brokered_catalog_files_are_private(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class _Completed:
+        returncode = 0
+        stdout = json.dumps(_catalog()).encode()
+        stderr = b""
+
+    monkeypatch.setattr(codex_executor.subprocess, "run", lambda *a, **k: _Completed())
+
+    catalog_path = write_required_brokered_model_catalog(tmp_path, codex_path="/bin/codex")
+
+    assert tmp_path.stat().st_mode & 0o777 == 0o700
+    assert catalog_path.stat().st_mode & 0o777 == 0o600
     assert (tmp_path / "config.toml").stat().st_mode & 0o777 == 0o600
 
 

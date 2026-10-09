@@ -36,6 +36,7 @@ def test_staging_root_is_private_and_under_tempdir(isolated_tempdir: Path) -> No
         assert stat.S_IMODE(root.stat().st_mode) == 0o700
 
 
+@pytest.mark.posix_only
 def test_staging_root_tightens_a_loose_preexisting_mode(isolated_tempdir: Path) -> None:
     root = codex_home_staging_root()
     root.chmod(0o770)

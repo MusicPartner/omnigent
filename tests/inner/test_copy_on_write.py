@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import asdict, replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -85,9 +87,32 @@ def test_programmatic_configuration_cannot_bypass_backend_check(tmp_path: Path) 
 
 @pytest.fixture
 def backend(monkeypatch) -> BwrapSandboxBackend:
-    monkeypatch.setattr("omnigent.inner.bwrap_sandbox.sys.platform", "linux")
+    import os
+
+    linux_os = SimpleNamespace(**vars(os))
+    linux_os.name = "posix"
+    monkeypatch.setattr("omnigent.inner.bwrap_sandbox.os", linux_os)
+    monkeypatch.setattr("omnigent.inner.bwrap_sandbox.sys", SimpleNamespace(platform="linux"))
     monkeypatch.setattr("omnigent.inner.bwrap_sandbox.shutil.which", lambda _: "/usr/bin/bwrap")
     return BwrapSandboxBackend()
+
+
+@pytest.fixture
+def linux_os(monkeypatch):
+    import os
+
+    module_os = SimpleNamespace(**vars(os))
+    module_os.uname = lambda: SimpleNamespace(release="6.8.0-policy-blocked")
+    original_stat = os.stat
+
+    def stat(path, *args, **kwargs):
+        if str(path).startswith("/proc/") and "/ns/" in str(path):
+            return SimpleNamespace(st_ino=456)
+        return original_stat(path, *args, **kwargs)
+
+    module_os.stat = stat
+    monkeypatch.setattr("omnigent.sandbox.copy_on_write.os", module_os)
+    return module_os
 
 
 def test_persistent_parent_with_disposable_child(backend, tmp_path: Path) -> None:
@@ -131,7 +156,12 @@ def test_file_grant_cannot_persist_inside_cow(backend, tmp_path: Path) -> None:
 
 def test_resolved_alias_conflict_is_rejected(backend, tmp_path: Path) -> None:
     (tmp_path / "deps").mkdir()
-    (tmp_path / "alias").symlink_to(tmp_path / "deps", target_is_directory=True)
+    try:
+        (tmp_path / "alias").symlink_to(tmp_path / "deps", target_is_directory=True)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("symlink creation requires Windows Developer Mode or privileges")
+        raise
     spec = OSEnvSpec(sandbox=OSEnvSandboxSpec(write_paths=["alias", WritePathSpec("deps", True)]))
     with pytest.raises(ValueError, match="overlaps"):
         backend.resolve(spec, tmp_path)
@@ -212,7 +242,7 @@ def test_unprepared_policy_never_runs_with_persistent_writes(tmp_path: Path) -> 
         wrap_shared_namespace(["bwrap", "--", "sh"], _policy(tmp_path))
 
 
-def test_missing_bubblewrap_is_actionable(tmp_path, monkeypatch) -> None:
+def test_missing_bubblewrap_is_actionable(tmp_path, monkeypatch, linux_os) -> None:
     monkeypatch.setattr("omnigent.sandbox.copy_on_write.shutil.which", lambda _: None)
     environment = CopyOnWriteEnvironment([tmp_path])
     with pytest.raises(OSError, match=r"Bubblewrap.*0\.11"):
@@ -222,7 +252,7 @@ def test_missing_bubblewrap_is_actionable(tmp_path, monkeypatch) -> None:
 
 @pytest.mark.parametrize("copy_on_write", [False, True])
 def test_missing_bubblewrap_requirements_depend_on_grant(
-    backend, tmp_path, monkeypatch, copy_on_write
+    backend, tmp_path, monkeypatch, linux_os, copy_on_write
 ) -> None:
     monkeypatch.setattr("omnigent.inner.bwrap_sandbox.shutil.which", lambda _: None)
     spec = OSEnvSpec(sandbox=OSEnvSandboxSpec(write_paths=[WritePathSpec(".", copy_on_write)]))
@@ -254,7 +284,7 @@ def test_persistent_grants_never_initialize_or_probe_cow(backend, tmp_path, monk
         environment.close()
 
 
-def test_unlaunchable_bubblewrap_reports_requirements(tmp_path, monkeypatch):
+def test_unlaunchable_bubblewrap_reports_requirements(tmp_path, monkeypatch, linux_os):
     monkeypatch.setattr("omnigent.sandbox.copy_on_write.shutil.which", lambda _: "bwrap")
     monkeypatch.setattr(
         "omnigent.sandbox.copy_on_write.subprocess.Popen",
@@ -307,13 +337,12 @@ def mount_process(monkeypatch):
         "",
     ],
 )
-def test_failed_start_reaps_process(tmp_path, monkeypatch, mount_process, timeout, diagnostic):
+def test_failed_start_reaps_process(
+    tmp_path, monkeypatch, mount_process, linux_os, timeout, diagnostic
+):
     process, selector = mount_process
     process.mount_error = diagnostic
     selector.select.return_value = [] if timeout else [1]
-    monkeypatch.setattr(
-        "omnigent.sandbox.copy_on_write.os.uname", lambda: Mock(release="6.8.0-policy-blocked")
-    )
     environment = CopyOnWriteEnvironment([tmp_path])
     with pytest.raises(OSError, match="Timed out" if timeout else "kernel") as error:
         environment.prepare(_policy(tmp_path))
@@ -331,10 +360,8 @@ def test_failed_start_reaps_process(tmp_path, monkeypatch, mount_process, timeou
 
 
 def test_keeper_checks_tmpfs_xattrs_before_reporting_ready(
-    tmp_path, monkeypatch, mount_process, capsys
+    tmp_path, monkeypatch, mount_process, linux_os, capsys
 ):
-    import os
-
     from omnigent.sandbox.copy_on_write import _run_keeper
 
     process, _ = mount_process
@@ -343,7 +370,7 @@ def test_keeper_checks_tmpfs_xattrs_before_reporting_ready(
         environment.prepare(_policy(tmp_path))
     assert process.argv[-3:-1] == ["omnigent.sandbox.copy_on_write", "--keeper"]
     xattr = Mock(side_effect=OSError("tmpfs user xattrs unavailable"))
-    monkeypatch.setattr(os, "setxattr", xattr, raising=False)
+    linux_os.setxattr = xattr
     with pytest.raises(OSError, match="tmpfs user xattrs unavailable"):
         _run_keeper(str(tmp_path))
     xattr.assert_called_once()
@@ -351,16 +378,18 @@ def test_keeper_checks_tmpfs_xattrs_before_reporting_ready(
 
 
 def test_keeper_rejects_missing_xattr_support(tmp_path, monkeypatch, capsys):
-    import os
-
     from omnigent.sandbox.copy_on_write import _run_keeper
 
-    monkeypatch.delattr(os, "setxattr", raising=False)
+    monkeypatch.setattr("omnigent.sandbox.copy_on_write.os", SimpleNamespace())
     with pytest.raises(OSError, match="requires Linux extended attribute support"):
         _run_keeper(str(tmp_path))
     assert capsys.readouterr().out == ""
 
 
+@pytest.mark.posix_only(reason="the keeper subprocess requires Linux tmpfs user xattrs")
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux"), reason="the keeper acceptance test requires Linux tmpfs"
+)
 def test_keeper_entrypoint_reports_ready_and_exits_on_owner_eof(tmp_path):
     import os
     import subprocess
@@ -380,24 +409,20 @@ def test_keeper_entrypoint_reports_ready_and_exits_on_owner_eof(tmp_path):
     assert int(result.stdout.strip()) > 0
 
 
-def test_working_kernel_backport_is_accepted(tmp_path, monkeypatch, mount_process):
+def test_working_kernel_backport_is_accepted(tmp_path, monkeypatch, mount_process, linux_os):
     import io
 
     process, _ = mount_process
     process.stdout = io.StringIO("123\n")
-    monkeypatch.setattr(
-        "omnigent.sandbox.copy_on_write.os.uname", lambda: Mock(release="5.4.0-backport")
-    )
-    import os
-
-    original_stat = os.stat
+    linux_os.uname = lambda: Mock(release="5.4.0-backport")
+    original_stat = linux_os.stat
 
     def stat(path, *args, **kwargs):
         if str(path).startswith("/proc/123/ns/"):
             return Mock(st_ino=456)
         return original_stat(path, *args, **kwargs)
 
-    monkeypatch.setattr("omnigent.sandbox.copy_on_write.os.stat", stat)
+    linux_os.stat = stat
     environment = CopyOnWriteEnvironment([tmp_path])
     policy = _policy(tmp_path)
     try:
@@ -407,6 +432,10 @@ def test_working_kernel_backport_is_accepted(tmp_path, monkeypatch, mount_proces
         environment.close()
 
 
+@pytest.mark.posix_only(reason="namespace pinning uses Linux /proc and O_DIRECTORY descriptors")
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux"), reason="namespace pinning uses Linux /proc descriptors"
+)
 def test_stale_namespace_closes_pinned_descriptors(monkeypatch) -> None:
     from omnigent.sandbox.copy_on_write import _enter
 

@@ -2330,6 +2330,7 @@ def test_cloud_machine_auth_types_are_classified_as_sp(
     assert sp_sections == {"gcp-sa", "gcp-id", "azure-mi", "metadata"}
 
 
+@_requires_databricks_sdk
 def test_resolve_auth_for_host_prefers_user_over_gcp_service_account_first_in_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -2389,6 +2390,7 @@ def test_resolve_auth_for_host_prefers_user_over_gcp_service_account_first_in_fi
     assert any("service principal 'gcp-sa'" in m and "DEFAULT" in m for m in warnings), warnings
 
 
+@_requires_databricks_sdk
 def test_resolve_auth_for_host_env_profile_selects_sp_over_valid_user(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2449,6 +2451,7 @@ def test_section_with_explicit_empty_host_does_not_inherit_default(
     assert set(matches) == {"inherits", "DEFAULT"}
 
 
+@_requires_databricks_sdk
 def test_resolve_auth_for_host_selects_user_token_over_sp_token(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2472,6 +2475,7 @@ def test_resolve_auth_for_host_selects_user_token_over_sp_token(
     assert host == "https://example.databricks.com"
 
 
+@_requires_databricks_sdk
 def test_resolve_auth_for_host_warns_when_stale_user_falls_through_to_sp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:

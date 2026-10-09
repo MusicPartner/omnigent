@@ -443,10 +443,15 @@ class QwenExecutor(Executor):
         """
         if not self._gateway_base_url or not self._gateway_auth_command:
             return {}
+        from omnigent._platform import IS_WINDOWS, default_shell_argv
+
+        argv = (
+            default_shell_argv(self._gateway_auth_command)
+            if IS_WINDOWS
+            else ["sh", "-c", self._gateway_auth_command]
+        )
         proc = await asyncio.create_subprocess_exec(
-            "sh",
-            "-c",
-            self._gateway_auth_command,
+            *argv,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

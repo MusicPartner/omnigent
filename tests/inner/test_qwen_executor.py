@@ -2249,7 +2249,7 @@ async def test_resolve_gateway_env_runs_auth_command() -> None:
     executor = QwenExecutor(
         model="qwen/qwen3-coder",
         gateway_base_url="https://gw.example/v1",
-        gateway_auth_command="printf '%s' sk-tok-123",
+        gateway_auth_command="echo sk-tok-123",
     )
     env = await executor._resolve_gateway_env()
     assert env == {
@@ -2284,7 +2284,7 @@ async def test_resolve_gateway_env_raises_on_empty_token() -> None:
     """An auth command that prints nothing is treated as a failure."""
     executor = QwenExecutor(
         gateway_base_url="https://gw/v1",
-        gateway_auth_command="true",  # exits 0, no stdout
+        gateway_auth_command="exit 0",  # exits 0, no stdout
     )
     with pytest.raises(RuntimeError, match="empty token"):
         await executor._resolve_gateway_env()
@@ -2295,7 +2295,7 @@ async def test_resolve_gateway_env_omits_model_when_unset() -> None:
     """Without a model, only base URL + key are exported (no OPENAI_MODEL)."""
     executor = QwenExecutor(
         gateway_base_url="https://gw/v1",
-        gateway_auth_command="printf '%s' k",
+        gateway_auth_command="echo k",
     )
     env = await executor._resolve_gateway_env()
     assert env == {"OPENAI_BASE_URL": "https://gw/v1", "OPENAI_API_KEY": "k"}

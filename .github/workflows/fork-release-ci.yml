@@ -47,6 +47,36 @@ jobs:
       - name: Install focused test and lint dependencies
         run: uv sync --locked --group dev --extra tracing
 
+      - name: Portable Codex lifecycle and platform-scoped fixtures
+        run: >-
+          uv run pytest
+          tests/inner/test_model_signer_lifecycle.py
+          tests/inner/test_codex_worker_containment.py
+          tests/inner/test_codex_executor.py
+          tests/inner/test_codex_hooks_generation.py
+          tests/inner/test_codex_model_catalog.py
+          tests/inner/test_codex_staging.py
+          tests/inner/test_copy_on_write.py
+          tests/inner/test_bwrap_symlink_mask_3265.py
+          tests/inner/test_credential_refresh.py
+          tests/inner/test_cwd_scan.py
+          tests/inner/test_model_auth.py
+          tests/inner/test_databricks_executor.py
+          tests/inner/test_os_env_grant_reach.py
+          tests/inner/test_os_env_fork.py
+          tests/inner/test_pi_executor.py
+          tests/inner/test_pi_settings.py
+          tests/inner/test_pi_prompt_context.py
+          tests/inner/test_pi_windows.py
+          tests/inner/test_qwen_executor.py
+          tests/inner/test_qwen_agent_integration.py
+          tests/inner/test_terminal_clipboard.py
+          tests/inner/test_terminal_orphan_ownership.py
+          tests/inner/test_terminal.py
+          tests/inner/test_wordmark.py
+          tests/runtime/harnesses/test_process_manager.py
+          -n 0 -p no:cacheprovider -q -ra
+
       - name: Native attachment cache and Windows handle security
         run: >-
           uv run pytest
@@ -204,6 +234,36 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --group test --extra tracing
 
+      - name: Portable Codex lifecycle and platform-scoped fixtures
+        run: >-
+          uv run pytest
+          tests/inner/test_model_signer_lifecycle.py
+          tests/inner/test_codex_worker_containment.py
+          tests/inner/test_codex_executor.py
+          tests/inner/test_codex_hooks_generation.py
+          tests/inner/test_codex_model_catalog.py
+          tests/inner/test_codex_staging.py
+          tests/inner/test_copy_on_write.py
+          tests/inner/test_bwrap_symlink_mask_3265.py
+          tests/inner/test_credential_refresh.py
+          tests/inner/test_cwd_scan.py
+          tests/inner/test_model_auth.py
+          tests/inner/test_databricks_executor.py
+          tests/inner/test_os_env_grant_reach.py
+          tests/inner/test_os_env_fork.py
+          tests/inner/test_pi_executor.py
+          tests/inner/test_pi_settings.py
+          tests/inner/test_pi_prompt_context.py
+          tests/inner/test_pi_windows.py
+          tests/inner/test_qwen_executor.py
+          tests/inner/test_qwen_agent_integration.py
+          tests/inner/test_terminal_clipboard.py
+          tests/inner/test_terminal_orphan_ownership.py
+          tests/inner/test_terminal.py
+          tests/inner/test_wordmark.py
+          tests/runtime/harnesses/test_process_manager.py
+          -n 0 -p no:cacheprovider -q -ra
+
       - name: Native attachment cache and Windows handle security
         run: >-
           uv run pytest
@@ -328,14 +388,23 @@ jobs:
           tests/terminals/test_windows_command_line.py
           -n 0 -p no:cacheprovider -q
 
-      # Non-blocking, like upstream's windows.yml: v0.17.0 unit tests still
-      # assume POSIX-only APIs (os.O_DIRECTORY, signer CODEX_HOME paths).
+      # Remain diagnostic until a complete native run and Linux parity pass.
       - name: Broader Windows unit sweep (non-blocking)
         continue-on-error: true
         run: >-
           uv run pytest tests/inner tests/runtime/harnesses
           -m "not posix_only"
-          -p no:cacheprovider -vv --tb=short
+          -p no:cacheprovider -vv --tb=short -ra
+          --junitxml=broader-windows.xml
+
+      - name: Upload broader Windows test evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: broader-windows-${{ github.sha }}
+          path: broader-windows.xml
+          if-no-files-found: warn
+          retention-days: 30
 
   build-windows-artifact:
     name: Build and install Windows artifact (omni.exe)

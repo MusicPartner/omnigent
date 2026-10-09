@@ -122,6 +122,16 @@ def _entry_for(entries: list[MaskedEntry], path: Path) -> MaskedEntry | None:
     return None
 
 
+def _make_symlink(link: Path, target: Path, *, is_dir: bool = False) -> None:
+    """Skip only when Windows denies symlink creation without Developer Mode."""
+    try:
+        link.symlink_to(target, target_is_directory=is_dir)
+    except OSError as exc:
+        if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows symlink creation requires the SeCreateSymbolicLinkPrivilege")
+        raise
+
+
 # ---------------------------------------------------------------------------
 # Top-level dotfile masking + symlink defense
 # ---------------------------------------------------------------------------
@@ -391,7 +401,7 @@ def test_walker_does_not_follow_symlink_loops(tmp_path: Path) -> None:
     so the symlink itself is NOT masked — the walker just must not
     follow it for recursion.
     """
-    (tmp_path / "loop").symlink_to(tmp_path)
+    _make_symlink(tmp_path / "loop", tmp_path, is_dir=True)
     (tmp_path / "real_file").write_text("content")
     entries = _scan(tmp_path)
     assert _entry_for(entries, tmp_path / "real_file") is None

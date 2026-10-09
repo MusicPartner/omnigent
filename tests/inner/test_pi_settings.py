@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+
+import pytest
 
 from omnigent.inner.pi_settings import prepare_managed_pi_agent_dir
 
@@ -40,6 +43,14 @@ def test_prepare_managed_pi_agent_dir_copies_settings_and_symlinks_npm(
     assert written["extensions"] == ["/tmp/my-ext.ts"]
     assert written["packages"] == ["npm:@foo/bar"]
     assert written["retry"] == {"maxRetries": 5}
+    probe = managed / "symlink-probe"
+    try:
+        probe.symlink_to(global_agent / "npm", target_is_directory=True)
+    except OSError as exc:
+        if os.name == "nt" and exc.winerror == 1314:
+            pytest.skip("Windows symlink creation requires Developer Mode or symlink privilege")
+        raise
+    probe.unlink()
     assert (managed / "npm").is_symlink()
     assert (managed / "npm").resolve() == (global_agent / "npm").resolve()
 

@@ -94,6 +94,7 @@ def test_sweep_preserves_unresolvable_owner(
     assert directory.exists()
 
 
+@pytest.mark.posix_only
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is not installed")
 @pytest.mark.parametrize("ownership", ["legacy", "foreign", "dead_local"])
 def test_sweep_only_kills_real_tmux_with_proven_dead_owner(

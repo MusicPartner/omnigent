@@ -164,6 +164,8 @@ async def test_real_pi_adds_workspace_context_after_inline_prompt(
         lambda *_: {
             "PATH": os.environ["PATH"],
             "HOME": str(home_dir),
+            "USERPROFILE": str(home_dir),
+            **{key: os.environ[key] for key in ("SYSTEMROOT", "WINDIR") if key in os.environ},
             "PI_CODING_AGENT_DIR": str(agent_dir),
         },
     )
