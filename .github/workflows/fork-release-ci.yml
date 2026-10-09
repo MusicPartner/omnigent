@@ -397,8 +397,10 @@ jobs:
       # Remain diagnostic until a complete native run and Linux parity pass.
       - name: Broader Windows unit sweep (non-blocking)
         continue-on-error: true
+        env:
+          PYTHONMALLOC: debug
         run: >-
-          uv run pytest tests/inner tests/runtime/harnesses
+          uv run python -X dev -m pytest tests/inner tests/runtime/harnesses
           -m "not posix_only"
           -p no:cacheprovider -vv --tb=short -ra
           --junitxml=broader-windows.xml

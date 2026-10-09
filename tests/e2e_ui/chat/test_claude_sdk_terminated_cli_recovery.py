@@ -165,6 +165,10 @@ def test_next_turn_recovers_when_claude_cli_was_terminated(
                 match=token2,
             )
 
+            # Keep background title clients outside this recovery fault injection.
+            page.add_init_script(
+                "window.localStorage.setItem('omnigent:background-session-titles', 'off')"
+            )
             page.goto(f"{live_server}/c/{session_id}")
 
             baseline_pids = _claude_cli_pids()
