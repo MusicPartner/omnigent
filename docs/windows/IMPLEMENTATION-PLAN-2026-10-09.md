@@ -3,6 +3,11 @@
 Date: 2026-10-09. Base: `9fab092f5249d037a8c60cb35a94962a5c0c49f2` on
 `windows-parity/v0.17-integration`. The user accepted the upstream-aligned
 recommendations and requested coding delegation to GPT-6.1 Sol / GPT-6 Luna.
+Current pushed implementation: `28db4f72c973b15a96b00de29e11f3f93509c246`.
+The production UI and fresh core/client/UI SDK wheels passed the local build
+and isolated wheel checks; stamp `0.17.0 (28db4f72, built 2026-10-09T08:42:50Z)`.
+Branch CI completed successfully; detailed evidence is in
+[PARITY-NEXT-STEPS.md](PARITY-NEXT-STEPS.md#current-pass-validation).
 
 ## Outcome of this implementation pass
 
@@ -57,7 +62,7 @@ with psmux **3.3.8**. Each run preserved its start/end CLI version, exact
 The isolated `--init-only` fixture uses a dummy key and loopback endpoint without
 provider responses or real prompts. It compares production SessionStart settings
 but does not execute canonical SessionStart or prove a full conversation.
-Module/unit checks cover shared generation; branch CI remains to be recorded.
+Module/unit checks cover shared generation; branch CI completed successfully.
 The shared Windows argv parser is included in required CI; real capture is an
 explicit opt-in test against an existing native executable.
 
@@ -136,11 +141,10 @@ or repeat green checks without a new reason. Dependency/version availability
 failures must be distinguished from product failures.
 
 Direct-hook adoption passed its native transport gate; executable-launcher
-adoption remains blocked by containment. Final release validation still requires
-reviewed implementation, targeted checks, applicable pre-commit, required CI
-results on the pushed code, a local application build,
-and documented manual verification. Unsupported auth/architectures and any
-unavailable CLI matrix rows remain explicitly identified, without support claims.
+adoption remains blocked by containment. Code validation, required CI and local
+build are complete. Manual Windows behavior checks remain for the user.
+Unsupported auth/architectures and any unavailable CLI matrix rows remain
+explicitly identified, without support claims.
 
 For manual verification, start the local server and host from `omnigent-v017`,
 open a space/Unicode workspace, start Claude and exercise Terminal/Chat,

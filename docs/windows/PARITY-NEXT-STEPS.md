@@ -1,6 +1,7 @@
 # Windows parity: remaining work and decisions
 
 Research date: 2026-10-08. Branch: `windows-parity/v0.17-integration`.
+Current pushed code: `28db4f72c973b15a96b00de29e11f3f93509c246`.
 Previously validated baseline: `2d43e9d95c28d4cb623f98d3d49de1af959f90cc`.
 This record separates the new consumer fixes and blocked decisions from the
 baseline validation retained below.
@@ -42,7 +43,7 @@ with psmux **3.3.8**. Each run preserved its start/end CLI version, exact
 The isolated `--init-only` fixture uses a dummy key and loopback endpoint without
 provider responses or real prompts. It compares production SessionStart settings
 but does not execute canonical SessionStart or prove a full conversation.
-Module/unit checks cover shared generation; branch CI remains to be recorded.
+Module/unit checks cover shared generation; branch CI completed successfully.
 The shared Windows argv parser is included in required CI; real capture is an
 explicit opt-in test against an existing native executable.
 
@@ -51,18 +52,51 @@ historical. The user revoked that limit and authorized the successful resumed
 capture. Launcher containment and brokered-signer isolation remain unresolved;
 no new ARM/x86 runtime support is claimed. v0.14 remains excluded.
 
-## Current-pass local evidence
+## Current-pass validation
 
 | Check | Result and limit |
 | --- | --- |
 | Isolated x64 launcher prototype | 3 passed, including the reproducible failed-containment assertion; no runtime adoption. |
 | Package B focused native tests | 50 passed; 1 POSIX `fcntl` check deselected. Actual PowerShell popup and Git Bash status-line Unicode/stdin checks passed. |
 | Canonical bridge/policy/framework/status integration subset | 4 passed. |
-| Broader Windows bridge sweep | 507 passed, 2 skipped, 5 failures from unchanged Unix-socket harness assumptions (`server.json['socket']`). This sweep is not all green. |
+| Earlier broad Windows bridge sweep | 507 passed, 2 skipped, 5 failures from unchanged Unix-socket harness assumptions (`server.json['socket']`). This earlier sweep is not all green; it is separate from the current branch workflow below. |
 | Direct-hook real-Claude capture | 2.1.161, 2.1.266 and 2.1.295 passed with psmux 3.3.8; exact 9,283-byte settings, MCP JSON and five literal Setup-hook args; start/end versions matched. Setup-only scope, not a full conversation. |
+| Local production build | UI packaged 519 files including index; fresh core/client/UI SDK wheels all 0.17.0. Stamp: `0.17.0 (28db4f72, built 2026-10-09T08:42:50Z)`. |
+| Clean isolated wheel install | Server app, Windows hooks/status/shell, shared observer and both SDK imports passed outside the checkout; `omni`/`omnigent --help` and `--version` passed. Editable environment preserved. |
+| Applicable pre-commit hooks | Passed on the staged parity documentation files. |
 
-Final build and branch-CI results are not yet recorded for this pass. The
-validated baseline table below does not cover these new edits.
+The following workflows target pushed code `28db4f72c973b15a96b00de29e11f3f93509c246`.
+All completed successfully. The older baseline validation below does not cover
+these edits.
+
+| Branch workflow | Status |
+| --- | --- |
+| [Fork release validation](https://github.com/MusicPartner/omnigent/actions/runs/37906485467) | Success; native Windows compatibility, focused Linux compatibility and Windows artifact build jobs passed. Windows imports/CLI smoke, upstream hard tests, stable subset, hook/shell consumer tests, psmux backend tests and argv helper steps passed. The broad sweep step metadata says success, but its raw test summary is unavailable with current GitHub permissions. |
+| [Integration](https://github.com/MusicPartner/omnigent/actions/runs/37906672686) | Success; integration and security gate jobs passed. |
+| [E2E](https://github.com/MusicPartner/omnigent/actions/runs/37906676224) | Success; setup and security gate passed, and all 4/4 E2E test shards passed. |
+| [E2E UI](https://github.com/MusicPartner/omnigent/actions/runs/37906679337) | Success; setup, browser contract and sidecar build passed, and all 10/10 UI test shards passed. |
+| [Docker](https://github.com/MusicPartner/omnigent/actions/runs/37906708091) | Docker build and security gate passed; image publishing was skipped (`publish=false`). |
+
+All five runs report attempt 1 and the same commit SHA; no workflow-level rerun
+was made. The workflow/job metadata confirms terminal conclusions and shard/job
+outcomes. GitHub's raw job-log endpoint returned HTTP 403 (admin rights
+required), so the broad Windows sweep's pytest totals and any internal pytest
+retry counts could not be independently read. Its step conclusion is reported
+as success; no more detailed test-count or flakiness claim is made here.
+
+### Next launcher decision
+
+The executable remains deferred. Choose a prototype direction after explicitly
+reviewing its ownership contract; neither option below has been implemented.
+
+| Direction | Benefit | Cost and proof required |
+| --- | --- | --- |
+| **Recommended: native stub owns a private job** | Preserves the filename-only SDK API and avoids migrating every caller; stub termination can close its private job and kill the child tree. | Adds containment ownership and maintained native assets. Prove creation-time assignment, nested host jobs, SDK cancellation, packaging/signing and native x64 execution. |
+| Parent-coordinated spawn/SDK integration | Keeps job ownership wholly with the parent and assigns the exact job before launcher execution. | Requires coordinated suspended/creation-time spawning, resume and failure cleanup across callers and the SDK; broader maintenance surface. |
+
+The detailed [assessment](#follow-up-a-filename-compatible-native-containment-owner)
+explains the suspended-orphan window and why any-job polling is insufficient.
+Both options preserve credential refusals and add no filesystem/network isolation.
 
 ## Completed audit items
 
@@ -72,7 +106,7 @@ validated baseline table below does not cover these new edits.
 | Filesystem probe through `cmd /c`, including spaced Python paths | Probe uses direct executable/argument launch through the OS environment helper in `1f40f896c`. |
 | Claude npm batch shim forwarding | Native executable lookup in psmux and Claude SDK paths, including rejection of npm script placeholders. |
 | Bare tmux control calls on Windows | Bridge, attach/preflight, cost popups and WebSocket pane liveness select psmux on Windows; POSIX uses tmux. |
-| psmux JSON argument handling | Real psmux/Python-child test proves exact JSON, quotes, percent, semicolons, spaces, Unicode, cwd and environment removal. Real Claude 2.1.294 Win32 capture also passed for settings-file and full inline JSON transport; automated version-matrix coverage remains. |
+| psmux JSON argument handling | Real psmux/Python-child test proves exact JSON, quotes, percent, semicolons, spaces, Unicode, cwd and environment removal. Real Claude 2.1.294 Win32 capture also passed for settings-file and full inline JSON transport; CI argv parser and transport tests pass. Direct-hook captures cover Claude 2.1.161, 2.1.266 and 2.1.295. |
 | Exit status verification | psmux 3.3.8 reports constant zero placeholders. Windows callers now report unknown status rather than false success; standalone Python launcher still preserves return code 37. |
 
 The failed UI reconnect journey counted its expected undelivered-message notice
@@ -407,7 +441,7 @@ kills the helper. Existing POSIX provenance and descendant tests must remain.
    preserve the filename API and explicitly agree on containment ownership.
 2. Retain the adopted direct command + args hooks and repeatable opt-in capture.
    Keep Setup/argv evidence distinct from a full SessionStart/conversation
-   journey and record final branch-CI/build results when available.
+journey; branch CI and the local production build are recorded above.
 3. Run applicable pre-commit and unaffected validation when their implementation
    is ready. Record resumed capture results separately from baseline CI. Publish
    or claim final builds only after the changed behavior has the required proof.
@@ -418,12 +452,12 @@ or claim a fix merely because a retry passed. v0.14 remains outside this work.
 
 ## Published history and future updates
 
-The v0.14 worktree and published v0.14 branches were not changed. The process
-launch changes in `1f40f896c` were included with the user's prior approval; this
-follow-up implementation is the normal commit `2d43e9d95`. No PR to main was
-opened and no published history was rewritten. If the follow-up needs rollback,
-use a normal `git revert 2d43e9d95c28d4cb623f98d3d49de1af959f90cc` on the intended
-branch after reviewing the resulting diff, then validate and push that commit.
+The v0.14 worktree and published branches remain unchanged. The earlier process
+launch changes were `1f40f896c`, followed by the validated baseline commit
+`2d43e9d95`. The current hook/consumer implementation is the normal pushed
+commit `28db4f72c973b15a96b00de29e11f3f93509c246`. No PR to main was opened and
+published history was not rewritten. Any rollback should select the intended
+change after reviewing its diff and use a normal revert followed by validation.
 
 For subsequent upstream releases, follow
 [the fork maintenance workflow](../../.github/FORK_MAINTENANCE.md): ingest a
@@ -432,14 +466,23 @@ modules/caller seams, review conflicts deliberately, and validate before an
 agreed merge. Keep the launcher, shell and auth decisions recorded here with
 any supported dependency versions so they can be checked during each update.
 
-## Local build ready for test running
+## Local application build
 
-The production web UI, core wheel and both Python SDK wheels were built locally
-from implementation `2d43e9d95` on 2026-10-08. The core build stamp reports
-`0.17.0 (2d43e9d9, built 2026-10-08T19:35:18Z)`. Built wheels are retained in
-`dist/windows-parity-local/`; the production web bundle is in
-`omnigent/server/static/web-ui/`. These generated outputs are ignored by Git.
-The existing editable virtual environment uses the built UI and current source.
+The production web UI and fresh core/client/UI SDK wheels were built from
+`28db4f72c973b15a96b00de29e11f3f93509c246` on 2026-10-09. The core build stamp is
+`0.17.0 (28db4f72, built 2026-10-09T08:42:50Z)`. The UI contains 519 packaged
+files including its index. Existing Vite CSS/chunk warnings did not prevent the
+successful build and are not classified as new code failures.
+
+Wheels are in `dist/windows-parity-local/`; the production UI is in
+`omnigent/server/static/web-ui/`. An isolated installation outside the checkout
+passed imports for the server app, Windows hook/status/shell modules, shared
+observer and both SDKs, plus `omni`/`omnigent --help` and `--version`. The existing
+editable environment remains runnable with the new UI and current source.
+Generated build outputs and the report at
+`artifacts/windows-parity-2026-10-09/final-build-28db4f72/build-report.json` are
+ignored by Git. This supersedes the older local build's `2d43e9d9` stamp; the
+previous validation section remains historical evidence for that baseline.
 
 Open two PowerShell terminals in
 `D:\Develop\Source\OpenSource\_AI\Omnigent\omnigent-v017`.
