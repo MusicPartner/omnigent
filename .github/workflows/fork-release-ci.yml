@@ -47,6 +47,30 @@ jobs:
       - name: Install focused test and lint dependencies
         run: uv sync --locked --group dev --extra tracing
 
+      - name: Native attachment cache and Windows handle security
+        run: >-
+          uv run pytest
+          tests/inner/test_native_attachments.py
+          tests/inner/test_windows_attachments.py
+          -n 0 -p no:cacheprovider -q --timeout=30
+
+      - name: Native attachment consumers and resume delivery
+        run: >-
+          uv run pytest
+          tests/inner/test_claude_native_executor.py
+          tests/inner/test_codex_native_executor.py
+          tests/harnesses/claude_native/test_claude_native.py::test_ensure_local_claude_resume_transcript_rematerializes_image_blocks
+          tests/harnesses/claude_native/test_claude_native.py::test_resume_rebuild_delivers_a_zip_to_the_attachment_cache
+          tests/harnesses/claude_native/test_claude_native.py::test_resume_restores_attachments_using_the_launch_bridge
+          tests/harnesses/codex_native/test_codex_native.py::test_ensure_local_codex_resume_rollout_restores_a_zip_outside_the_workspace
+          tests/inner/test_cursor_native_executor.py::TestContentExtraction::test_real_image_attachment_materialized
+          tests/inner/test_kimi_native_executor.py::TestContentExtraction::test_real_image_attachment_materialized
+          tests/inner/test_antigravity_native_executor.py::test_run_turn_image_attachment_materialized
+          tests/inner/test_antigravity_native_executor.py::test_run_turn_attachment_only_no_longer_errors
+          tests/server/routes/test_filesystem_attachment_runtime.py
+          -k "image or attachment or zip or resize or input_file or path_traversal or connected_builds or replica"
+          -n 0 -p no:cacheprovider -q --timeout=30
+
       - name: Owned process shutdown, native shell discovery and Codex Stop regressions
         run: >-
           uv run pytest
@@ -121,6 +145,10 @@ jobs:
           dev/windows_launcher/package.py
           dev/windows_launcher/smoke.py
           omnigent/inner/windows_exec_launcher.py
+          omnigent/inner/windows_attachments.py
+          omnigent/inner/native_attachments.py
+          tests/inner/test_windows_attachments.py
+          tests/inner/test_native_attachments.py
           tests/inner/test_windows_exec_launcher_runtime.py
           tests/scripts/test_windows_launcher_packaging.py
           tests/terminals/test_windows_native_launcher_psmux.py
@@ -175,6 +203,30 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --locked --group test --extra tracing
+
+      - name: Native attachment cache and Windows handle security
+        run: >-
+          uv run pytest
+          tests/inner/test_native_attachments.py
+          tests/inner/test_windows_attachments.py
+          -n 0 -p no:cacheprovider -q --timeout=30
+
+      - name: Native attachment consumers and resume delivery
+        run: >-
+          uv run pytest
+          tests/inner/test_claude_native_executor.py
+          tests/inner/test_codex_native_executor.py
+          tests/harnesses/claude_native/test_claude_native.py::test_ensure_local_claude_resume_transcript_rematerializes_image_blocks
+          tests/harnesses/claude_native/test_claude_native.py::test_resume_rebuild_delivers_a_zip_to_the_attachment_cache
+          tests/harnesses/claude_native/test_claude_native.py::test_resume_restores_attachments_using_the_launch_bridge
+          tests/harnesses/codex_native/test_codex_native.py::test_ensure_local_codex_resume_rollout_restores_a_zip_outside_the_workspace
+          tests/inner/test_cursor_native_executor.py::TestContentExtraction::test_real_image_attachment_materialized
+          tests/inner/test_kimi_native_executor.py::TestContentExtraction::test_real_image_attachment_materialized
+          tests/inner/test_antigravity_native_executor.py::test_run_turn_image_attachment_materialized
+          tests/inner/test_antigravity_native_executor.py::test_run_turn_attachment_only_no_longer_errors
+          tests/server/routes/test_filesystem_attachment_runtime.py
+          -k "image or attachment or zip or resize or input_file or path_traversal or connected_builds or replica"
+          -n 0 -p no:cacheprovider -q --timeout=30
 
       - name: Owned process shutdown, native shell discovery and Codex Stop regressions
         run: >-

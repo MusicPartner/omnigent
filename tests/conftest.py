@@ -19,7 +19,10 @@ except ImportError:
 
 # Establish test data isolation before importing any Omnigent modules. This
 # deliberately replaces ambient state; subprocesses inherit the safe override.
-_TEST_OMNIGENT_DATA_DIR = Path(tempfile.mkdtemp(prefix="omnigent-pytest-")).resolve()
+# Windows caches require trusted ancestors; TEMP can point into a shared workspace.
+_TEST_OMNIGENT_DATA_DIR = Path(
+    tempfile.mkdtemp(prefix="omnigent-pytest-", dir=Path.home() if os.name == "nt" else None)
+).resolve()
 os.environ["OMNIGENT_DATA_DIR"] = str(_TEST_OMNIGENT_DATA_DIR)
 
 # Skip the synchronous api.litellm.ai/model_catalog HTTP fallback during

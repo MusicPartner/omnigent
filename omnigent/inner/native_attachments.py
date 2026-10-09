@@ -150,7 +150,8 @@ def attachment_cache_dir(bridge_dir: Path) -> Path:
     All harnesses share ``~/.omnigent/attachments/`` (or ``OMNIGENT_DATA_DIR``).
     """
     key = hashlib.sha256(os.fsencode(bridge_dir.resolve())).hexdigest()[:32]
-    return data_dir().resolve() / "attachments" / key
+    root = data_dir().absolute() if os.name == "nt" else data_dir().resolve()
+    return root / "attachments" / key
 
 
 def materialize_attachment(block: Mapping[str, object], bridge_dir: Path) -> Path | None:
@@ -178,6 +179,16 @@ def materialize_attachment(block: Mapping[str, object], bridge_dir: Path) -> Pat
         return None
 
     attachments_dir = attachment_cache_dir(bridge_dir)
+    if os.name == "nt":
+        from omnigent.inner.windows_attachments import (
+            materialize_attachment as materialize_windows,
+        )
+
+        try:
+            return materialize_windows(attachments_dir, filename, raw_bytes)
+        except (OSError, ValueError) as exc:
+            _logger.warning("Refusing Windows attachment %r: %s", filename, exc)
+            return None
     try:
         attachments_dir.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         root_fd = os.open(attachments_dir.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -510,6 +521,14 @@ def codex_resize_metadata_path(path: Path, source_metadata: object) -> Path:
     if dimensions is None:
         return path
     width, height = dimensions["width"], dimensions["height"]
+    if os.name == "nt":
+        from omnigent.inner.windows_attachments import resize_metadata_path
+
+        try:
+            return resize_metadata_path(path, width=width, height=height)
+        except (OSError, ValueError) as exc:
+            _logger.warning("Failed to add resize metadata to Codex image path: %s", exc)
+            return path
     try:
         alias = path.with_name(
             f"{path.stem[:80]}_{hashlib.sha256(path.read_bytes()).hexdigest()[:12]}"

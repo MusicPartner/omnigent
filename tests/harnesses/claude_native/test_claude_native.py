@@ -3657,7 +3657,14 @@ async def test_resume_restores_attachments_using_the_launch_bridge(
     expected = attachment_cache_dir(bridge_dir) / "bundle.zip"
     assert expected.read_bytes() == zip_bytes
     assert written is not None
-    assert f"[Attached: {expected}]" in written.read_text(encoding="utf-8")
+    records = [json.loads(line) for line in written.read_text(encoding="utf-8").splitlines()]
+    user_content = records[0]["message"]["content"]
+    texts = (
+        [user_content]
+        if isinstance(user_content, str)
+        else [block["text"] for block in user_content]
+    )
+    assert any(f"[Attached: {expected}]" in text for text in texts)
 
     if resume_path != "legacy":
         assert not attachment_cache_dir(legacy_bridge).exists()

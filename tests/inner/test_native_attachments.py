@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,26 @@ from omnigent.inner.native_attachments import (
     unresolved_attachment_marker,
 )
 
+
+@pytest.fixture
+def tmp_path(tmp_path: Path):
+    if os.name != "nt":
+        yield tmp_path
+        return
+    from tests.inner.windows_private_job_launcher import private_test_directory
+
+    yield from private_test_directory.__wrapped__()
+
+
+def _symlink(path: Path, target: Path, *, directory: bool = False) -> None:
+    try:
+        path.symlink_to(target, target_is_directory=directory)
+    except OSError as exc:
+        if os.name == "nt" and exc.winerror == 1314:
+            pytest.skip("Windows symbolic-link creation privilege is unavailable")
+        raise
+
+
 # A 1x1 transparent PNG, base64-encoded — small but a real decodable image.
 _PNG_B64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC"
@@ -46,7 +67,16 @@ def test_resize_alias_copy_failure_leaves_no_partial_cache(
         raise OSError("disk full")
 
     with monkeypatch.context() as patch:
-        patch.setattr("omnigent.inner.native_attachments.shutil.copyfile", fail_copy)
+        if os.name == "nt":
+            from omnigent.inner.windows_attachments import _write_handle
+
+            def fail_write(kernel: Any, handle: Any, content: bytes) -> None:
+                _write_handle(kernel, handle, content[:8])
+                raise OSError("disk full")
+
+            patch.setattr("omnigent.inner.windows_attachments._write_handle", fail_write)
+        else:
+            patch.setattr("omnigent.inner.native_attachments.shutil.copyfile", fail_copy)
         assert codex_resize_metadata_path(path, dimensions) == path
     assert list(tmp_path.iterdir()) == [path]
     alias = codex_resize_metadata_path(path, dimensions)
@@ -376,7 +406,7 @@ def test_materialize_cache_refuses_symlinked_destination(
         destination.write_bytes(b"different content")
         digest = hashlib.sha256(_ZIP_BYTES).hexdigest()[:12]
         destination = attachments_dir / f"archive_{digest}.zip"
-    destination.symlink_to(outside)
+    _symlink(destination, outside)
 
     assert materialize_attachment(_zip_block(), tmp_path) is None
     if outside_exists:
@@ -390,7 +420,7 @@ def test_materialize_cache_refuses_symlinked_attachments_dir(tmp_path: Path) -> 
     elsewhere = tmp_path.parent / f"{tmp_path.name}-elsewhere"
     elsewhere.mkdir()
     attachment_cache_dir(tmp_path).parent.mkdir(parents=True, exist_ok=True)
-    (attachment_cache_dir(tmp_path)).symlink_to(elsewhere, target_is_directory=True)
+    _symlink(attachment_cache_dir(tmp_path), elsewhere, directory=True)
 
     assert materialize_attachment(_zip_block(), tmp_path) is None
     assert list(elsewhere.iterdir()) == []
@@ -422,17 +452,18 @@ def test_attachment_cache_isolates_sessions_and_leaves_git_workspace_clean(
     workspace = tmp_path / "repo"
     workspace.mkdir()
     subprocess.run(["git", "init", "--quiet", str(workspace)], check=True)
-    monkeypatch.chdir(workspace)
-    first = materialize_attachment(_zip_block(), tmp_path / "claude-native" / "session")
-    second = materialize_attachment(_zip_block(), tmp_path / "codex-native" / "session")
+    with monkeypatch.context() as patch:
+        patch.chdir(workspace)
+        first = materialize_attachment(_zip_block(), tmp_path / "claude-native" / "session")
+        second = materialize_attachment(_zip_block(), tmp_path / "codex-native" / "session")
 
-    assert first is not None and second is not None
-    assert first != second
-    assert first.is_relative_to(storage / "attachments")
-    assert second.is_relative_to(storage / "attachments")
-    assert first.read_bytes() == second.read_bytes() == _ZIP_BYTES
-    status = subprocess.check_output(["git", "status", "--porcelain"], text=True)
-    assert status == ""
+        assert first is not None and second is not None
+        assert first != second
+        assert first.is_relative_to(storage / "attachments")
+        assert second.is_relative_to(storage / "attachments")
+        assert first.read_bytes() == second.read_bytes() == _ZIP_BYTES
+        status = subprocess.check_output(["git", "status", "--porcelain"], text=True)
+        assert status == ""
 
 
 def test_attachment_cache_defaults_to_omnigent_folder(

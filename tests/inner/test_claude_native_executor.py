@@ -643,7 +643,9 @@ async def test_resize_notice_uses_hidden_hook_context(
         pass
 
     assert sent[0]["content"] == "inspect this"
-    assert (tmp_path / "pending_framework_context.txt").read_text() == resize_notice(dimensions)
+    assert (tmp_path / "pending_framework_context.txt").read_text(
+        encoding="utf-8"
+    ) == resize_notice(dimensions)
 
 
 @pytest.mark.asyncio
@@ -1005,7 +1007,9 @@ async def test_enqueue_session_message_materializes_image(
     assert "steering_img.png" in injected
     assert "look at this" in injected
     assert "downscaled" not in injected
-    assert (tmp_path / CLAUDE_FRAMEWORK_CONTEXT_FILE).read_text() == resize_notice(dimensions)
+    assert (tmp_path / CLAUDE_FRAMEWORK_CONTEXT_FILE).read_text(encoding="utf-8") == resize_notice(
+        dimensions
+    )
     # File was written to the bridge directory.
     written = list((attachment_cache_dir(tmp_path)).iterdir())
     assert len(written) == 1
