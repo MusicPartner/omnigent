@@ -1,7 +1,23 @@
 # Handover: fix and validate the broader Windows suite
 
-Prepared 2026-10-09. This document transfers work to a new session; creating it
-has not fixed or rerun the remaining broader-suite failures.
+Prepared 2026-10-09; historical handover retained. The broader selection is
+now repaired and passes locally and in required Windows CI. Final source:
+`e6a14a5e9dad093bebdf16809b70d22e9dccd61b`. The
+[current findings](BROADER-TEST-FINDINGS-2026-10-09.md) record **3,786 passed,
+187 skipped, 292 deselected and 10 passing subtests** in required CI, plus
+completed local runs with **3,763 passed and 210 skipped**. Linux compatibility,
+the dispatched integration matrix, all four backend E2E shards, Browser Contract
+and all ten UI shards passed. Matching CLI/desktop artifacts were downloaded
+and verified against the exact source; disposable installer/uninstaller smoke
+passed. Artifact links and remaining human acceptance checks are in the findings.
+
+The user capped additional repair/test attempts at **five**, then requires
+stopping and waiting for approval if unresolved. The test work finished in
+**four attempts**; the fifth remains unused. Do not reset the count if continuing
+this same task. Databricks is not used, installed or enabled. Earlier native
+Python crash causes remain unconfirmed; CI retains memory diagnostics and now
+requires the full broader sweep. Preserve Windows signer refusal and live
+attachment sandbox acceptance limits.
 
 ## Start here
 

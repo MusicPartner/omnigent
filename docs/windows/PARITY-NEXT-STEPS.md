@@ -1,7 +1,9 @@
 # Windows parity: remaining work and decisions
 
 Research date: 2026-10-08. Branch: `windows-parity/v0.17-integration`.
-Latest validated build: `208591ece9026fd47f62f8ee8b4c2b77e5861a77`.
+Latest validated build/artifacts: `e6a14a5e9dad093bebdf16809b70d22e9dccd61b`.
+The full broader Windows gate is required and passed. Earlier native Python
+crash causes remain unconfirmed; CI retains memory diagnostics.
 The final release evidence and remaining Windows test gaps are recorded below.
 Previously validated baseline: `2d43e9d95c28d4cb623f98d3d49de1af959f90cc`.
 This record separates the new consumer fixes and blocked decisions from the
@@ -11,6 +13,49 @@ Upstream direction was reviewed on 2026-10-09 in
 Its recommendations below distinguish merged upstream contracts from proposals.
 The accepted [implementation plan](IMPLEMENTATION-PLAN-2026-10-09.md) delegates
 the work and excludes v0.14 backporting, as confirmed by the user.
+
+## Broader Windows suite follow-up: 2026-10-09
+
+The repair at `b0be8b116` keeps the Codex private-home security refusal and
+makes lifecycle fixtures portable. It fixes Windows Pi npm-shim truncation of
+multiline instructions and dispatches Qwen authentication through the platform
+shell. Remaining test corrections declare genuine POSIX scope or handle only
+actual Windows symlink privilege errors. Databricks remains unused and absent;
+four tests received the same optional dependency guard as adjacent tests.
+
+The exact broader selection completed locally at source `62607c95c`:
+**3,763 passed, 210 skipped, 292 deselected and 10 passing subtests**.
+Final required broader CI at `e6a14a5e9` passed **3,786 tests**, with 187 skipped,
+292 deselected and 10 passing subtests; zero JUnit failures/errors. Required
+Linux repaired families passed 1,298 tests and focused integration passed 1,040.
+Backend E2E passed all four shards and the dispatched integration matrix passed.
+UI validation at `bbda83990` passed Browser Contract and all ten shards.
+Subsequent commits change only test dependencies and CI. Four of the user's
+five additional attempts were used; the fifth was unnecessary.
+Earlier broad CI failures/native crashes remain historical evidence. CI retains
+memory diagnostics and makes the full sweep required. The native crash's root
+cause remains unconfirmed; the successful runs do not prove it fixed.
+The [findings](BROADER-TEST-FINDINGS-2026-10-09.md) contain raw-result distinctions,
+all historical failures, the [full skip inventory](BROADER-WINDOWS-SKIPS-2026-10-09.md),
+and bounded diagnostic attempts. UI recovery initially found two launch roots,
+consistent with overlap from a background title client; `bbda83990` isolates
+the test using the existing title preference without weakening ownership checks.
+
+Matching [CLI](https://github.com/MusicPartner/omnigent/actions/runs/37985563937/artifacts/11643364292)
+and [desktop](https://github.com/MusicPartner/omnigent/actions/runs/37985563937/artifacts/11643559052)
+artifacts at `e6a14a5e9` were downloaded and compared with their commit:
+14 Python modules and four Electron host/manager modules matched. Electron
+metadata identifies source `e6a14a5e9`, version 0.17.0 and dev mode; the wheel
+retains the unsigned, opt-in native launcher candidate. CI's installer,
+version/help and uninstaller smoke passed in a disposable prefix.
+
+Human acceptance still needs a fresh session for each of Claude, Codex and
+Copilot using the verified development desktop build. Keep a separate CLI
+session running. Ask the agent to execute `Start-Sleep -Seconds 30` in native
+PowerShell, press Stop while it runs, then send another message and confirm it
+responds. Quit Omnigent and confirm its owned work exits while the independent
+CLI session survives. Repeat image and ZIP attachment checks from the existing
+attachment follow-up; Codex sandbox read access remains unproven by mocked tests.
 
 ## 2026-10-09 implementation outcome
 
@@ -185,9 +230,9 @@ scenario (39 skipped). This supports an intermittent startup collision for this
 failure; it does not remove the fixture's port-selection race. Successful shards
 were not rerun and no product code was changed to mask the failure.
 
-The broader Windows auth timeout is a separate unresolved portability gap,
-detailed below. The overall green fork run does not mean that exploratory sweep
-passed. No fix/retest sequence in this work exceeded the user's five-attempt
+The broader Windows auth timeout was a separate portability gap in this
+earlier build, detailed below. It is repaired in the broader-suite follow-up
+above. This earlier green fork run did not mean its exploratory sweep passed. No fix/retest sequence in this work exceeded the user's five-attempt
 limit: exit-status fix 1, CRLF fixture fix 1, native hook environment setup 3, E2E shard retry 1.
 The supplementary real-Claude probe used exactly 5 bounded attempts: 3 setup failures, then successful settings-file and
 inline-JSON captures. No further probe retry was made.

@@ -1,7 +1,31 @@
 # Broader Windows test findings: 2026-10-09
 
-For the next implementation session, use the [broader-suite handover](BROADER-WINDOWS-SUITE-HANDOVER-2026-10-09.md),
-including the latest 64 failure IDs, the timeout diagnosis, and validation criteria.
+The repaired selection now passes locally and in required Windows CI.
+Final source: `e6a14a5e9dad093bebdf16809b70d22e9dccd61b`.
+[Required release validation](https://github.com/MusicPartner/omnigent/actions/runs/37985563937)
+completed its broader Windows gate: **3,786 passed, 187 skipped,
+292 deselected and 10 passing subtests**, zero failures/errors, 651.34s.
+The [JUnit artifact](https://github.com/MusicPartner/omnigent/actions/runs/37985563937/artifacts/11643273402)
+records 3,983 test/subtest entries. The step is required; `continue-on-error`
+was removed. Final artifact verification is recorded below.
+
+Local runs completed with **3,763 passed, 210 skipped, 292 deselected and
+10 passing subtests**, both with normal capture and with memory diagnostics.
+[UI validation](https://github.com/MusicPartner/omnigent/actions/runs/37983319919)
+passed Browser Contract and all ten shards. Final Linux repaired families
+passed 1,298 tests; focused integration passed 1,040. Backend E2E passed all
+four shards and the dispatched integration matrix passed on the same production
+repair. Subsequent commits change only tests, test dependencies and CI.
+
+The [skip inventory](BROADER-WINDOWS-SKIPS-2026-10-09.md) records every skip and
+CI/local differences. All 23 optional Databricks SDK cases stayed skipped;
+Databricks was not installed or enabled. Four of the user's five permitted
+additional attempts were used; the fifth was not needed.
+Earlier native Python crashes remain unexplained. CI retains `PYTHONMALLOC=debug`
+and `python -X dev`; passing runs do not establish the crash's root cause.
+The original 99 and later 64 failure inventories remain historical.
+
+## Historical first release sweep
 
 Source: `489665868933fab513199060fd2349bc65d7ea01` on
 `windows-parity/v0.17-integration`.
@@ -22,7 +46,7 @@ that conclusion does not mean the broad sweep passed.
 - Lightning CSS is pinned to 1.33.0. The production web build no longer warns on
   either valid `::highlight(name)` rule; 16 local preview-search tests passed.
 
-## Remaining support work
+## Historical support work at the first sweep
 
 These findings are a backlog, not reasons to remove security checks or silently
 skip the entire suite. Local safe reproductions establish the examples below;
@@ -60,12 +84,12 @@ summary. This does not establish a clean whole-Windows-suite result or resolve
 unverified causes of other historical failures. The 99-name inventory below is
 retained as the earlier build's observation.
 
-## Broader-suite repair in progress
+## Broader-suite repair and validation
 
 The original upstream reviewed for this repair is `omnigent-ai/omnigent` main
 `ed7c5d600684c70c226ac0b87e87df0f21fbcea0`. The earlier inventories below
-remain historical observations. A completed native rerun and Linux CI proof
-are required before declaring this selection accepted.
+remain historical observations. The completed local native rerun and required
+Linux checks passed; the final required broad CI run also passed. Earlier native crash causes remain unconfirmed.
 
 | Family | Reproduced cause and correction | Retained coverage |
 | --- | --- | --- |
@@ -91,6 +115,112 @@ A diagnostic tail run completed before the later repairs: 1,425 passed,
 78 failed, 65 skipped and 128 deselected, with two passing subtests in 527.41s.
 Its failures exposed the additional terminal, Pi, Qwen and process fixtures
 above; this intermediate result is not a final acceptance result.
+
+## Completed evidence and bounded follow-up
+
+Production repair: `b0be8b116c14378b49d387cfd2a69ead85ea0802`.
+Validated source: `62607c95cc809140eb8c0c17337759cc79461099`; the two
+intervening commits only supply Linux CI prerequisites and namespace setup.
+Applicable staged pre-commit hooks passed, and Pyrefly targeting Linux
+reported zero errors. A read-only review found no actionable production or
+security regression in the narrow Codex, Pi and Qwen changes.
+
+| Check | Completed result |
+| --- | --- |
+| Local exact broader selection | 3,763 passed, 210 skipped, 292 deselected, 17 warnings and 10 passing subtests in 571.22s; exit 0. JUnit includes 3,983 test/subtest entries, zero failures/errors. |
+| [Required Windows compatibility](https://github.com/MusicPartner/omnigent/actions/runs/37981197107/job/113992194375) | Repaired families: 1,188 passed, 157 skipped and two passing subtests in 188.63s. Attachment, shutdown, launcher, CLI, stable, hook/shell and psmux steps also passed. |
+| [Required Linux compatibility](https://github.com/MusicPartner/omnigent/actions/runs/37981197107/job/113992194877) | Repaired families: 1,298 passed, 47 skipped and two passing subtests in 185.94s; real POSIX permission, symlink, keeper and terminal checks remain active. Focused integration: 1,040 passed, 13 skipped. |
+| [Integration](https://github.com/MusicPartner/omnigent/actions/runs/37980406733) | Success on production repair source `b0be8b116`, attempt 1; dispatched OpenAI Agents matrix. |
+| [Backend E2E](https://github.com/MusicPartner/omnigent/actions/runs/37980410996) | Success on `b0be8b116`, attempt 1; all four shards passed. |
+| [UI E2E, original attempt](https://github.com/MusicPartner/omnigent/actions/runs/37980416638) | Browser Contract and nine UI shards passed; shard 4 failed Claude SDK terminated-CLI recovery before signaling because discovery found two launch roots. Its pytest retry also failed. |
+
+The completed local run selected every test under `tests/inner` and
+`tests/runtime/harnesses` with `-m "not posix_only"`. It did not reduce the
+selection to the repaired files. Of its 210 skips, 187 require unavailable
+platform/capability/host fixtures and 23 require the absent optional Databricks
+SDK. Databricks is not used, installed or enabled. The inventory gives exact
+reasons and test names; 292 POSIX-marked cases were deselected separately.
+
+The broad Windows CI sweep in run `37981197107` did **not** pass. It reached
+about 30%, then Python reported a native access violation during pytest's
+current-test environment update; exit 1, no JUnit and no final summary. Its
+`continue-on-error` normalized conclusion is success. An earlier local run
+at `b0be8b116` crashed near 70% during pytest capture (exit -1073741819).
+Different crash locations and a later completed local pass do not establish
+the cause. Native API signatures were reviewed without finding a specific
+defect. Those attempts kept the diagnostic non-blocking and required the repaired families. Source `e6a14a5e9` makes the full broader selection required, so a native crash or test failure blocks release artifacts.
+
+Earlier intermediate runs are also retained: the diagnostic tail recorded
+78 failed / 1,425 passed, and an evolving full run recorded 13 failed /
+3,761 passed. The latter exposed 12 symlink fixtures and the ANSI wordmark
+fixture, which were corrected before the completed local run. Release runs
+`37980379230` and `37980960976` were superseded/cancelled; the former's Linux
+failure identified missing bubblewrap/tmux prerequisites. They are not successes.
+
+The UI census includes title-generation SDK clients. Original upstream fixes
+`3138c7df` and `ece18f48` identify this same ownership-isolation problem, but
+this integration source does not transport their agent-name environment marker.
+The narrow test correction at `bbda83990` uses the existing browser preference
+to disable background titles for this recovery test. Its exactly-one-root
+refusal and process-exit/recovered-turn checks remain intact. No Claude runtime
+behavior is changed.
+
+The user authorized **at most five additional repair/test attempts**, then
+requires stopping for approval if unresolved. Completed test attempts (four of five; fifth unused):
+
+1. Local full selection with `PYTHONMALLOC=debug` and `python -X dev`: **passed**, 3,763 passed / 210 skipped / 292 deselected / 16 warnings / 10 passing subtests, 591.07s, exit 0. No allocator fault reported; post-exit socket/transport ResourceWarnings remain diagnostic observations.
+2. [Release validation with memory diagnostics](https://github.com/MusicPartner/omnigent/actions/runs/37983318980), source `bbda83990`: broader sweep **completed with two failures**, 3,784 passed / 187 skipped / 292 deselected / 16 warnings / 10 passing subtests in 534.84s. JUnit records two failures, zero errors, and 3,983 entries. Both failures are missing `distlib` in historical Windows prototype tests. No native crash; required families and both artifact jobs passed, but the normalized workflow success is not a broader-suite pass.
+3. [UI validation after title isolation](https://github.com/MusicPartner/omnigent/actions/runs/37983319919), source `bbda83990`: **success**, Browser Contract and all ten shards passed. The recovery test passed on its first execution; shard 4 reports 104 passed / one skipped / five deselected / three warnings in 715.56s, no pytest reruns.
+4. [Required broader release validation](https://github.com/MusicPartner/omnigent/actions/runs/37985563937), source `e6a14a5e9`: **broader gate passed**, 3,786 passed / 187 skipped / 292 deselected / 16 warnings / 10 passing subtests in 651.34s, zero JUnit failures/errors. Final Linux families: 1,298 passed / 47 skipped / two passing subtests in 178.02s; focused integration: 1,040 passed / 13 skipped. The complete release workflow and both artifact jobs passed; downloaded source comparisons and disposable installer/uninstaller smoke also passed. Declares the already-locked distlib dependency directly in the Windows test group; removes `continue-on-error` from the full broad sweep. The offline lock refresh changed no package versions and installed nothing locally.
+
+The completed CI run still skipped all 23 optional Databricks SDK cases. Its capable Windows runner executed symlink security fixtures that skipped locally. Its 187 skips are distinct from the local 210-skip inventory.
+
+## Final matching artifacts
+
+[Release validation `37985563937`](https://github.com/MusicPartner/omnigent/actions/runs/37985563937)
+completed successfully on source `e6a14a5e9dad093bebdf16809b70d22e9dccd61b`.
+Both downloaded bundles were inspected without installing over the user's app.
+The core wheel's 14 checked Python modules match that commit, including Codex,
+Pi, Qwen, attachments and shutdown. Electron's four checked host/manager modules
+match; its source metadata is the exact commit, version 0.17.0, dev mode,
+executable `Omnigent Dev.exe`.
+
+The native asset remains the unsigned, opt-in candidate with
+`release_approved=false`; its hash and pinned toolchain are unchanged.
+The disposable-prefix installer installed the exact core/client/UI SDK wheels,
+all 0.17.0. Both console entry points' version/help checks passed, and the
+uninstaller removed the test prefix. Existing local dependencies and app
+sessions were preserved.
+
+- [Final CLI bundle](https://github.com/MusicPartner/omnigent/actions/runs/37985563937/artifacts/11643364292)
+- [Final desktop ZIP](https://github.com/MusicPartner/omnigent/actions/runs/37985563937/artifacts/11643559052)
+- [Final broader JUnit](https://github.com/MusicPartner/omnigent/actions/runs/37985563937/artifacts/11643273402)
+
+### Earlier verified artifacts
+
+Both original `62607c95c` artifacts completed and were downloaded and compared
+against their commit. The core wheel contains 14 matching Python modules,
+including Codex, Pi, Qwen, attachment and shutdown changes. Electron's archive
+contains four matching host/manager modules and source metadata `62607c95c`,
+version 0.17.0, dev mode. The native asset hash remains
+`3d2564228c78a637c5c47bc350937cb2474e61ca6a855b272e0191cac6984c03`;
+it is unsigned and `release_approved=false`. The disposable-prefix installer,
+CLI version/help checks and uninstaller passed in CI.
+
+- [CLI bundle](https://github.com/MusicPartner/omnigent/actions/runs/37981197107/artifacts/11641351829)
+- [Desktop ZIP](https://github.com/MusicPartner/omnigent/actions/runs/37981197107/artifacts/11641279772)
+
+To repeat the completed local selection without synchronizing dependencies:
+
+```powershell
+Set-Location D:\Develop\Source\OpenSource\_AI\Omnigent\omnigent-v017
+.\.venv\Scripts\python.exe -m pytest tests/inner tests/runtime/harnesses -m "not posix_only" -n0 -p no:cacheprovider -vv --tb=short --timeout=60 -ra
+```
+
+Live Claude/Codex/Copilot conversation, Stop/resume and desktop Quit acceptance
+still require the manual checks in [the parity record](PARITY-NEXT-STEPS.md).
+A green mocked/unit suite does not establish Codex sandbox attachment read
+access or brokered signer filesystem/network isolation on Windows.
 
 ## Observed failures before the timeout
 
