@@ -1855,7 +1855,7 @@ for line in sys.stdin:
 @pytest.mark.asyncio
 async def test_end_to_end_against_fake_acp_agent(tmp_path: Path) -> None:
     agent_path = tmp_path / "fake_acp_agent.py"
-    agent_path.write_text(_FAKE_ACP_AGENT)
+    agent_path.write_text(_FAKE_ACP_AGENT, encoding="utf-8")
     command = shlex.join([sys.executable, str(agent_path)])
 
     ex = AcpExecutor(AcpAgentConfig(command=command, name="Fake"))
@@ -2116,7 +2116,7 @@ for line in sys.stdin:
 async def test_end_to_end_denied_permission(tmp_path: Path) -> None:
     """A denied elicitation still completes the turn (the agent gets a reject)."""
     agent_path = tmp_path / "fake_acp_agent.py"
-    agent_path.write_text(_FAKE_ACP_AGENT)
+    agent_path.write_text(_FAKE_ACP_AGENT, encoding="utf-8")
     command = shlex.join([sys.executable, str(agent_path)])
 
     ex = AcpExecutor(AcpAgentConfig(command=command, name="Fake"))

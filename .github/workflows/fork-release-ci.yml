@@ -64,6 +64,7 @@ jobs:
           tests/harnesses/claude_native/test_claude_native_powershell_env.py
           tests/inner/test_claude_sdk_powershell_env.py
           tests/inner/test_copilot_executor.py
+          tests/inner/test_model_auth.py::test_cancelled_ucode_mint_terminates_helper
           -n 0 -p no:cacheprovider -q
 
       - name: Set up pnpm for desktop shutdown regressions
@@ -192,6 +193,7 @@ jobs:
           tests/harnesses/claude_native/test_claude_native_powershell_env.py
           tests/inner/test_claude_sdk_powershell_env.py
           tests/inner/test_copilot_executor.py
+          tests/inner/test_model_auth.py::test_cancelled_ucode_mint_terminates_helper
           -n 0 -p no:cacheprovider -q
 
       - name: Set up pnpm for desktop shutdown regressions
@@ -281,7 +283,7 @@ jobs:
         run: >-
           uv run pytest tests/inner tests/runtime/harnesses
           -m "not posix_only"
-          -p no:cacheprovider -q
+          -p no:cacheprovider -vv --tb=short
 
   build-windows-artifact:
     name: Build and install Windows artifact (omni.exe)

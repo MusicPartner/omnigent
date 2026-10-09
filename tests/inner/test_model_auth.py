@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -193,19 +194,56 @@ async def test_cancelled_ucode_mint_terminates_helper(
     tmp_path: Path,
 ) -> None:
     started = tmp_path / "started"
-    _write_ucode(
-        tmp_path / "ucode",
-        f": > {started}\ntrap 'exit 0' TERM\nwhile true; do sleep 1; done\n",
+    executable = Path(sys.executable).resolve()
+    info = executable.stat()
+    trusted = _TrustedExecutable(executable, (info.st_dev, info.st_ino))
+    source = (
+        "from pathlib import Path; import time; "
+        f"Path({str(started)!r}).write_text('ready'); time.sleep(60)"
     )
-    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}/usr/bin:/bin")
+    monkeypatch.setattr("omnigent.inner.model_auth._resolve_ucode_executable", lambda: trusted)
+    monkeypatch.setattr(
+        "omnigent.inner.model_auth._ucode_auth_token_argv",
+        lambda path, **_kwargs: [str(path), "-c", source],
+    )
 
+    original_spawn = asyncio.create_subprocess_exec
+    helpers: list[asyncio.subprocess.Process] = []
+
+    async def _spawn(*argv: str, **kwargs: object) -> asyncio.subprocess.Process:
+        helper = await original_spawn(*argv, **kwargs)
+        helpers.append(helper)
+        return helper
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _spawn)
     mint = asyncio.create_task(mint_ucode_token(host=_HOST, profile=_PROFILE))
-    while not started.exists():
-        await asyncio.sleep(0)
-    mint.cancel()
+    try:
+        deadline = asyncio.get_running_loop().time() + 10
+        while not started.exists():
+            if mint.done():
+                await mint
+            if asyncio.get_running_loop().time() >= deadline:
+                pytest.fail("credential helper did not reach its ready marker")
+            await asyncio.sleep(0.01)
 
-    with pytest.raises(asyncio.CancelledError):
-        await mint
+        assert len(helpers) == 1
+        helper = helpers[0]
+        helper_pid = helper.pid
+        mint.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await mint
+        await asyncio.wait_for(helper.wait(), timeout=5)
+        assert helper.returncode is not None
+        assert not process_alive(helper_pid)
+    finally:
+        if not mint.done():
+            mint.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await mint
+        for helper in helpers:
+            if helper.returncode is None:
+                helper.kill()
+                await helper.wait()
 
 
 @pytest.mark.skipif(os.name != "posix", reason="forked helper acceptance is POSIX-only")
