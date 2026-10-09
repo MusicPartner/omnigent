@@ -76,7 +76,7 @@ jobs:
         env:
           ELECTRON_OVERRIDE_DIST_PATH: ${{ github.workspace }}/web/electron
         run: >-
-          node --test --test-isolation=none
+          node --test
           web/electron/test/windows_host_shutdown.test.js
           web/electron/test/server_manager.test.js
 
@@ -204,7 +204,7 @@ jobs:
         env:
           ELECTRON_OVERRIDE_DIST_PATH: ${{ github.workspace }}/web/electron
         run: >-
-          node --test --test-isolation=none
+          node --test
           web/electron/test/windows_host_shutdown.test.js
           web/electron/test/server_manager.test.js
 
