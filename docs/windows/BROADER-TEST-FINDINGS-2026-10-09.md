@@ -1,5 +1,8 @@
 # Broader Windows test findings: 2026-10-09
 
+For the next implementation session, use the [broader-suite handover](BROADER-WINDOWS-SUITE-HANDOVER-2026-10-09.md),
+including the latest 64 failure IDs, the timeout diagnosis, and validation criteria.
+
 Source: `489665868933fab513199060fd2349bc65d7ea01` on
 `windows-parity/v0.17-integration`.
 [Release validation](https://github.com/MusicPartner/omnigent/actions/runs/37962935896)
