@@ -91,6 +91,9 @@ from omnigent.host.local_server import (
     stop_untracked_local_server,
 )
 from omnigent.inner import _proc, ui
+from omnigent.inner.windows_shutdown_cli import (
+    register_shutdown_command as _register_windows_shutdown,
+)
 from omnigent.integration_daemon import IntegrationDaemon
 from omnigent.onboarding.sandboxes import available_providers as _sandbox_providers
 from omnigent.process_logging import (
@@ -3222,6 +3225,17 @@ def _stop_spawned_host_daemon_process(
 ) -> None:
     """Stop a daemon child started by this invocation."""
     proc = spawned.process
+    if IS_WINDOWS:
+        from omnigent.inner.windows_process_shutdown import stop_process, stop_processes
+
+        stopped = (
+            stop_processes([proc], grace_seconds=30.0)
+            if proc is not None
+            else stop_process(spawned.pid, grace_seconds=30.0)
+        )
+        if not stopped:
+            raise click.ClickException(f"Spawned daemon {spawned.pid} did not stop.")
+        return
     if proc is not None:
         if proc.poll() is None:
             proc.terminate()
@@ -4766,7 +4780,13 @@ def server(
         timeout_graceful_shutdown=_SERVER_GRACEFUL_SHUTDOWN_TIMEOUT_S,
     )
     try:
-        _ShutdownSignalingServer(_config).run()
+        _server = _ShutdownSignalingServer(_config)
+        if IS_WINDOWS:
+            from omnigent.inner.windows_shutdown_cli import run_server
+
+            run_server(_server)
+        else:
+            _server.run()
     except KeyboardInterrupt:
         # uvicorn.run() swallows KeyboardInterrupt; match that behaviour so
         # a Ctrl-C exit doesn't print Click's "Aborted!" or exit non-zero.
@@ -4794,15 +4814,20 @@ def _stop_local_server_and_daemon(*, force: bool) -> bool:
     """
     was_running = local_server_url_if_healthy() is not None
     local_record = _find_daemon_record(_LOCAL_DAEMON_MARKER)
+    daemon_error: click.ClickException | None = None
     if local_record is not None:
-        # A stubborn daemon shouldn't block stopping the server.
-        with contextlib.suppress(click.ClickException):
+        try:
             _terminate_daemon(local_record, force=force)
+        except click.ClickException as exc:
+            if IS_WINDOWS:
+                daemon_error = exc
     stop_local_omnigent_server()
     # Also catch an orphan on the canonical port whose pidfile was lost, so
     # `server stop` isn't blind to it (it reported "No background server is
     # running" while one was still listening on the default port).
     orphan_pid = stop_untracked_local_server()
+    if daemon_error is not None:
+        raise daemon_error
     return was_running or orphan_pid is not None
 
 
@@ -5111,6 +5136,9 @@ def _maybe_fast_backfill_install_ledger(argv: Sequence[str]) -> None:
 @cli.group("_internal", hidden=True)
 def _internal() -> None:
     """Hidden commands used by installer scripts."""
+
+
+_register_windows_shutdown(_internal)
 
 
 @_internal.command("write-ledger")
@@ -10535,6 +10563,15 @@ def _terminate_daemon(record: _HostDaemonRecord, *, force: bool) -> None:
     :param force: Send SIGKILL after the SIGTERM grace period.
     :raises click.ClickException: If the process stays alive.
     """
+    birth: float | None = None
+    if IS_WINDOWS:
+        try:
+            birth = psutil.Process(record.pid).create_time()
+        except psutil.NoSuchProcess:
+            _delete_daemon_record(record)
+            return
+        except psutil.AccessDenied as exc:
+            raise click.ClickException(f"Cannot verify daemon {record.pid} ownership.") from exc
     if not _pid_is_recorded_daemon(record):
         # Dead, or alive with a recycled pid (often another user's system
         # daemon) — never signal it; the record is stale, so drop it.
@@ -10546,6 +10583,16 @@ def _terminate_daemon(record: _HostDaemonRecord, *, force: bool) -> None:
             )
         _delete_daemon_record(record)
         return
+    if IS_WINDOWS:
+        from omnigent.inner.windows_process_shutdown import stop_process
+
+        if stop_process(record.pid, expected_create_time=birth, grace_seconds=35.0, force=force):
+            _delete_daemon_record(record)
+            return
+        raise click.ClickException(
+            f"Daemon {record.pid} for {_host_display_url(record.target)!r} did not exit; "
+            "retry with --force."
+        )
     if _signal_daemon_pid(record, signal.SIGTERM):
         _delete_daemon_record(record)
         return

@@ -17,6 +17,7 @@ import json
 import os
 import sys
 import types
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -395,8 +396,8 @@ def test_host_env_var_spelling_matches_onboarding() -> None:
 
 async def test_github_host_exported_for_bundled_cli(monkeypatch: pytest.MonkeyPatch) -> None:
     """The SDK has no host parameter, so the GHE host only reaches the bundled
-    CLI as an env var it inherits from us."""
-    _install_fake_copilot(monkeypatch, [[]])
+    CLI through its invocation environment."""
+    state = _install_fake_copilot(monkeypatch, [[]])
     monkeypatch.delenv(COPILOT_HOST_ENV_VAR, raising=False)
     monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "gho_x")
     ex = CopilotExecutor(github_host="acme.ghe.com")
@@ -404,12 +405,14 @@ async def test_github_host_exported_for_bundled_cli(monkeypatch: pytest.MonkeyPa
     assert COPILOT_HOST_ENV_VAR not in os.environ, "set at session start, not construction"
     async for _ in ex.run_turn([_user("hi")], tools=[], system_prompt=""):
         pass
-    assert os.environ[COPILOT_HOST_ENV_VAR] == "acme.ghe.com"
+    assert state["client_kwargs"][0]["env"][COPILOT_HOST_ENV_VAR] == "acme.ghe.com"
+    assert COPILOT_HOST_ENV_VAR not in os.environ
+    await ex.close()
 
 
 async def test_hostless_executor_clears_a_leftover_host(monkeypatch: pytest.MonkeyPatch) -> None:
     """A hostless executor must not inherit a host another one left in the env."""
-    _install_fake_copilot(monkeypatch, [[]])
+    state = _install_fake_copilot(monkeypatch, [[]])
     monkeypatch.setenv(COPILOT_HOST_ENV_VAR, "stale.ghe.com")
     monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "gho_x")
     monkeypatch.setattr(copilot_executor, "_AMBIENT_HOST", None)
@@ -418,7 +421,9 @@ async def test_hostless_executor_clears_a_leftover_host(monkeypatch: pytest.Monk
     assert ex._github_host is None
     async for _ in ex.run_turn([_user("hi")], tools=[], system_prompt=""):
         pass
-    assert COPILOT_HOST_ENV_VAR not in os.environ
+    assert COPILOT_HOST_ENV_VAR not in state["client_kwargs"][0]["env"]
+    assert os.environ[COPILOT_HOST_ENV_VAR] == "stale.ghe.com"
+    await ex.close()
 
 
 def test_capabilities() -> None:
@@ -1426,3 +1431,52 @@ async def test_run_turn_usage_accumulates_cache_read_write_through_events(
         "total_tokens": 16,
     }
     await ex.close()
+
+
+@pytest.mark.parametrize("store_first", [False, True])
+async def test_windows_native_powershell_reaches_copilot_child(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, store_first: bool
+) -> None:
+    from omnigent.inner import windows_powershell
+
+    state = _install_fake_copilot(monkeypatch, [[]])
+    native = tmp_path / "Program Files" / "PowerShell" / "7"
+    native.mkdir(parents=True)
+    (native / "pwsh.exe").touch()
+    original_path = str(tmp_path / "existing-tools")
+    if store_first:
+        store = tmp_path / "WindowsApps"
+        store.mkdir()
+        (store / "pwsh.exe").touch()
+        original_path = f"{store};{original_path}"
+    monkeypatch.setattr(windows_powershell, "IS_WINDOWS", True)
+    monkeypatch.setenv("ProgramFiles", str(tmp_path / "Program Files"))
+    monkeypatch.delenv("ProgramW6432", raising=False)
+    monkeypatch.setenv("PATH", original_path)
+    monkeypatch.setenv("OMNIGENT_TEST_PARENT_VALUE", "preserved")
+    ex = CopilotExecutor(github_token="fixture-token")
+    _ = [event async for event in ex.run_turn([_user("hi")], [], "")]
+    child_env = state["client_kwargs"][0]["env"]
+    assert child_env["PATH"] == f"{native.resolve()};{original_path}"
+    assert child_env["OMNIGENT_TEST_PARENT_VALUE"] == "preserved"
+    assert os.environ["PATH"] == original_path
+    await ex.close()
+
+
+async def test_close_reaps_only_owned_copilot_sessions_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _install_fake_copilot(monkeypatch, [[], []])
+    ex = CopilotExecutor(github_token="fixture-token")
+    for session_id in ("first", "neighbor"):
+        _ = [event async for event in ex.run_turn([_user("hi", session_id)], [], "")]
+    await ex.close_session("first")
+    assert state["session_closed"] == 1
+    assert state["client_closed"] == 1
+    assert set(ex._session_states) == {"neighbor"}
+    await ex.close_session("first")
+    await ex.close()
+    await ex.close()
+    assert state["session_closed"] == 2
+    assert state["client_closed"] == 2
+    assert ex._session_states == {}

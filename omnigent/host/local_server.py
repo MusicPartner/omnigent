@@ -26,7 +26,7 @@ import sys
 import tempfile
 import time
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import click
 import psutil  # type: ignore[import-untyped]
@@ -447,7 +447,40 @@ _STOP_POLL_INTERVAL_S = 0.1
 """Polling interval while waiting for the server process to exit."""
 
 
-def _terminate_pid(pid: int) -> None:
+def _windows_server_birth(pid: int, *, created_before: float | None = None) -> float | None:
+    """Verify a Windows server command before granting ownership of its tree."""
+    try:
+        process = psutil.Process(pid)
+        birth = process.create_time()
+        arguments = process.cmdline()
+    except psutil.NoSuchProcess:
+        return None
+    except psutil.Error as exc:
+        raise click.ClickException(f"Cannot verify local server process {pid} ownership.") from exc
+    if created_before is not None and birth > created_before + 0.001:
+        _logger.warning("Skipping recycled local server PID %s", pid)
+        return None
+    executable = PureWindowsPath(arguments[0]).name.casefold() if arguments else ""
+    python_executable = executable.startswith(("python", "pypy")) or executable in {"py", "py.exe"}
+    module_server = python_executable and any(
+        all(argument.startswith("-") for argument in arguments[1:index])
+        and arguments[index : index + 3]
+        in (["-m", "omnigent.cli", "server"], ["-m", "omnigent", "server"])
+        for index in range(1, len(arguments) - 2)
+    )
+    executable_server = (
+        len(arguments) >= 2
+        and PureWindowsPath(arguments[0]).name.casefold()
+        in {"omni", "omni.exe", "omnigent", "omnigent.exe"}
+        and arguments[1] == "server"
+    )
+    if not module_server and not executable_server:
+        _logger.warning("Skipping unrelated local server PID %s", pid)
+        return None
+    return birth
+
+
+def _terminate_pid(pid: int, *, created_before: float | None = None) -> None:
     """SIGTERM a pid, wait up to the grace period, then SIGKILL if needed.
 
     Shared by :func:`stop_local_omnigent_server` (the pidfile-tracked server) and
@@ -461,6 +494,17 @@ def _terminate_pid(pid: int) -> None:
     import signal
 
     if not _pid_alive(pid):
+        return
+    from omnigent._platform import IS_WINDOWS
+
+    if IS_WINDOWS:
+        from omnigent.inner.windows_process_shutdown import stop_process
+
+        birth = _windows_server_birth(pid, created_before=created_before)
+        if birth is None:
+            return
+        if not stop_process(pid, grace_seconds=30.0, expected_create_time=birth):
+            raise click.ClickException(f"Local server process tree for {pid} did not stop.")
         return
     with contextlib.suppress(ProcessLookupError, OSError):
         os.kill(pid, signal.SIGTERM)
@@ -502,7 +546,20 @@ def stop_local_omnigent_server() -> None:
     existing = _read_local_server_pid_file()
     if existing is not None:
         pid, _port = existing
-        _terminate_pid(pid)
+        from omnigent._platform import IS_WINDOWS
+
+        if IS_WINDOWS:
+            try:
+                created_before = _LOCAL_SERVER_PID_PATH.stat().st_mtime
+            except FileNotFoundError:
+                return
+            except OSError as exc:
+                raise click.ClickException(
+                    "Cannot verify local server pidfile ownership."
+                ) from exc
+            _terminate_pid(pid, created_before=created_before)
+        else:
+            _terminate_pid(pid)
     with contextlib.suppress(OSError):
         _LOCAL_SERVER_PID_PATH.unlink()
     with contextlib.suppress(OSError):

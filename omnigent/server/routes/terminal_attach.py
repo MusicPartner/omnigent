@@ -75,6 +75,7 @@ from typing import Final
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, WebSocketException
 from starlette import status
+from websockets.frames import EXTERNAL_CLOSE_CODES
 
 from omnigent.debug_logging import debug_event
 from omnigent.errors import OmnigentError
@@ -217,10 +218,12 @@ def create_terminal_attach_router(
                     async with runner_cm as runner_ws:
                         await _shuttle_ws_frames(websocket, runner_ws)
             except _RunnerWSClosed as closed:
+                # Tunnel aborts use internal codes such as 1006, which cannot be sent.
                 code = (
                     closed.code
-                    if closed.code and closed.code >= 1000
-                    else _WS_CLOSE_INTERNAL_ERROR
+                    if closed.code is not None
+                    and (closed.code in EXTERNAL_CLOSE_CODES or 3000 <= closed.code < 5000)
+                    else status.WS_1011_INTERNAL_ERROR
                 )
                 with contextlib.suppress(RuntimeError):
                     await websocket.close(

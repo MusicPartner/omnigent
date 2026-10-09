@@ -20,6 +20,7 @@ import httpx
 import pytest
 
 import omnigent
+from omnigent import _platform
 from omnigent.host import local_server
 
 
@@ -580,6 +581,7 @@ def test_stop_local_omnigent_server_waits_for_process_exit(
     until the process exits. This test verifies the poll loop runs and
     that both the pidfile and sig sidecar are cleaned up.
     """
+    monkeypatch.setattr(_platform, "IS_WINDOWS", False)
     pid_file = tmp_path / "local_server.pid"
     sig_file = tmp_path / "local_server.sig"
     pid_file.write_text("7777\n8000\n")
@@ -641,6 +643,10 @@ def test_stop_local_omnigent_server_escalates_to_sigkill(
     the port stays bound indefinitely. The test stubs ``time.monotonic``
     to simulate the grace period expiring, then verifies SIGKILL is sent.
     """
+    import signal as signal_mod
+
+    monkeypatch.setattr(_platform, "IS_WINDOWS", False)
+    monkeypatch.setattr(signal_mod, "SIGKILL", 9, raising=False)
     pid_file = tmp_path / "local_server.pid"
     sig_file = tmp_path / "local_server.sig"
     pid_file.write_text("8888\n8000\n")

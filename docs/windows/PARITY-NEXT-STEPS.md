@@ -13,22 +13,19 @@ the work and excludes v0.14 backporting, as confirmed by the user.
 
 ## 2026-10-09 implementation outcome
 
-The distlib executable prototype was rejected for production adoption. Native
-Windows x64 tests proved literal argv, spaced/Unicode interpreter and cwd,
-stdin/stdout/stderr, exit code 37 and executable deletion. A deterministic
-process test also proved the blocker: Python and its target can start before
-parent-side `post_spawn()` assigns the outer executable to a Job Object. Closing
-that job terminates the outer executable while existing descendants survive.
-The test cleans up its owned processes; its passing result records this defect,
-not successful containment. This deliberately late assignment was not compared
-with the existing `.cmd` launcher, so it does not establish a new regression.
-Any launcher that starts descendants before assignment can have this race.
+The earlier distlib executable prototype was rejected for production adoption.
+Its native Windows x64 test showed that Python and its target could start before
+parent-side `post_spawn()` assigned the outer executable to a Job Object; closing
+that job left the existing descendants alive. This result applies to distlib's
+late-assignment design and was not compared with the existing `.cmd` launcher.
+It does not establish a regression in the legacy launcher.
 
-Only the test-owned prototype and evidence are retained. The production sandbox
-seam and core dependencies are unchanged, so `.cmd` `%*` forwarding remains
-unresolved. No clean-wheel, ARM/x86 or filesystem/network isolation claim follows
-from this prototype. Existing credential rules and brokered-signer refusals
-remain unchanged.
+The separate native candidate is now integrated behind the Windows
+`create_exec_launcher` selector, with legacy `.cmd` behavior still the default.
+Clean-wheel packaging and local x64 lifecycle evidence are recorded below.
+There is no signed release artifact or remote CI result yet, no ARM/x86 runtime
+claim, and no filesystem/network isolation. Existing credential refusals and
+brokered-signer boundaries remain unchanged.
 
 Package B adopts direct executable + args for eligible Windows command hooks,
 with Python-owned stderr handling and the canonical shared hook definitions.
@@ -49,14 +46,16 @@ explicit opt-in test against an existing native executable.
 
 The original five-attempt limit and subsequent automatic-review rejection are
 historical. The user revoked that limit and authorized the successful resumed
-capture. Launcher containment and brokered-signer isolation remain unresolved;
-no new ARM/x86 runtime support is claimed. v0.14 remains excluded.
+capture. The original test-only launcher’s no-outer-job parent-death result is
+historical prototype evidence; the current candidate watches its immediate
+parent. Brokered-signer isolation remains unsupported, and no filesystem/network
+isolation or ARM/x86 runtime support is claimed. v0.14 remains excluded.
 
 ## Current-pass validation
 
 | Check | Result and limit |
 | --- | --- |
-| Isolated x64 launcher prototype | 3 passed, including the reproducible failed-containment assertion; no runtime adoption. |
+| Earlier distlib x64 launcher prototype | 3 passed, including the reproducible failed-containment assertion; no runtime adoption. |
 | Package B focused native tests | 50 passed; 1 POSIX `fcntl` check deselected. Actual PowerShell popup and Git Bash status-line Unicode/stdin checks passed. |
 | Canonical bridge/policy/framework/status integration subset | 4 passed. |
 | Earlier broad Windows bridge sweep | 507 passed, 2 skipped, 5 failures from unchanged Unix-socket harness assumptions (`server.json['socket']`). This earlier sweep is not all green; it is separate from the current branch workflow below. |
@@ -86,17 +85,54 @@ as success; no more detailed test-count or flakiness claim is made here.
 
 ### Next launcher decision
 
-The executable remains deferred. Choose a prototype direction after explicitly
-reviewing its ownership contract; neither option below has been implemented.
+The current implementation is an **opt-in Windows x64 candidate** integrated
+at `create_exec_launcher`. Legacy behavior remains the default. `native` fails
+closed unless the packaged manifest marks an Authenticode artifact as
+release-approved and its signer thumbprint matches; `native-dev` explicitly
+selects the unsigned development artifact. Both modes check the asset hash,
+architecture and invocation config.
 
-| Direction | Benefit | Cost and proof required |
-| --- | --- | --- |
-| **Recommended: native stub owns a private job** | Preserves the filename-only SDK API and avoids migrating every caller; stub termination can close its private job and kill the child tree. | Adds containment ownership and maintained native assets. Prove creation-time assignment, nested host jobs, SDK cancellation, packaging/signing and native x64 execution. |
-| Parent-coordinated spawn/SDK integration | Keeps job ownership wholly with the parent and assigns the exact job before launcher execution. | Requires coordinated suspended/creation-time spawning, resume and failure cleanup across callers and the SDK; broader maintenance surface. |
+The launcher stores per-invocation `OJLCFG01` data in its copy's
+`:omnigent.config` NTFS alternate data stream (ADS). Copies live in a protected
+per-user profile container whose ancestors are checked for reparse points and
+cross-user mutation rights. The native process keeps executable and ADS handles
+locked, assigns its Python child to a private kill-on-close job at process
+creation, and watches the immediate parent so caller death closes the job.
+This provides process lifecycle containment only; filesystem/network isolation
+and brokered-signer support remain unavailable.
 
-The detailed [assessment](#follow-up-a-filename-compatible-native-containment-owner)
-explains the suspended-orphan window and why any-job polling is insufficient.
-Both options preserve credential refusals and add no filesystem/network isolation.
+Packaging includes the prepared executable and manifest in both the universal
+wheel and sdist; `MANIFEST.in` adds only native source/build helpers. Generated
+executables and manifests remain untracked. The pinned MSVC 14.44.35207 /
+Windows SDK 10.0.26100.0 build
+passed its independent-output reproducibility check. The unsigned candidate
+SHA-256 is
+`3d2564228c78a637c5c47bc350937cb2474e61ca6a855b272e0191cac6984c03`.
+
+The candidate native process suite passed **21 tests**. A separate rerun
+exposed a readiness-file read race in the test helper; the transient
+`PermissionError` was not a native launch or containment assertion. A bounded
+read retry fixed the test helper, and the nested-job plus permanent-read-failure
+cases passed in three separate runs, each with **2 passed**. No production code
+changed for the test fix. The runtime suite passed **24 tests with 1
+symlink-rejection skip** without Windows Developer Mode or symbolic-link
+privilege, including the positive signer check. **41 packaging checks passed**
+after adding embedded-signature validation.
+**17 shared launcher and capability regressions passed with 3 POSIX skips**,
+and the actual psmux/native-launcher lifecycle test passed. A clean
+sdist-to-wheel build and isolated installed-wheel smoke passed with
+`python -I`; it exercised active native-dev launch, literal argv/stdin/cwd/exit
+code, ADS cleanup, and strict refusal of the unsigned artifact by `native`
+mode. The final wheel was rebuilt, reinstalled and smoke-checked. CLI version
+and server imports passed in the isolated install. No candidate remote CI run
+has completed.
+
+Release adoption remains gated on the approved signing policy and signed
+artifact, remote CI evidence, clean-machine AV/SmartScreen behavior, and an
+explicit decision about enabling `native` by default. Keep unsigned
+development use behind `native-dev` until those gates pass. See the
+[candidate plan](PRIVATE-JOB-LAUNCHER-PLAN.md) for the scope and exact local
+verification commands.
 
 ## Completed audit items
 
@@ -199,43 +235,43 @@ resume/materialization behavior that must be preserved explicitly.
 See the pinned SDK [subprocess transport](https://github.com/anthropics/claude-agent-sdk-python/blob/v0.2.94/src/claude_agent_sdk/_internal/transport/subprocess_cli.py)
 and [client](https://github.com/anthropics/claude-agent-sdk-python/blob/v0.2.94/src/claude_agent_sdk/client.py).
 
-### Follow-up: a filename-compatible native containment owner
+### Historical prototype assessment: a filename-compatible containment owner
 
-**Recommended next prototype: a native stub with its own private Job Object.**
-For an active Windows Job Object policy, create a non-inherited job with
-kill-on-close and no breakaway permissions, place Python in that job before it
-executes, and hold the sole job handle while waiting for Python's exit. Closing
-or terminating the stub then closes that handle and terminates the contained
-child tree. Parent-side `post_spawn()` may still assign the stub to an outer job;
-its late assignment no longer needs to retroactively enroll earlier children.
-This preserves the executable filename and can avoid a new parent handshake or
-migration of every SDK/caller API. It explicitly **adds launcher-owned
-containment**, rather than claiming the existing parent is the only owner.
-These are design inferences from
-[CreateJobObjectW](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-createjobobjectw)
-and [process termination](https://learn.microsoft.com/en-us/windows/win32/procthread/terminating-a-process),
-not tested properties of a new implementation.
+**Prototype result: a test-only native stub owns a private Job Object.** For an
+active policy, the x64 stub creates a non-inheritable kill-on-close job, assigns
+Python to it at process creation, and holds the job handle while waiting for the
+Python exit code. The 18-test run confirmed that normal exit and forced stub
+termination stop the child tree; assigning the stub to an outer job after its
+children start also stopped the tree through the private job. The filename-only
+API shape is preserved by the experiment, but the production seam and SDK APIs
+remain unchanged. This explicitly **adds launcher-owned containment** for the
+prototype rather than claiming the existing parent is the only owner.
+The isolated prototype now implements this ownership shape. Its passing
+termination tests establish behavior for the tested native x64 build and SDK
+call patterns only; they do not establish production packaging or caller-death
+cleanup without an outer job.
 
-Creating Python suspended, assigning the job, then resuming prevents Python
-from running before assignment. However, killing the stub between creation and
-assignment can leave a suspended orphan. Prefer assigning at process creation
-through `STARTUPINFOEX` / `PROC_THREAD_ATTRIBUTE_JOB_LIST`, available on Windows
-10 / Server 2016 and later; prove abrupt termination across that boundary.
-Keep the job handle out of the child's inherited handle list, and never clear
-kill-on-close for a console event. Inactive/no-Job-Object policies should launch
-without imposing this containment. On an active policy, creation/assignment or
-resume failure must produce a clear nonzero exit and clean up the suspended
-child, not fall back to an uncontained launch.
+The release-like prototype assigns the child at creation through
+`STARTUPINFOEX` / `PROC_THREAD_ATTRIBUTE_JOB_LIST`, before the child executes;
+only its test build suspends the child at controlled checkpoints. The tests
+confirm that terminating the stub at the post-create checkpoint does not leave
+a running or suspended Python child. The job handle is excluded from the child's
+explicit inherited-handle list. Active-policy failures return nonzero and clean
+up the child instead of falling back to an uncontained launch. The private job
+is not created for inactive/no-Job-Object policies.
 See [process creation attributes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute).
 
 Inherited jobs remain a compatibility gate. This host's Python already belongs
 to a job before the Omnigent backend acts. Modern Windows permits nested jobs
 when their hierarchy is valid and UI-limit constraints allow it; a host/worker
-job can still make assignment fail. Do not request breakaway to evade that
-supervisor. Prove inherited and nested job cases, late outer assignment, normal
-exit with surviving grandchildren, forced stub termination, cancellation and
-SDK version probes. Normal exit must preserve Python's status while closing
-the inner job; cancellation must allow only the defined cleanup window.
+job can still make assignment fail. Do not request breakaway to evade that supervisor.
+The opt-in suiteexercised
+nested host jobs, late outer assignment, normal exit with a surviving
+grandchild, forced stub termination, SDK cancellation and SDK version-probe
+output/timeout; all 18 tests passed. Normal exit preserved Python's status while
+closing the private job. Separately, killing a caller without an outer job left
+the stub and its private-job tree alive until the test explicitly killed the
+stub. This is an observed limitation, not successful parent-death cleanup.
 See [Nested Jobs](https://learn.microsoft.com/en-us/windows/win32/procthread/nested-jobs)
 and [AssignProcessToJobObject](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-assignprocesstojobobject).
 
@@ -267,11 +303,27 @@ Appending a per-launch Python/config payload changes the distributed executable
 and needs a signing design. An immutable signed stub plus separate configuration
 would instead need its own trust and temporary-file ownership contract.
 
-No alternative is implemented or adopted. The retained distlib prototype is
-rejected-candidate evidence, not a runtime API; distlib remains available only
-through development tooling. Windows `activate()` is still a no-op. A future
-launcher-owned process job would not provide filesystem/network isolation or
-enable brokered-signer authentication. Credential refusals remain unchanged.
+The first custom native launcher in `dev/windows_launcher/` was an isolated
+prototype; its 18-test run passed with MSVC 14.51.36231 and Windows SDK
+10.0.26100.0. Its no-outer-job caller-death result describes that prototype
+only. The current candidate is integrated behind the explicit runtime
+selector and has separate lifecycle and packaging evidence recorded above.
+Run the historical prototype suite from the v0.17 worktree with an x64
+MSVC/Windows SDK environment:
+
+```powershell
+$env:OMNIGENT_TEST_PRIVATE_JOB_LAUNCHER = "1"
+.venv\Scripts\python.exe -m pytest tests/inner/test_windows_private_job_launcher.py -n 0 -p no:cacheprovider -q
+Remove-Item Env:OMNIGENT_TEST_PRIVATE_JOB_LAUNCHER
+```
+
+The suite covers literal argv and Unicode/spaced paths, stdio and exit code 37,
+active and inactive policies, creation-time assignment, nested jobs, failure
+cleanup, direct stub termination, SDK close/cancellation, and version-probe
+output/timeout. The original distlib prototype remains rejected-candidate
+evidence, not a runtime API. Windows `activate()` remains a no-op. Neither that
+prototype nor the current candidate adds filesystem/network isolation or
+brokered-signer support; credential refusals remain unchanged.
 
 ## 2. Select quoting by the consumer
 
@@ -437,8 +489,9 @@ kills the helper. Existing POSIX provenance and descendant tests must remain.
 
 ## Work remaining after this pass
 
-1. Review the native launcher-owned Job Object prototype recommended above;
-   preserve the filename API and explicitly agree on containment ownership.
+1. Keep release adoption gated until the approved signer and signed artifact,
+   remote CI, clean-machine AV/SmartScreen handling, and release-default
+   decision are documented.
 2. Retain the adopted direct command + args hooks and repeatable opt-in capture.
    Keep Setup/argv evidence distinct from a full SessionStart/conversation
 journey; branch CI and the local production build are recorded above.
@@ -514,3 +567,464 @@ start Claude Code, switch between Terminal and Chat, and send
 `Reply exactly: parity ; %PATH% Å`. Confirm one matching reply, a connected
 terminal, working resize/reconnect, and cleanup after ending the session.
 Do not expect a numeric pane exit status from psmux 3.3.8.
+
+## Local workflow follow-ups (2026-10-09)
+
+### Claude native PowerShell live output
+
+Observed: the Chat tool card waits while PowerShell runs, then displays the
+complete output. The Claude-native forwarder currently mirrors completed
+transcript tool results; unlike Codex-native, it has no producer for
+`external_tool_output_delta`. The shared server event and web live-output
+handler each passed a focused regression check, so adding a frontend timer or
+changing the Windows launcher would not supply the missing output.
+
+An isolated Claude Code 2.1.295 process, using a local mock provider and fresh
+configuration, executed a PowerShell command with two output markers separated
+by a 20-second wait. Its print-mode transcript and JSON stream exposed no
+incremental PowerShell output. Source inspection found internal PowerShell
+progress snapshots, but no supported command hook that exports their output;
+`MessageDisplay` forwards assistant text. This evidence does not establish
+that every Claude version or integration mode has the same limitation.
+
+A subsequent isolated interactive test with psmux 3.3.8 succeeded when run
+outside the test execution sandbox. The PowerShell command emitted its first
+marker, waited 20 seconds, and recorded both markers in the completed tool
+result. Its 28 observed transcript records contained no progress records.
+This verifies the native terminal/transcript behavior, not an end-to-end
+browser journey. The owned terminal and local mock server were stopped.
+
+Decision: retain Claude's native tools only. The user withdrew approval for
+an additional Omnigent streaming PowerShell tool; its partial integration
+edits were reverted. Do not add a replacement tool, command wrapper, or
+speculative output-file matching to work around this limitation.
+
+Follow-up: find a supported, call-correlated source of live tool output, then
+forward it through the existing transient event path. Verify output before
+command completion, cancellation, concurrent tool calls, reconnect, and final
+result reconciliation without duplicate lines. Keep this change within the
+Claude-native integration and retest after Claude upgrades. No runtime
+streaming change has been made as part of this investigation.
+
+Manual reproduction: start a Claude-native session and request
+`1..10 | ForEach-Object { Write-Output "Tick $_"; Start-Sleep -Seconds 1 }`.
+Observe Chat while it runs and after completion. The current limitation is
+confirmed when all ten lines appear only after the command finishes.
+
+### Codex repeated administrator setup prompts — resolved
+
+On 2026-10-09, the user confirmed that incomplete Codex sandbox setup caused
+the repeated administrator prompts. Completing setup resolved the issue.
+This supersedes the earlier suspected repeated-provisioning defect; that
+upstream issue was not established as the cause on this machine.
+
+The temporary `windows.sandbox = "unelevated"` workaround is no longer needed
+for this issue. No Omnigent launcher change is required, and no personal Codex
+configuration was changed or audited as part of this documentation update.
+
+Regression check: start two fresh Codex sessions and run `Get-Date` in each;
+commands should complete without repeating the sandbox setup prompt.
+
+### Codex restart from Chat after Stop fails with EACCES — implemented; UI acceptance pending
+
+User-reported on 2026-10-09: after stopping native Codex, another command from
+Chat failed before terminal startup; Console resume worked. The reported runner
+log identifies `os.replace(tmp, target)` in `_ensure_local_codex_resume_rollout`
+as the failing operation (`PermissionError`, errno 13, WinError 5). The target
+rollout was not read-only and had normal owner permissions. Read-only process
+inspection found an older same-session `codex.exe app-server` whose parent had
+exited, alongside the later server created by successful Console resume. No
+user processes were terminated during diagnosis.
+
+Upstream was checked before implementation at main
+`b419d1f59f7eb730bc9f34613d85820c944af466`. Its
+[rollout refresh](https://github.com/omnigent-ai/omnigent/blob/b419d1f59f7eb730bc9f34613d85820c944af466/omnigent/harnesses/codex_native/main.py)
+still replaces the existing file, and its
+[same-session cleanup](https://github.com/omnigent-ai/omnigent/blob/b419d1f59f7eb730bc9f34613d85820c944af466/omnigent/harnesses/codex_native/process_registry.py)
+still skips non-POSIX systems. No matching fix was found in the inspected
+issues/PRs. Related [#9161](https://github.com/omnigent-ai/omnigent/pull/9161)
+handles stopped backends behind surviving terminals;
+[#9461](https://github.com/omnigent-ai/omnigent/pull/9461) handles EACCES during
+CLI discovery. Neither fixes this rollout replacement. No upstream merge was
+needed for the local correction.
+
+The contained fix adds `codex_native/windows_process_cleanup.py`, selected by a
+small Windows branch in the existing pre-resume cleanup function. It matches
+Codex app-servers to the exact session-private `CODEX_HOME`, protects the caller
+and its ancestors, checks process birth identity, and waits for owned writers
+to exit before the existing atomic history refresh. Other session homes are
+excluded. The successful server transcript remains authoritative, including
+empty or shorter history; the fix does not suppress errors or reuse divergent
+local history. POSIX cleanup and the native Codex launch path are retained.
+
+Verification: 14 new focused tests passed, including a native Windows test
+using owned processes that reproduces WinError 5 with an open append handle,
+reaps the matching writer, preserves a second session's process, and refreshes
+the same rollout from authoritative history. The helper tests cover unrelated
+homes, non-server commands, caller/ancestor exclusions, PID reuse, changed
+ancestry, inaccessible metadata, and termination failure. Another 27 existing
+runner lifecycle tests passed. Existing rollout/terminal-preparation tests
+produced 48 passes and one pre-existing Windows ZIP-attachment failure:
+`native_attachments.materialize_attachment` uses unavailable `os.O_DIRECTORY`.
+That attachment issue is outside this correction. Linux-target Pyrefly reports
+zero errors; native Windows reports the same 156 existing POSIX-API errors.
+Formatting and other applicable repository hooks passed. No full browser
+Stop/Chat/Console acceptance run was performed; follow the manual check below.
+
+Focused automated reproduction from this checkout:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/harnesses/codex_native/test_windows_process_cleanup.py tests/harnesses/codex_native/test_codex_native_windows_resume_lock.py -q -n 0 -p no:cacheprovider
+```
+
+Manual acceptance after restarting the Omnigent host with the updated checkout:
+
+1. Start native Codex from Chat. Send: `Remember the marker blue-lantern, then
+   run Write-Output "before-stop" in PowerShell.`
+2. Use **Stop session**, then send `What marker did I ask you to remember? Run
+   Write-Output "after-resume" in PowerShell.` directly from Chat.
+3. Verify it resumes without EACCES or a Console detour, remembers the marker,
+   and shows `after-resume`. Repeat Stop then Chat send twice.
+4. Keep a second Codex session open during this check; verify it still responds.
+5. In a separate stopped session, verify **Console → Resume session** still
+   works and retains history.
+
+Original diagnostic reference:
+
+```text
+Native Codex terminal failed to start (ClickException errno 13 EACCES)
+Error ID: err_d0d8196fd12a47f49b0928074382ae0d
+Runner log: ~/.omnigent\logs\runner\runner-ae876cf7f60945969835a6ab8269db3b-20261009-145314-078926.log
+```
+
+### Claude Stop raises invalid WebSocket status code — implemented; UI acceptance pending
+
+The supplied 2026-10-09 traceback shows a runner tunnel abort represented by
+internal code `1006`, followed by the terminal proxy trying to send that code
+to the browser. WebSocket close frames cannot carry `1006`; the attempted close
+raised `ProtocolError: invalid status code`. Upstream main retains the bug and
+[issue #8929](https://github.com/omnigent-ai/omnigent/issues/8929) reports the
+same traceback.
+
+`server/routes/terminal_attach.py` now forwards only wire-valid standard or
+application codes. Internal/invalid codes map to retryable `1011`; valid codes
+and the reason are preserved. All 24 terminal route tests passed, including 13
+close-code regression cases that exercise the real serializer. Restart the
+server, open Claude's Console, start a response and use Stop. Confirm the
+terminal disconnects without the ASGI `invalid status code` traceback, then
+resume and send another message. This addresses proxy error handling, not
+Claude tool-output streaming.
+
+### Codex sandbox secrets deletion after successful setup — upstream; temporary session fallback
+
+Codex 0.162.0 failed before command execution while deleting the affected
+session's `.sandbox-secrets/sandbox_users.json`. Metadata-only inspection found
+ordinary directories/files, not junctions or read-only files. Native setup owns
+the secrets as Administrators and grants the normal user read/write/execute but
+not Delete. Omnigent does not copy or link this directory. Secret contents were
+not read, and ACLs/accounts were not modified.
+
+The installed-version source explains both parts:
+
+- [Fixed machine-wide account names](https://github.com/openai/codex/blob/rust-v0.162.0/codex-rs/windows-sandbox-rs/src/setup.rs#L48-L50)
+  are combined with per-`CODEX_HOME` credentials. Provisioning another private
+  home resets the accounts' passwords; the affected credential file predated
+  the latest password reset. This supports stale credentials as the trigger.
+- [Credential recovery](https://github.com/openai/codex/blob/rust-v0.162.0/codex-rs/windows-sandbox-rs/src/identity.rs#L150-L160)
+  attempts to delete the stale record, while
+  [setup ACLs](https://github.com/openai/codex/blob/rust-v0.162.0/codex-rs/windows-sandbox-rs/src/setup_provisioning.rs#L801-L829)
+  deliberately withhold Delete from the normal user.
+- [Upstream #40627](https://github.com/openai/codex/issues/40627) tracks the
+  multi-home provisioning conflict. No applicable released fix was identified.
+
+Following the user's previously authorized fallback, only the reported private
+home `9346488ae2608d749c35528ccb05247e/codex-home/config.toml` was changed from
+`[windows] sandbox = "elevated"` to `"unelevated"`. Its rollback copy is
+`config.before-unelevated-20261009.toml` beside that config. The global Codex
+config, other sessions, and new-session defaults are unchanged. Existing
+private configs survive Omnigent startup, so the change persists for this
+session. Restart its runner/app-server before testing. This is a temporary
+workaround with weaker network isolation, not an upstream sandbox repair; see
+[OpenAI's Windows sandbox documentation](https://learn.chatgpt.com/docs/windows/windows-sandbox).
+
+A native CLI probe using a disposable home and explicit unelevated selection
+successfully printed `1`, `2`, `3` through PowerShell (exit 0). The affected UI
+session still needs manual acceptance: after restart, ask Codex to run
+`Get-Date` using its native shell tool, then the 60-second loop. Ask it to report
+native-tool failure rather than switch to `sys_os_shell`. That fallback uses
+`cmd.exe` on Windows; raw PowerShell `$i` syntax or incorrect nested quoting
+explains the subsequent fallback errors and does not validate native execution.
+
+Revisit this workaround when upstream fixes per-home credential reconciliation.
+Restore the original elevated setting only after verifying two different
+Omnigent Codex sessions can both execute native commands without invalidating
+each other's sandbox setup. Do not share secrets directories or broaden their
+ACLs as a workaround.
+
+### Subsequent sessions: invocation-only native sandbox opt-in and Store PowerShell failure
+
+The next report used a different private home,
+`772f079e9e84ef36b0b8ddad30cc74a1`, so the earlier single-session config repair
+did not cover it. The opt-in `OMNIGENT_CODEX_WINDOWS_SANDBOX` now selects native
+Codex's Windows sandbox for every app-server started by that Omnigent host,
+including new and resumed private homes. Accepted values are exactly `elevated`
+or `unelevated`; invalid values fail before launch. Unset leaves existing
+behavior unchanged, and non-Windows hosts ignore it. The override is passed as
+`-c windows.sandbox="unelevated"` (or `"elevated"`) to the native app-server and
+remote TUI. The sandbox override does not write `config.toml` or modify
+secret-file ACLs; normal Omnigent config preparation still runs as before.
+
+The separate `CreateProcessAsUserW` error `-1073283067` is `0xC0070005`
+(access denied). Isolated Codex 0.162.0 probes reproduced it for the reported
+Microsoft Store PowerShell executable; both
+`C:\Program Files\PowerShell\7\pwsh.exe` and System32 Windows PowerShell
+succeeded. Codex's
+[Store-shell substitution](https://github.com/openai/codex/blob/rust-v0.162.0/codex-rs/exec-server/src/process_sandbox.rs#L244)
+excludes unelevated mode. Its
+[shell discovery](https://github.com/openai/codex/blob/rust-v0.162.0/codex-rs/shell-command/src/shell_detect.rs)
+uses the first `pwsh` on PATH. This version has no `powershell_exe` config key.
+Related report: [Codex #35958](https://github.com/openai/codex/issues/35958).
+
+Stop the existing Omnigent host and start it from this checkout in a fresh
+PowerShell window, keeping the existing server running at the usual local URL:
+
+```powershell
+Set-Location D:\Develop\Source\OpenSource\_AI\Omnigent\omnigent-v017
+$env:OMNIGENT_CODEX_WINDOWS_SANDBOX = "unelevated"
+.\.venv\Scripts\omni.exe host --server http://127.0.0.1:6767
+```
+
+PowerShell selection is now automatic for Claude, Codex, and Copilot child
+processes; the manual PATH prefix is no longer needed. The sandbox environment
+variable above still applies to this host process and its descendants. Removing
+it and restarting the host/affected sessions restores their existing
+saved/default sandbox selection.
+It does not undo earlier manual or formerly persisted settings: the previously
+edited `9346488ae2608d749c35528ccb05247e` session still has its saved unelevated
+setting and rollback copy described above. This change makes no further edits
+to personal session configs. A still-running app-server retains its launch
+configuration until restarted.
+
+Acceptance: create two fresh Codex sessions, and in each ask for `Get-Date`
+using the native tool with no fallback. Then run a short counter before retrying
+the 60-second counter. Confirm tool launch uses non-Store PowerShell and neither
+session reports sandbox-secret deletion. Also Stop and resume an existing
+session to check the override reaches resumed homes. The error text shown under
+"Claude" mentions Codex's unified executor; verify the active harness/tool when
+retesting rather than assuming it came from Claude's native PowerShell tool.
+No replacement streaming tool was added.
+
+Validation of the invocation-only revision: 22 startup tests passed; six
+symlink cases skipped because this Windows environment cannot create symlinks.
+The tests check saved settings, native server and fresh/resumed TUI arguments,
+and removal of the generated override on a reused server. Linux-target Pyrefly
+reported zero errors, and the applicable repository hooks passed after
+normalizing line endings. Native A/B probes above used disposable homes; the
+full two-session UI acceptance check remains pending.
+
+
+Invocation-only verification: the installed Codex 0.162.0 app-server was
+started with an isolated home whose saved setting was `elevated`. With the
+CLI override, `config/read` returned `unelevated` and the config bytes remained
+unchanged. A second launch without the override returned `elevated`, again
+without changing the file. Both probe processes were stopped; no user sessions
+or credentials were used. Omnigent uses native app-server/remote-TUI arguments
+here, so no TypeScript SDK integration is involved.
+
+### Codex Stop leaves its app-server running — implemented; user verified
+
+Stop previously used the same `turn/interrupt` handler as Interrupt, so an idle
+Codex session returned success without ending its app-server. The local original
+checkout has the same dispatch. Codex now has a dedicated Stop handler using
+existing session-owned app-server and terminal teardown. Ordinary Interrupt
+continues to interrupt the turn. Shutdown exceptions are surfaced as Stop
+failures, and a successful Stop clears pending interrupt timers and settles
+sub-agent cancellation.
+
+Teardown retains the original server handle across forwarder cancellation so a
+forwarder that removes its registration early cannot strand that server. A
+replacement registration is preserved. The server's Stop request now allows
+30 seconds for native cancellation and process shutdown. Changes are confined
+to native interrupt/orchestration and the Stop forwarding budget; no process-name
+sweep is added.
+
+Verification: 47 focused Codex tests passed, including runner HTTP/unit
+regressions, cleanup ownership and cancellation cases, and a Windows test with
+two owned writer processes. Another 18 existing cancellation/capability checks
+passed; `sys_cancel_task` retains its existing best-effort Codex behavior because
+externally CLI-owned lifetimes cannot be confirmed by runner cleanup. Linux-target
+Pyrefly reports zero errors. The
+selected process exits, its file handle is released, and the other session
+remains running. A separate smoke test with the installed Codex 0.162.0 launches
+two isolated native app-servers: Stop returns 204, the selected `codex.exe` exits,
+the second app-server stays alive, and a repeated Stop succeeds. Both owned test
+processes were closed afterward. No existing user processes were stopped.
+This proves registered runner-owned app-server teardown; a full browser journey
+and CLI-owned lifecycle are not covered by this smoke test.
+
+Manual acceptance after restarting both the server and host from this checkout:
+
+1. Open two native Codex sessions. Record their app-server PIDs in Task Manager
+   using the Details tab and Command line column.
+2. Ask one session to run a 60-second foreground counter, then use **Stop session**.
+   Confirm its app-server PID exits and the other session still responds.
+3. Send another message from Chat in the stopped session. Confirm it resumes
+   without EACCES and retains the conversation.
+4. Stop again while the session is idle; confirm its new app-server PID exits.
+5. Check **Console → Resume session**, then repeat Stop once more. Other Codex
+   sessions and editor processes can legitimately remain in Task Manager.
+
+
+### Whole-app Windows shutdown — implemented; desktop acceptance pending
+
+Windows desktop quit and local host/server stop now request graceful lifecycle
+cleanup before terminating surviving owned processes. Closing a browser tab
+still leaves sessions running. Desktop quit stops hosts and the local server
+that the desktop started; previously running or adopted hosts/servers remain
+under their existing ownership. Conversation history remains available for
+resume after restarting Omnigent.
+
+The Windows-specific implementation lives in
+`omnigent/inner/windows_process_shutdown.py`,
+`omnigent/inner/windows_shutdown_cli.py`, and
+`web/electron/src/windows_host_shutdown.js`. Existing host, runner, server, and
+desktop lifecycle code contains only integration hooks. POSIX signal-based
+shutdown remains in place. There are no new dependencies, public shutdown
+endpoints, process-name sweeps, or harness streaming tools.
+
+A process registers a named Windows event scoped to its PID and kernel creation
+time. A stop request captures owned process identities and descendants before
+signalling registered listeners, including listeners behind Python/CLI wrappers.
+Requests retry during startup. Hosts stop tracked runners together; runners use
+existing lifespan cleanup to close harnesses and terminals. The headless server
+sets uvicorn's existing `should_exit` flag. After the grace period, captured
+survivors are terminated leaves first, with creation time rechecked before each
+operation. Captured descendants remain tracked even if their parent exits.
+Runner parent-death fallback also captures children started during the grace.
+
+Windows default grace is 30 seconds for owned process trees and 35 seconds for
+recorded host-daemon stops. Desktop gives helpers longer timeouts and permits
+up to 130 seconds for quit cleanup; healthy shutdown normally finishes sooner.
+Missing helpers, unreadable ownership, or surviving processes report failure
+instead of claiming success. Server pidfiles are checked against the actual
+server command and file timestamp before granting tree ownership. Force-killing
+the entire desktop/backend, power loss, and external detached process ownership
+are outside the normal graceful-quit guarantee.
+
+Validation: 44 focused Python tests and 180 desktop tests passed; Linux-target
+Pyrefly reported zero errors. Coverage includes real headless event delivery and
+FastAPI/uvicorn lifespan cleanup; late registration; retained descendants after root exit; forced cleanup;
+PID reuse and stale pidfile refusal; console stop; and desktop ownership/errors.
+An installed Codex app-server smoke test uses disposable homes and actual host
+runner-stop, runner-listener, and native app-server close code: the selected
+Codex exits, cleanup completes, and another owned native Codex remains running.
+It makes no model requests and does not cover the complete browser session or
+full runner app lifespan. The native smoke test is opt-in through
+`OMNIGENT_TEST_CODEX_EXE`. The Electron main tests use mocked Electron APIs;
+actual desktop quit with both harnesses still needs human verification.
+
+Manual acceptance from a freshly restarted desktop built from this checkout:
+
+1. Start one Claude and one Codex session. Ask each to run a 60-second foreground
+   counter; record their process PIDs in Task Manager's Details tab.
+2. Use the desktop's **Quit/Exit** action. Confirm the owned host, runner,
+   harness, and command PIDs exit. Allow the grace period if a process is stuck.
+   Closing the web browser or hiding/minimizing the desktop is not this test.
+3. Reopen Omnigent and resume both conversations. Confirm history remains and
+   a new native command runs without a rollout-file EACCES error.
+4. Separately start a foreground host from this checkout. Repeat with both
+   harnesses and stop that host with Ctrl+C. Confirm its session PIDs exit.
+5. Keep a separately started host/session running while quitting the desktop.
+   Confirm that independently owned session remains usable. Repeat desktop
+   quit once with idle sessions and once during new-session startup.
+
+To run the maintained native smoke test without using existing sessions:
+
+```powershell
+$env:OMNIGENT_TEST_CODEX_EXE = "C:\Users\keivan.kechmiri\AppData\Local\AI-Harness-Runtimes\codex\bin\codex.exe"
+.\.venv\Scripts\python.exe -m pytest tests/runner/test_windows_runner_shutdown.py -k owned_native_codex -n0 -q
+Remove-Item Env:OMNIGENT_TEST_CODEX_EXE
+```
+
+
+### Automatic native PowerShell selection for the primary Windows harnesses
+
+`omnigent/inner/windows_powershell.py` owns shell discovery for Claude, Codex,
+and Copilot. It checks the PowerShell 7 installation under `ProgramW6432` and
+`ProgramFiles`, then compatible portable installations already on PATH. Store
+execution aliases and resolved Store targets are excluded from preferred
+selection. The selected executable directory is placed first in each child
+process's copied PATH, preserving other tool directories. Repeated preparation
+avoids duplicate prefixes and handles Windows environment key casing.
+
+Claude native terminal startup and Claude SDK options, Codex SDK/native
+app-server/remote-terminal environments, and Copilot SDK client startup all use
+the shared helper. Copilot's GitHub host setting now belongs to that copied
+child environment too. No personal config file, global PATH, or sandbox mode
+is changed. Installation-root discovery reads only the needed host environment
+values and does not add host credentials to filtered or partial launch envs.
+A machine without a compatible PowerShell 7 retains its existing vendor shell
+fallback; Store-only discovery logs installation guidance rather than claiming
+the Store sandbox problem is repaired. This change does not install PowerShell.
+
+The local native smoke started from a Store-first child PATH with the ordinary
+PowerShell install removed from PATH. The resulting command ran
+`C:\Program Files\PowerShell\7\pwsh.exe`, and the parent PATH remained unchanged.
+Resolver tests and harness integration tests cover fresh startup, the Codex
+remote terminal used for resume, credential-filter preservation, SDK child env,
+and fallback behavior. Existing runner/host shutdown hooks apply to all three
+primary harnesses; Copilot close tests check session/client cleanup and repeated
+close. Actual Copilot UI execution remains a human acceptance check.
+
+Combined focused shell/shutdown validation: 295 tests and three subtests passed;
+two symlink cases skipped because this Windows account lacks symlink privilege.
+An additional Codex launch/environment selection passed 121 tests with eight
+symlink skips. Linux-target Pyrefly reported zero errors. The broader Claude
+native suite retains 19 existing Windows failures, reproduced with the new
+shell helper disabled, so these focused results do not claim a clean full
+Windows suite. Copilot child `env` support was confirmed in the installed sibling
+checkout SDK 1.0.16; this checkout has no installed Copilot SDK for a live UI
+probe. No optional dependencies were installed for these checks.
+
+After restarting the updated host/desktop, remove the manual PowerShell PATH
+prefix from your startup instructions. Create one session with each of Claude,
+Codex, and Copilot and ask its native shell tool to run:
+
+```powershell
+$PSHOME
+(Get-Process -Id $PID).Path
+```
+
+With the ordinary PowerShell 7 install on this machine, expect
+`C:\Program Files\PowerShell\7` and its `pwsh.exe`. Repeat after **Stop session**
+and sending a message to resume. Run a foreground counter in all three, quit
+the desktop or stop the owning host with Ctrl+C, and confirm their recorded
+process PIDs exit. Independently owned sessions should remain usable, and
+conversation history should still be available after restart.
+
+
+### Installing this fork's Windows release artifacts
+
+Fork release validation now requires the shutdown and primary-harness shell
+environment regressions on both Linux and Windows, plus the desktop host-helper
+and server-manager tests. Its successful build produces two artifacts for the
+same source commit:
+
+- `omnigent-windows-<commit>`: the core and lockstep SDK wheels, bundled web UI,
+  and `INSTALL.cmd` / `install.ps1` installation helpers.
+- `omnigent-windows-desktop-<commit>`: a portable x64 Electron ZIP containing the
+  updated desktop shutdown integration. Extract it to a new directory and run
+  `Omnigent Dev.exe`, using the CLI installed from the matching core bundle.
+
+The desktop uses the existing development app identity and fork source/version
+metadata. Automatic upstream desktop updates are disabled, and the workflow
+never publishes to the upstream update endpoint. These are unsigned fork build
+artifacts. The native containment candidate is packaged for explicit development
+verification; production `native` selection still requires its signed approval
+manifest. Legacy launcher selection remains the default.
+
+Download both artifacts from the same successful Fork release validation run.
+Quit the existing desktop, stop its owning host/server, install the core bundle,
+and start the extracted desktop before repeating the three-harness PowerShell,
+Stop/resume, and desktop Quit checks above. Merely updating the Python wheels
+cannot update an already packaged Electron desktop.

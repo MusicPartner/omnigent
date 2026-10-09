@@ -34,6 +34,7 @@ from websockets.exceptions import ConnectionClosed, InvalidStatus, InvalidURI
 
 from omnigent._platform import (
     IS_POSIX,
+    IS_WINDOWS,
     WINDOWS_ENV_PASSTHROUGH,
     installed_interactive_shells,
     normalize_interactive_shells,
@@ -2274,6 +2275,14 @@ class HostProcess:
 
         :param proc: The runner process handle (Popen or zygote shim).
         """
+        if IS_WINDOWS:
+            from omnigent.inner.windows_process_shutdown import stop_processes
+
+            if not isinstance(proc, subprocess.Popen):
+                raise RuntimeError("Windows runner shutdown requires a direct process handle")
+            if not stop_processes([proc]):
+                raise RuntimeError(f"Runner process tree did not stop (pid={proc.pid})")
+            return
         if proc.poll() is not None:
             return
         proc.terminate()
@@ -4249,6 +4258,19 @@ class HostProcess:
 
         :returns: None.
         """
+        if IS_WINDOWS:
+            from omnigent.inner.windows_process_shutdown import stop_processes
+
+            processes: list[subprocess.Popen[bytes]] = []
+            for handle in self._runners.values():
+                if not isinstance(handle.proc, subprocess.Popen):
+                    raise RuntimeError("Windows runner shutdown requires direct process handles")
+                processes.append(handle.proc)
+            if not stop_processes(processes):
+                _logger.error("Runner process trees did not stop during host shutdown")
+                raise RuntimeError("Runner process trees did not stop during host shutdown")
+            self._runners.clear()
+            return
         for runner_id, handle in self._runners.items():
             if handle.proc.poll() is None:
                 _logger.info("Terminating runner %s on shutdown", runner_id)
@@ -5019,7 +5041,7 @@ def run_host_process(
         interactive_shells=interactive_shells,
     )
     try:
-        asyncio.run(host.run())
+        asyncio.run(_run_host_with_windows_shutdown(host) if IS_WINDOWS else host.run())
     except HostConnectError as exc:
         # Fail loud: a permanent connection failure must not look like the
         # process is still working. Print the cause + fix, then exit non-zero
@@ -5032,3 +5054,35 @@ def run_host_process(
             flush=True,
         )
         raise SystemExit(HOST_FATAL_EXIT_CODE) from exc
+
+
+async def _run_host_with_windows_shutdown(host: HostProcess) -> None:
+    """Request host teardown once when its Windows shutdown endpoint is notified."""
+    from omnigent.inner.windows_process_shutdown import install_shutdown_listener
+
+    loop = asyncio.get_running_loop()
+    task: asyncio.Task[None] | None = None
+    shutdown_requested = False
+
+    def request_shutdown() -> None:
+        nonlocal shutdown_requested
+        if shutdown_requested:
+            return
+        shutdown_requested = True
+        if task is not None:
+            task.cancel()
+
+    def notify_shutdown() -> None:
+        loop.call_soon_threadsafe(request_shutdown)
+
+    listener = install_shutdown_listener(notify_shutdown)
+    try:
+        task = asyncio.create_task(host.run(), name="host-main")
+        if shutdown_requested:
+            task.cancel()
+        await task
+    except asyncio.CancelledError:
+        if not shutdown_requested:
+            raise
+    finally:
+        listener.close()

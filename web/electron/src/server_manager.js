@@ -17,6 +17,7 @@
 const { spawn } = require("child_process");
 
 const cli = require("./omnigent_cli");
+const windowsHostShutdown = require("./windows_host_shutdown");
 
 /** Max seconds to wait for `host` to print its connected marker before giving up. */
 const CONNECT_TIMEOUT_MS = 30000;
@@ -36,10 +37,12 @@ const connectingHosts = new Map();
 /**
  * Every `omnigent host` child we have spawned and not yet seen exit — including
  * one still mid-connect, before it lands in `hostChildren` (the connect await
- * can take up to CONNECT_TIMEOUT_MS). `shutdown` SIGTERMs this set so a quit
+ * can take up to CONNECT_TIMEOUT_MS). `shutdown` stops this set so a quit
  * during a connect can't orphan the child. Entries self-remove on exit.
  */
 const spawnedHostChildren = new Set();
+const spawnedHostCommands = new WeakMap();
+const stoppingChildren = new WeakMap();
 
 /** { url, port, pid } when this app started the local server; null otherwise. */
 let ownedLocalServer = null;
@@ -143,6 +146,7 @@ function spawnHostChild(cliCommand, serverUrl) {
         [...prefixArgs, "host", "--server", serverUrl, "--non-interactive"],
         {
           stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true,
         },
       );
     } catch (err) {
@@ -152,7 +156,11 @@ function spawnHostChild(cliCommand, serverUrl) {
     // Track from the instant it exists so `shutdown` can kill it even while the
     // connect is still in flight (not yet in hostChildren). Self-removes on exit.
     spawnedHostChildren.add(child);
+    spawnedHostCommands.set(child, { command: cliCommand, createdBeforeMs: Date.now() + 1 });
     child.once("exit", () => spawnedHostChildren.delete(child));
+    child.once("error", () => {
+      if (!Number.isInteger(child.pid)) spawnedHostChildren.delete(child);
+    });
 
     let settled = false;
     const finish = (result) => {
@@ -246,12 +254,9 @@ async function connectHost(cliCommand, serverUrl, key) {
 
   const spawned = await spawnHostChild(cliCommand, serverUrl);
   if (!spawned.ok) {
-    // Connect failed or timed out. Await the child's termination — escalating to
-    // SIGKILL after the grace period — rather than firing a single SIGTERM and
-    // moving on: a child that ignores or is slow to handle SIGTERM would keep
-    // running as a connected host while we report {ok:false}, leaving the
-    // machine hosting in contradiction to the state we return. stopChild is a
-    // no-op for a child that already exited (the common conflict/error case).
+    // Await cleanup so a failed connect cannot leave a live host behind.
+    // Windows uses native tree cleanup; POSIX escalates after a grace period.
+    // An already exited child needs no cleanup.
     await stopChild(spawned.child);
     // The CLI refuses to start a second daemon for a target already served by
     // one (e.g. a local-mode daemon our pre-check couldn't match). That means a
@@ -361,13 +366,26 @@ async function restartHost(cliCommand, serverUrl) {
 }
 
 /**
- * SIGTERM a child, escalating to SIGKILL after a grace period, and resolve once
- * it has actually exited.
+ * Stop an owned child and await exit. Windows uses native tree cleanup;
+ * POSIX sends SIGTERM and escalates to SIGKILL after a grace period.
  *
  * @param {import("child_process").ChildProcess} child
  * @returns {Promise<void>}
  */
 function stopChild(child) {
+  if (process.platform === "win32") {
+    if (!child) return Promise.resolve();
+    const pending = stoppingChildren.get(child);
+    if (pending) return pending;
+    const owned = spawnedHostCommands.get(child);
+    const stopping = windowsHostShutdown.stopOwnedHost(
+      child,
+      owned?.command,
+      owned?.createdBeforeMs,
+    );
+    stoppingChildren.set(child, stopping);
+    return stopping;
+  }
   return new Promise((resolve) => {
     if (!child || child.exitCode !== null) {
       resolve();
@@ -446,13 +464,13 @@ async function startLocalServer(cliPath, onLine) {
 async function stopOwnedLocalServer(cliPath) {
   if (!ownedLocalServer) return { ok: true, skipped: true };
   const res = await cli.stopLocalServer(cliPath);
-  ownedLocalServer = null;
+  if (res.ok || process.platform !== "win32") ownedLocalServer = null;
   return { ok: res.ok };
 }
 
 /**
- * Tear down everything this app started: SIGTERM all host children (await their
- * exit within the grace period), then stop an owned local server. Called from
+ * Tear down everything this app started: stop all host children and await their
+ * exit, then stop an owned local server. Called from
  * the app's before-quit handler.
  *
  * @param {string | null} cliPath
@@ -466,10 +484,28 @@ async function shutdown(cliPath) {
   for (const child of spawnedHostChildren) {
     exits.push(stopChild(child));
   }
-  await Promise.all(exits);
+  const results = await Promise.allSettled(exits);
   hostChildren.clear();
   spawnedHostChildren.clear();
-  if (cliPath) await stopOwnedLocalServer(cliPath);
+  const failures = results
+    .filter((result) => result.status === "rejected")
+    .map((result) => result.reason);
+  if (cliPath) {
+    try {
+      const serverStop = await stopOwnedLocalServer(cliPath);
+      if (process.platform === "win32" && !serverStop.ok) {
+        failures.push(new Error("Local server shutdown failed"));
+      }
+    } catch (error) {
+      if (process.platform !== "win32") throw error;
+      failures.push(error);
+    }
+  }
+  if (failures.length) {
+    const error = new AggregateError(failures, "Desktop shutdown failed");
+    console.error(error);
+    throw error;
+  }
 }
 
 module.exports = {

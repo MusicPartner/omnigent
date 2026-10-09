@@ -507,14 +507,23 @@ def reap_codex_native_processes_for_state_dir(
     baked into the app-server command line (its ``-c`` config overrides
     name the bridge dir), which — unlike the argv0 crash tag — survives
     the npm shim's ``exec``. Matches are killed by process group, taking
-    their bridge/hook children with them.
+    their bridge/hook children with them. Windows matches the exact private
+    ``CODEX_HOME`` and waits for the app-server and its descendants to exit
+    before the caller replaces the rollout.
 
     :param state_dir: The session's codex-native state dir, e.g.
         ``~/.omnigent/codex-native/<sha256(session)[:32]>``.
     :param grace_s: Seconds to wait after SIGTERM before escalating the
         survivors to SIGKILL, e.g. ``1.5``.
     :returns: Number of matched processes signalled.
+    :raises RuntimeError: If a matched Windows writer cannot be stopped.
     """
+    if os.name == "nt":
+        from omnigent.harnesses.codex_native.windows_process_cleanup import (
+            reap_windows_codex_processes_for_state_dir,
+        )
+
+        return reap_windows_codex_processes_for_state_dir(state_dir, grace_s=grace_s)
     if os.name != "posix":
         return 0
     needle = str(state_dir)

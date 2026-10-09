@@ -78,3 +78,46 @@ def test_find_codex_cli_on_non_windows_returns_resolver_value_unchanged(
     monkeypatch.setattr(ce, "IS_WINDOWS", False)
     monkeypatch.setattr(ce, "resolve_cli_binary", lambda name, **_kwargs: r"C:\npm\codex.cmd")
     assert ce._find_codex_cli() == r"C:\npm\codex.cmd"
+
+
+@pytest.mark.parametrize("mode", ["elevated", "unelevated"])
+def test_native_codex_windows_sandbox_explicit_modes(
+    monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    monkeypatch.setattr(codex_windows, "IS_WINDOWS", True)
+    assert (
+        codex_windows.native_codex_windows_sandbox(
+            {codex_windows.CODEX_WINDOWS_SANDBOX_ENV_VAR: mode}
+        )
+        == mode
+    )
+
+
+def test_native_codex_windows_sandbox_unset_preserves_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(codex_windows, "IS_WINDOWS", True)
+    assert codex_windows.native_codex_windows_sandbox({}) is None
+
+
+@pytest.mark.parametrize("value", ["", "auto", "UNELEVATED", "unelevated "])
+def test_native_codex_windows_sandbox_rejects_invalid_values(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setattr(codex_windows, "IS_WINDOWS", True)
+    with pytest.raises(ValueError, match="OMNIGENT_CODEX_WINDOWS_SANDBOX"):
+        codex_windows.native_codex_windows_sandbox(
+            {codex_windows.CODEX_WINDOWS_SANDBOX_ENV_VAR: value}
+        )
+
+
+def test_native_codex_windows_sandbox_ignored_off_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(codex_windows, "IS_WINDOWS", False)
+    assert (
+        codex_windows.native_codex_windows_sandbox(
+            {codex_windows.CODEX_WINDOWS_SANDBOX_ENV_VAR: "invalid"}
+        )
+        is None
+    )

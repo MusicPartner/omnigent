@@ -47,6 +47,39 @@ jobs:
       - name: Install focused test and lint dependencies
         run: uv sync --locked --group dev --extra tracing
 
+      - name: Owned process shutdown, native shell discovery and Codex Stop regressions
+        run: >-
+          uv run pytest
+          tests/inner/test_windows_process_shutdown.py
+          tests/inner/test_windows_powershell.py
+          tests/host/test_windows_shutdown.py
+          tests/host/test_windows_shutdown_cli.py
+          tests/host/test_windows_server_shutdown.py
+          tests/host/test_windows_local_server_shutdown.py
+          tests/runner/test_windows_runner_shutdown.py
+          tests/runner/test_codex_native_stop_teardown.py
+          tests/runner/test_codex_native_stop_process.py
+          tests/harnesses/codex_native/test_codex_native_windows_resume_lock.py
+          tests/harnesses/codex_native/test_windows_powershell_env.py
+          tests/harnesses/claude_native/test_claude_native_powershell_env.py
+          tests/inner/test_claude_sdk_powershell_env.py
+          tests/inner/test_copilot_executor.py
+          -n 0 -p no:cacheprovider -q
+
+      - name: Set up pnpm for desktop shutdown regressions
+        uses: ./.github/actions/setup-pnpm
+
+      - name: Install desktop test runtime dependencies without Electron
+        run: pnpm install --frozen-lockfile --prod --ignore-scripts --filter omnigent-desktop-electron
+
+      - name: Desktop host shutdown and manager regressions
+        env:
+          ELECTRON_OVERRIDE_DIST_PATH: ${{ github.workspace }}/web/electron
+        run: >-
+          node --test --test-isolation=none
+          web/electron/test/windows_host_shutdown.test.js
+          web/electron/test/server_manager.test.js
+
       - name: Ruff Windows integration surfaces
         run: >-
           uv run ruff check
@@ -83,6 +116,15 @@ jobs:
           tests/harnesses/claude_native/test_claude_native_bridge.py
           tests/harnesses/claude_native/test_claude_native_status.py
           tests/test_native_shell.py
+          dev/windows_launcher/build.py
+          dev/windows_launcher/package.py
+          dev/windows_launcher/smoke.py
+          omnigent/inner/windows_exec_launcher.py
+          tests/inner/test_windows_exec_launcher_runtime.py
+          tests/scripts/test_windows_launcher_packaging.py
+          tests/terminals/test_windows_native_launcher_psmux.py
+          tests/inner/windows_private_job_launcher.py
+          tests/inner/test_windows_private_job_launcher.py
 
       - name: Focused integration tests
         run: >-
@@ -107,6 +149,7 @@ jobs:
           tests/harnesses/claude_native/test_windows_hook_transport.py
           tests/test_native_resume_hint.py
           tests/test_native_cost_popup.py
+          tests/scripts/test_windows_launcher_packaging.py
 
   windows-native:
     name: Native Windows compatibility
@@ -132,6 +175,39 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --group test --extra tracing
 
+      - name: Owned process shutdown, native shell discovery and Codex Stop regressions
+        run: >-
+          uv run pytest
+          tests/inner/test_windows_process_shutdown.py
+          tests/inner/test_windows_powershell.py
+          tests/host/test_windows_shutdown.py
+          tests/host/test_windows_shutdown_cli.py
+          tests/host/test_windows_server_shutdown.py
+          tests/host/test_windows_local_server_shutdown.py
+          tests/runner/test_windows_runner_shutdown.py
+          tests/runner/test_codex_native_stop_teardown.py
+          tests/runner/test_codex_native_stop_process.py
+          tests/harnesses/codex_native/test_codex_native_windows_resume_lock.py
+          tests/harnesses/codex_native/test_windows_powershell_env.py
+          tests/harnesses/claude_native/test_claude_native_powershell_env.py
+          tests/inner/test_claude_sdk_powershell_env.py
+          tests/inner/test_copilot_executor.py
+          -n 0 -p no:cacheprovider -q
+
+      - name: Set up pnpm for desktop shutdown regressions
+        uses: ./.github/actions/setup-pnpm
+
+      - name: Install desktop test runtime dependencies without Electron
+        run: pnpm install --frozen-lockfile --prod --ignore-scripts --filter omnigent-desktop-electron
+
+      - name: Desktop host shutdown and manager regressions
+        env:
+          ELECTRON_OVERRIDE_DIST_PATH: ${{ github.workspace }}/web/electron
+        run: >-
+          node --test --test-isolation=none
+          web/electron/test/windows_host_shutdown.test.js
+          web/electron/test/server_manager.test.js
+
       - name: Import and CLI smoke
         run: |
           uv run python -c "import omnigent; print('import omnigent OK')"
@@ -146,6 +222,15 @@ jobs:
           tests/inner/test_proc_and_platform.py
           tests/runtime/test_process_manager.py
           -p no:cacheprovider -q
+
+      - name: Native launcher lifecycle and runtime candidate
+        env:
+          OMNIGENT_TEST_PRIVATE_JOB_LAUNCHER: "1"
+        run: >-
+          uv run pytest tests/inner/test_windows_private_job_launcher.py
+          tests/inner/test_windows_exec_launcher_runtime.py
+          tests/scripts/test_windows_launcher_packaging.py
+          -n 0 -p no:cacheprovider -q
 
       - name: Windows stable subset
         shell: pwsh
@@ -169,8 +254,11 @@ jobs:
           -n 0 -p no:cacheprovider -q
 
       - name: psmux terminal backend tests
+        env:
+          OMNIGENT_TEST_PRIVATE_JOB_LAUNCHER: "1"
         run: >-
           uv run pytest
+          tests/terminals/test_windows_native_launcher_psmux.py
           tests/terminals/test_windows_psmux.py::test_windows_psmux_backend_launch_send_read_close
           tests/terminals/test_windows_psmux.py::test_windows_psmux_backend_strips_runner_auth_secrets
           tests/terminals/test_windows_psmux.py::test_psmux_backend_reexport_preserves_identity
@@ -229,6 +317,12 @@ jobs:
           pnpm install --frozen-lockfile --filter web
           pnpm --filter web run build
 
+      - name: Build optional native launcher candidate
+        shell: pwsh
+        run: >-
+          python -m dev.windows_launcher.package
+          --toolset-version 14.44.35207 --sdk-version 10.0.26100.0
+
       - name: Build core and lockstep SDK distributions
         shell: pwsh
         run: |
@@ -250,13 +344,15 @@ jobs:
           }
           uvx twine check $files
 
-      - name: Assert bundled web UI and console entry points
+      - name: Assert bundled web UI, native asset and console entry points
         shell: pwsh
         run: |
           @'
           import configparser
           import glob
+          import hashlib
           import io
+          import json
           import sys
           import zipfile
 
@@ -266,6 +362,13 @@ jobs:
           wheel = wheels[-1]
           with zipfile.ZipFile(wheel) as archive:
               names = archive.namelist()
+              native = "omnigent/resources/windows_launcher/"
+              manifest = json.loads(archive.read(native + "manifest.json"))
+              asset = archive.read(native + manifest["filename"])
+              if hashlib.sha256(asset).hexdigest() != manifest["sha256"]:
+                  sys.exit("native asset digest mismatch")
+              if not manifest["build"]["reproducible_verified"]:
+                  sys.exit("native asset lacks reproducible build evidence")
               ui = [name for name in names if "server/static/web-ui/" in name]
               has_index = any(name.endswith("server/static/web-ui/index.html") for name in ui)
               entry_files = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
@@ -304,6 +407,8 @@ jobs:
           & $omnigent --version
           if ($LASTEXITCODE -ne 0) { throw "omnigent.exe --version failed" }
           & $python -c "import omnigent; import omnigent.server.app; print('wheel import smoke OK')"
+          & $python -I dev/windows_launcher/smoke.py --require-installed
+          if ($LASTEXITCODE -ne 0) { throw "installed native launcher smoke failed" }
 
       - name: Assemble Windows bundle
         shell: pwsh
@@ -436,5 +541,53 @@ jobs:
         with:
           name: omnigent-windows-${{ github.sha }}
           path: windows-bundle/
+          if-no-files-found: error
+          retention-days: 30
+
+  build-windows-desktop-artifact:
+    name: Build Windows desktop artifact (Electron ZIP)
+    needs: [focused-linux, windows-native]
+    if: ${{ !cancelled() && needs.focused-linux.result == 'success' && needs.windows-native.result == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      OMNIGENT_NOTARIZE_DMG: "false"
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python for release version metadata
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version-file: ".python-version"
+
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+
+      - name: Install frozen desktop and overlay dependencies
+        run: pnpm install --frozen-lockfile --filter web --filter omnigent-desktop-electron
+
+      - name: Build desktop overlays
+        run: pnpm --filter omnigent-desktop-electron run build:overlay
+
+      # Packaged dev metadata disables upstream desktop updates for this fork ZIP.
+      - name: Build Windows desktop ZIP without publishing
+        shell: pwsh
+        run: |
+          $desktopVersion = python -c "import pathlib, tomllib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])"
+          if ($LASTEXITCODE -ne 0) { throw "Could not resolve desktop release version" }
+          pnpm --filter omnigent-desktop-electron exec electron-builder --win zip --x64 --publish never -c.appId=ai.omnigent.desktop-dev "-c.productName=Omnigent Dev" -c.directories.output=dist-fork-windows -c.extraMetadata.omnigentBuild=dev "-c.extraMetadata.version=$desktopVersion" "-c.extraMetadata.omnigentSourceCommit=$env:GITHUB_SHA"
+          if ($LASTEXITCODE -ne 0) { throw "Windows desktop ZIP build failed" }
+          $desktopArchives = @(Get-ChildItem web/electron/dist-fork-windows -Filter *.zip -File)
+          if ($desktopArchives.Count -ne 1) { throw "Expected one Windows desktop ZIP" }
+          $desktopArchives | Get-FileHash -Algorithm SHA256
+
+      - name: Upload Windows desktop artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: omnigent-windows-desktop-${{ github.sha }}
+          path: web/electron/dist-fork-windows/*.zip
           if-no-files-found: error
           retention-days: 30

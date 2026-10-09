@@ -49,6 +49,7 @@ from omnigent.inner import _proc
 from omnigent.inner.bundle_skills import ensure_bundle_plugin_manifest
 from omnigent.inner.claude_windows import prefer_native_claude_exe
 from omnigent.inner.hook_scripts import subagent_router
+from omnigent.inner.windows_powershell import prepare_native_powershell_env
 from omnigent.llms._usage_observer import notify_from_dict as _notify_usage_from_dict
 from omnigent.llms.adapters._content import parse_data_uri as _parse_replay_data_uri
 from omnigent.models import model_catalog
@@ -2592,7 +2593,7 @@ class ClaudeSDKExecutor(Executor):
         # creds. CLAUDECODE removal happens around the subprocess spawn in
         # ``_get_or_create_client`` via ``_unset_env_var`` — setting it to
         # ``""`` here would still leave an empty key in the child env.
-        env = dict(self._extra_env)
+        env = prepare_native_powershell_env(self._extra_env, installation_env=os.environ)
         api_key_helper = env.pop(_CLAUDE_API_KEY_HELPER_ENV_KEY, None)
         # Teach Claude Code this gateway's spellings so no model surface routes
         # to an id the gateway rejects: pins for the family aliases, rewrites

@@ -117,6 +117,7 @@ from omnigent.inner._subprocess_lifecycle import (
     await_cleanup_task,
     terminate_direct_subprocess,
 )
+from omnigent.inner.windows_powershell import prepare_native_powershell_env
 from omnigent.models import model_catalog
 from omnigent.models.claude_model_vocabulary import (
     ALIAS_MODEL_ENV_VARS,
@@ -1545,7 +1546,7 @@ def build_native_claude_terminal_env(
                 f"carries a raw {_ANTHROPIC_API_KEY_ENV}; the credential must reach "
                 "Claude Code via the helper, not the environment."
             )
-    return terminal_env
+    return prepare_native_powershell_env(terminal_env, installation_env=os.environ)
 
 
 def _mark_startup_step(

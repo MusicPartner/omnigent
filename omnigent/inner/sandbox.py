@@ -1258,6 +1258,10 @@ def create_exec_launcher(
         )
 
     if os.name == "nt":
+        if os.environ.get("OMNIGENT_WINDOWS_EXEC_LAUNCHER") in {"native", "native-dev"}:
+            from omnigent.inner.windows_exec_launcher import create_native_exec_launcher
+
+            return create_native_exec_launcher(inline, interpreter, active=sandbox.active)
         # CreateProcess cannot run .py associations; use a batch launcher
         # that invokes the current interpreter instead.
         fd, path = tempfile.mkstemp(prefix="omnigent-sandbox-", suffix=".cmd")

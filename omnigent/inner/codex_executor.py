@@ -714,7 +714,9 @@ def _clean_codex_env(extra_allow: Iterable[str] = ()) -> dict[str, str]:
         if attribute.strip() and attribute.partition("=")[0].strip() != "launch_mode"
     ]
     env["OTEL_RESOURCE_ATTRIBUTES"] = ",".join([*resource_attributes, "launch_mode=omni"])
-    return env
+    from omnigent.inner.windows_powershell import prepare_native_powershell_env
+
+    return prepare_native_powershell_env(env, installation_env=os.environ)
 
 
 def codex_skill_sources(

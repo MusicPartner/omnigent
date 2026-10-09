@@ -40,7 +40,7 @@ def test_onboarding_uses_selected_claude_directory(monkeypatch, tmp_path):
     ensure_claude_workspace_trusted(workspace)
     state = json.loads((tmp_path / "selected/.claude.json").read_text())
     assert state["hasCompletedOnboarding"]
-    assert state["projects"][str(workspace)]["hasTrustDialogAccepted"]
+    assert state["projects"][workspace.resolve().as_posix()]["hasTrustDialogAccepted"]
     assert not (tmp_path / "home/.claude.json").exists()
 
 

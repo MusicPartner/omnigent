@@ -65,6 +65,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, TypeAlias
 
+from omnigent.inner.windows_powershell import prepare_native_powershell_env
 from omnigent.llms._usage_observer import notify_from_dict as _notify_usage_from_dict
 from omnigent.runtime.mcp_tool_result import decode_mcp_image_result
 from omnigent.util.reasoning_effort import COPILOT_EFFORTS, validate_effort
@@ -538,20 +539,17 @@ class CopilotExecutor(Executor):
         # must be absolute"), and a spec / os_env can hand us a relative cwd
         # (e.g. ``.``), so always resolve to an absolute path.
         cwd = os.path.abspath(self._cwd or os.getcwd())
-        # A GHE hostname reaches the bundled CLI only as an env var; the SDK has
-        # no host parameter. Set it in our own environment rather than passing
-        # ``env=`` — the SDK inherits ``os.environ`` only when ``env`` is None,
-        # so handing it a dict would strip everything else from the subprocess.
-        # Assign both ways so a hostless executor can't inherit a host another
-        # one left behind.
+        # The SDK uses this complete environment for its bundled CLI and tools.
+        env = prepare_native_powershell_env(os.environ, installation_env=os.environ)
         if self._github_host:
-            os.environ[COPILOT_HOST_ENV_VAR] = self._github_host
+            env[COPILOT_HOST_ENV_VAR] = self._github_host
         else:
-            os.environ.pop(COPILOT_HOST_ENV_VAR, None)
+            env.pop(COPILOT_HOST_ENV_VAR, None)
         client = CopilotClient(
             github_token=self._github_token,
             working_directory=cwd,
             log_level="error",
+            env=env,
         )
         try:
             # ``start()`` is inside the try: it spawns the bundled Copilot CLI

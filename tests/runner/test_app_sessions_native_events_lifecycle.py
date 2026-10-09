@@ -1942,71 +1942,20 @@ async def test_events_interrupt_codex_side_chat_leaves_parent_turn_running(
 
 
 @pytest.mark.asyncio
-async def test_events_stop_session_on_codex_native_uses_turn_interrupt_without_marker(
+async def test_events_stop_session_on_codex_native_tears_down_without_marker(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
 ) -> None:
-    """
-    POST ``/events`` ``stop_session`` on codex-native interrupts the active turn.
-
-    Regression guard for the cancel-floor work: ``stop_session`` only
-    special-cased claude-native, so codex-native fell into
-    ``_cancel_inprocess_turn``, which flags the session interrupted and (on the
-    next turn or a live-task race) synthesizes the ``[System: interrupted]``
-    marker Codex never emits. codex-native must reach the same app-server
-    ``turn/interrupt`` path as the interrupt branch.
-
-    Pins (sister to ``...interrupt_on_codex_native...``):
-    1. ``turn/interrupt`` is sent with the recorded thread/turn ids.
-    2. NO ``[System: interrupted]`` marker is persisted to AP.
-    3. The session is NOT added to ``_interrupted_sessions``; no marker leaks
-       into ``_session_histories``.
-    """
-    from omnigent.harnesses.codex_native import app_server as codex_native_app_server
+    """Full stop tears down Codex without persisting an interrupt marker."""
     from omnigent.runner.app import _session_histories_ref
+    from omnigent.runner.native import orchestration
 
     conv_id = "fa87fda193a47e99e6a2599e44032807"
-    monkeypatch.setattr(codex_native_bridge, "_BRIDGE_ROOT", tmp_path / "codex-bridge")
-    bridge_dir = codex_native_bridge.bridge_dir_for_bridge_id(conv_id)
-    codex_native_bridge.write_bridge_state(
-        bridge_dir,
-        codex_native_bridge.CodexNativeBridgeState(
-            session_id=conv_id,
-            socket_path="ws://127.0.0.1:43211",
-            thread_id="thread_codex_stop",
-            codex_home=str(tmp_path / "codex-home"),
-            active_turn_id="turn_codex_stop",
-        ),
-    )
+    calls: list[str] = []
 
-    fake_client = _RecordingCodexAppServerClient(
-        transport="ws://127.0.0.1:43211",
-        client_name="omnigent-codex-native-runner",
-    )
+    async def teardown(session_id: str) -> None:
+        calls.append(session_id)
 
-    def _fake_client_for_transport(
-        transport: str,
-        *,
-        client_name: str = "omnigent",
-    ) -> _RecordingCodexAppServerClient:
-        """
-        Return the fake Codex app-server client for the stop-session path.
-
-        :param transport: App-server transport from bridge state, e.g.
-            ``"ws://127.0.0.1:43211"``.
-        :param client_name: Client name supplied by the runner, e.g.
-            ``"omnigent-codex-native-runner"``.
-        :returns: Fake client that records JSON-RPC calls.
-        """
-        assert transport == fake_client.transport
-        assert client_name == fake_client.client_name
-        return fake_client
-
-    monkeypatch.setattr(
-        codex_native_app_server,
-        "client_for_transport",
-        _fake_client_for_transport,
-    )
+    monkeypatch.setattr(orchestration, "teardown_codex_native_app_server", teardown)
 
     codex_native_spec = _harness_spec("codex-native")
 
@@ -2042,23 +1991,7 @@ async def test_events_stop_session_on_codex_native_uses_turn_interrupt_without_m
         f"codex-native stop_session must return 204; got {stop_resp.status_code}: {stop_resp.text}"
     )
 
-    # 1) The runner reached Codex app-server's structured interrupt path. If
-    # this is empty, stop_session regressed to the in-process cancel floor or
-    # the old terminal-key path.
-    assert fake_client.connected
-    assert fake_client.closed
-    assert fake_client.requests == [
-        (
-            "turn/interrupt",
-            {
-                "threadId": "thread_codex_stop",
-                "turnId": "turn_codex_stop",
-            },
-        )
-    ], (
-        f"codex-native stop_session must call turn/interrupt with the active "
-        f"thread/turn ids; got {fake_client.requests!r}."
-    )
+    assert calls == [conv_id]
 
     # 2) NO marker persisted — the in-process floor would have synthesized one.
     marker_texts = [
@@ -2088,18 +2021,17 @@ async def test_events_stop_session_on_codex_native_uses_turn_interrupt_without_m
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("event_type", ["interrupt", "stop_session"])
-async def test_events_stop_on_codex_native_cancels_mcp_startup_without_active_turn(
+@pytest.mark.parametrize("event_type", ["interrupt"])
+async def test_events_interrupt_on_codex_native_cancels_mcp_startup_without_active_turn(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     event_type: str,
 ) -> None:
     """
-    Stop/interrupt with no active turn cancels in-flight MCP startup.
+    Interrupt with no active turn cancels in-flight MCP startup.
 
-    During codex-native startup no turn id is recorded yet, so Stop used to
-    204 no-op while Codex sat wedged on a slow or failing MCP server
-    (issue #2058). The handler must flip the bridge's pending servers to
+    During codex-native startup no turn id is recorded yet. The handler
+    must flip the bridge's pending servers to
     ``cancelled`` (unblocking the executor's first-turn gate) and send the
     Codex TUI's startup interrupt — ``turn/interrupt`` with an empty turn
     id — instead of doing nothing.

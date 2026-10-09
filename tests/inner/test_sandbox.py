@@ -563,6 +563,7 @@ def test_exec_launcher_on_windows_emits_a_runnable_cmd_script(monkeypatch) -> No
     """
     import omnigent.inner.sandbox as sandbox_module
 
+    monkeypatch.delenv("OMNIGENT_WINDOWS_EXEC_LAUNCHER", raising=False)
     monkeypatch.setattr(os, "name", "nt")
     monkeypatch.setattr(sandbox_module, "_project_root", lambda: r"C:\fake\project")
     wrapper_path = create_exec_launcher(sys.executable, _noop_policy())

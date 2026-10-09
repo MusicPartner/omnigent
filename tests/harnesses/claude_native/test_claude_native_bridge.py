@@ -8281,7 +8281,7 @@ def test_ensure_trusted_creates_config_when_missing(
     assert data["hasCompletedOnboarding"] is True
     # Per-directory trust gate, keyed by the RESOLVED absolute path —
     # without this Claude shows "Do you trust the files in this folder?".
-    assert data["projects"][str(workspace.resolve())]["hasTrustDialogAccepted"] is True
+    assert data["projects"][workspace.resolve().as_posix()]["hasTrustDialogAccepted"] is True
 
 
 def test_ensure_trusted_preserves_existing_state(
@@ -8303,7 +8303,7 @@ def test_ensure_trusted_preserves_existing_state(
         "oauthAccount": {"emailAddress": "user@example.com"},
         "hasCompletedOnboarding": True,
         "projects": {
-            str(other_workspace.resolve()): {
+            other_workspace.resolve().as_posix(): {
                 "hasTrustDialogAccepted": True,
                 "lastSessionId": "sess_existing",
             },
@@ -8320,12 +8320,12 @@ def test_ensure_trusted_preserves_existing_state(
     assert data["oauthAccount"] == {"emailAddress": "user@example.com"}
     # The pre-existing sibling project is untouched, including its own
     # non-trust keys (a naive ``projects = {key: {...}}`` would drop it).
-    assert data["projects"][str(other_workspace.resolve())] == {
+    assert data["projects"][other_workspace.resolve().as_posix()] == {
         "hasTrustDialogAccepted": True,
         "lastSessionId": "sess_existing",
     }
     # The new workspace's trust gate was added alongside it.
-    assert data["projects"][str(workspace.resolve())]["hasTrustDialogAccepted"] is True
+    assert data["projects"][workspace.resolve().as_posix()]["hasTrustDialogAccepted"] is True
 
 
 def test_ensure_trusted_idempotent_does_not_rewrite(
@@ -8346,7 +8346,7 @@ def test_ensure_trusted_idempotent_does_not_rewrite(
     workspace.mkdir(parents=True)
     already = {
         "hasCompletedOnboarding": True,
-        "projects": {str(workspace.resolve()): {"hasTrustDialogAccepted": True}},
+        "projects": {workspace.resolve().as_posix(): {"hasTrustDialogAccepted": True}},
     }
     # Compact, no indentation — distinct from the helper's indent=2 output.
     config_path.write_text(json.dumps(already, separators=(",", ":")))
@@ -8391,6 +8391,64 @@ def test_ensure_trusted_refuses_malformed_config(
 
     # The original (malformed) bytes are preserved — no clobber occurred.
     assert config_path.read_text() == raw
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows project key spelling")
+def test_ensure_trusted_updates_claude_windows_key_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A legacy backslash key must not hide Claude's untrusted forward-slash key."""
+    config_path = _redirect_home(monkeypatch, tmp_path / "home")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    native_key = str(workspace.resolve())
+    claude_key = workspace.resolve().as_posix()
+    assert native_key != claude_key
+    legacy_project = {"hasTrustDialogAccepted": True, "lastSessionId": "legacy-session"}
+    other_project = {"hasTrustDialogAccepted": False}
+    config_path.write_text(
+        json.dumps(
+            {
+                "hasCompletedOnboarding": True,
+                "projects": {
+                    native_key: legacy_project,
+                    claude_key: {"hasTrustDialogAccepted": False, "lastSessionId": "session"},
+                    "D:/other-workspace": other_project,
+                },
+            }
+        )
+    )
+
+    ensure_claude_workspace_trusted(workspace)
+
+    projects = json.loads(config_path.read_text())["projects"]
+    assert projects[claude_key] == {
+        "hasTrustDialogAccepted": True,
+        "lastSessionId": "session",
+    }
+    assert projects[native_key] == legacy_project
+    assert projects["D:/other-workspace"] == other_project
+    assert set(projects) == {native_key, claude_key, "D:/other-workspace"}
+    before = config_path.read_bytes()
+    ensure_claude_workspace_trusted(workspace)
+    assert config_path.read_bytes() == before
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Literal backslashes are POSIX filename characters")
+def test_ensure_trusted_preserves_posix_backslash_in_workspace_name(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only Windows path separators become forward slashes in Claude's key."""
+    config_path = _redirect_home(monkeypatch, tmp_path / "home")
+    workspace = tmp_path / "work\\space"
+    workspace.mkdir()
+
+    ensure_claude_workspace_trusted(workspace)
+
+    projects = json.loads(config_path.read_text())["projects"]
+    assert projects == {str(workspace.resolve()): {"hasTrustDialogAccepted": True}}
 
 
 def test_display_cost_approval_popup_builds_detached_tmux_command(

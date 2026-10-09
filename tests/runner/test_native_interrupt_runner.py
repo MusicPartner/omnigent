@@ -443,10 +443,10 @@ async def test_uniform_stop_kill_failure_returns_503_without_idle(
 
 
 @pytest.mark.asyncio
-async def test_codex_and_pi_stop_route_to_interrupt(
+async def test_pi_stop_routes_to_interrupt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """codex/pi have no distinct stop — stop() routes to their interrupt handler."""
+    """Pi has no distinct stop and routes to its interrupt handler."""
     import omnigent.harnesses.pi_native.bridge as pi_bridge
 
     calls: list[str] = []
@@ -557,3 +557,100 @@ async def test_claude_interrupt_resolves_bridge_id_and_injects(
     # No optimistic 'cancelled': the outcome is unknown until an edge lands.
     assert captured["wakes"] == []
     assert runner.take_pending_interrupt("conv_cl")[0] is True
+
+
+@pytest.mark.asyncio
+async def test_codex_stop_tears_down_owned_process_without_interrupt_rpc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from omnigent.runner.native import orchestration
+
+    runner, captured = _make_runner()
+    operations: list[str] = []
+
+    async def interrupt(conv_id: str) -> Response:
+        pytest.fail("Full stop must not depend on an interrupt RPC")
+
+    async def teardown(conv_id: str) -> None:
+        assert conv_id == "conv_cx"
+        operations.append("app_server")
+
+    async def terminals(conv_id: str, *, strict: bool = False) -> None:
+        assert strict
+        assert conv_id == "conv_cx"
+        operations.append("terminals")
+
+    monkeypatch.setattr(runner, "_codex_interrupt", interrupt)
+    monkeypatch.setattr(runner, "_teardown_session_terminals", terminals)
+    monkeypatch.setattr(orchestration, "teardown_codex_native_app_server", teardown)
+    runner._defer_parent_wake_after_native_interrupt("conv_cx")
+    resp = await runner.stop("codex-native", "conv_cx")
+    assert resp is not None and resp.status_code == 204
+    assert operations == ["app_server", "terminals"]
+    assert captured["published"] == [("conv_cx", {"type": "session.status", "status": "idle"})]
+    assert captured["wakes"] == [("conv_cx", "cancelled", None)]
+    assert "conv_cx" not in runner._pending_interrupts
+    assert "conv_cx" not in runner._pending_interrupt_timers
+
+
+@pytest.mark.asyncio
+async def test_codex_stop_without_bridge_still_tears_down(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from omnigent.runner.native import orchestration
+
+    calls: list[str] = []
+
+    async def teardown(conv_id: str) -> None:
+        calls.append(conv_id)
+
+    monkeypatch.setattr(orchestration, "teardown_codex_native_app_server", teardown)
+    runner, captured = _make_runner()
+    resp = await runner.stop("codex-native", "conv_idle")
+    assert resp is not None and resp.status_code == 204
+    assert calls == ["conv_idle"]
+    assert captured["wakes"] == [("conv_idle", "cancelled", None)]
+
+
+@pytest.mark.asyncio
+async def test_codex_stop_failure_does_not_publish_idle_or_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from omnigent.runner.native import orchestration
+
+    async def teardown(conv_id: str) -> None:
+        raise RuntimeError("owned process could not stop")
+
+    monkeypatch.setattr(orchestration, "teardown_codex_native_app_server", teardown)
+    runner, captured = _make_runner()
+    resp = await runner.stop("codex-native", "conv_cx")
+    assert resp is not None and resp.status_code == 503
+    assert captured["published"] == []
+    assert captured["wakes"] == []
+
+
+@pytest.mark.asyncio
+async def test_codex_stop_terminal_failure_does_not_publish_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from omnigent.runner.native import orchestration
+
+    async def teardown(conv_id: str) -> None:
+        pass
+
+    class BrokenResources(_FakeResourceRegistry):
+        async def close_terminal(self, conv_id: str, terminal_id: str) -> bool:
+            raise RuntimeError("terminal teardown failed")
+
+    resources = BrokenResources()
+    monkeypatch.setattr(
+        resources.terminal_registry,
+        "list_for_conversation",
+        lambda conv_id: [SimpleNamespace(terminal_name="codex", session_key="main")],
+    )
+    monkeypatch.setattr(orchestration, "teardown_codex_native_app_server", teardown)
+    runner, captured = _make_runner(resource_registry=resources)
+    resp = await runner.stop("codex-native", "conv_cx")
+    assert resp is not None and resp.status_code == 503
+    assert captured["published"] == []
+    assert captured["wakes"] == []

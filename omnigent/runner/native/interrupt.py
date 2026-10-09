@@ -11,13 +11,10 @@ Mirrors :class:`omnigent.runner.codex.goal.CodexGoalRunner`: app-scope state
 injected at construction so the class stays out of the already-large app module
 while preserving the exact behavior of the original closures.
 
-The seven uniform interrupt harnesses and six uniform stop harnesses differ
-only by bridge module, control-function name, and error label; they collapse to
-two parametrized methods driven by :data:`_UNIFORM_INTERRUPT` /
-:data:`_UNIFORM_STOP`. claude interrupt (bridge-id resolution) and codex
-interrupt (MCP-startup + app-server ``turn/interrupt``) keep dedicated methods
-(so nine interrupt handlers total); claude stop is likewise special-cased and
-codex/pi alias stop to their interrupt handler (so seven stop handlers total).
+The uniform handlers differ only by bridge module, control-function name, and
+error label; they use :data:`_UNIFORM_INTERRUPT` / :data:`_UNIFORM_STOP`.
+Claude and Codex have dedicated interrupt and stop handlers. Pi aliases stop
+to its interrupt handler.
 
 Coverage note: antigravity-native and opencode-native have no handler here and
 :meth:`interrupt` / :meth:`stop` return ``None`` for them, so the caller falls
@@ -226,8 +223,8 @@ _UNIFORM_INTERRUPT: dict[str, _UniformInterrupt] = {
     ),
 }
 
-# The seven uniform stop harnesses (claude has a special stop; codex/pi have no
-# distinct stop — they route to interrupt, handled in ``stop``).
+# The seven uniform stop harnesses (Claude/Codex have dedicated stops; Pi has no
+# distinct stop — it routes to interrupt, handled in ``stop``).
 _UNIFORM_STOP: dict[str, _UniformStop] = {
     "cursor": _UniformStop(
         "omnigent.harnesses.cursor_native.bridge",
@@ -301,12 +298,12 @@ def native_agent_for_cancel(wrapper_label: str | None) -> NativeCodingAgent | No
 def native_cancel_capability(wrapper_label: str | None) -> str:
     """Classify a child's wrapper for parent-side ``sys_cancel_task`` routing.
 
-    Mirrors :meth:`NativeInterruptRunner.stop` instead of comparing one Claude
-    wrapper label:
+    Uses the stop registry where the runner can confirm child ownership.
+    Codex UI sessions have a dedicated stop, but CLI-owned sessions may not:
 
-    * ``"stop"`` — Claude's dedicated stop, or a key in :data:`_UNIFORM_STOP`
-    * ``"best_effort"`` — remaining native agents (Codex/Pi alias stop to
-      interrupt; Antigravity/OpenCode have no stop handler)
+    * ``"stop"``: Claude dedicated stop, or a key in :data:`_UNIFORM_STOP`
+    * ``"best_effort"``: remaining native agents (externally owned Codex
+      lifetimes cannot be confirmed; Pi aliases stop to interrupt)
     * ``"inprocess"`` — no native agent for this label
 
     :param wrapper_label: The work entry's ``omnigent.wrapper`` value.
@@ -384,8 +381,8 @@ class NativeInterruptRunner:
     async def stop(self, harness_name: str | None, conv_id: str) -> Response | None:
         """Dispatch a stop_session to the harness's bridge.
 
-        codex/pi have no distinct stop — they route to their interrupt handler,
-        exactly as the original dispatch chain did.
+        Codex stops its owned app-server and terminals. Pi routes to its
+        interrupt handler.
 
         :returns: A response when this harness has a stop handler, else ``None``
             so the caller falls through to the in-process turn cancel.
@@ -396,7 +393,9 @@ class NativeInterruptRunner:
         key = agent.key
         if key == "claude":
             return await self._claude_stop(conv_id)
-        if key in ("codex", "pi"):
+        if key == "codex":
+            return await self._codex_stop(conv_id)
+        if key == "pi":
             return await self.interrupt(harness_name, conv_id)
         spec = _UNIFORM_STOP.get(key)
         if spec is None:
@@ -521,7 +520,7 @@ class NativeInterruptRunner:
                 delivery_ack.reason,
             )
 
-    async def _teardown_session_terminals(self, conv_id: str) -> None:
+    async def _teardown_session_terminals(self, conv_id: str, *, strict: bool = False) -> None:
         from omnigent.entities.session_resources import terminal_resource_id
         from omnigent.runner.tool_dispatch import _publish_terminal_deleted_event
 
@@ -537,6 +536,8 @@ class NativeInterruptRunner:
             try:
                 await self._resource_registry.close_terminal(conv_id, terminal_id)
             except (RuntimeError, OSError):
+                if strict:
+                    raise
                 self._logger.warning(
                     "Failed to close terminal %s for session %s during stop",
                     terminal_id,
@@ -691,6 +692,37 @@ class NativeInterruptRunner:
         ):
             self._logger.warning(
                 "Claude-native stop succeeded but sub-agent delivery was "
+                "not confirmed; session=%s reason=%s",
+                conv_id,
+                delivery_ack.reason,
+            )
+        return Response(status_code=204)
+
+    async def _codex_stop(self, conv_id: str) -> Response:
+        from omnigent.runner.native.orchestration import teardown_codex_native_app_server
+
+        try:
+            await teardown_codex_native_app_server(conv_id)
+            await self._teardown_session_terminals(conv_id, strict=True)
+        except Exception as exc:  # noqa: BLE001 - surface owned-process teardown failures.
+            self._logger.warning("Codex-native stop failed for %s", conv_id, exc_info=True)
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": "codex_native_stop_failed",
+                    "detail": self._client_safe_error_detail(exc, context="codex-native stop"),
+                },
+            )
+        self.clear_pending_interrupt(conv_id)
+        self._publish_event(conv_id, {"type": "session.status", "status": "idle"})
+        delivery_ack = self._mark_subagent_terminal_and_wake(
+            conv_id, status="cancelled", output=None
+        )
+        if not delivery_ack.delivered and (
+            delivery_ack.entry is not None or conv_id in self._session_sub_agent_names
+        ):
+            self._logger.warning(
+                "Codex-native stop succeeded but sub-agent delivery was "
                 "not confirmed; session=%s reason=%s",
                 conv_id,
                 delivery_ack.reason,

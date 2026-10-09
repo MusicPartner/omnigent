@@ -643,6 +643,63 @@ async def test_attach_terminal_runner_close_propagates_close_code(
     assert exc_info.value.code == 4404
 
 
+@pytest.mark.parametrize(
+    ("runner_code", "expected_code"),
+    [
+        (None, 1011),
+        (999, 1011),
+        (1005, 1011),
+        (1006, 1011),
+        (1015, 1011),
+        (2000, 1011),
+        (5000, 1011),
+        (1000, 1000),
+        (1001, 1001),
+        (1011, 1011),
+        (3000, 3000),
+        (4404, 4404),
+        (4999, 4999),
+    ],
+)
+async def test_attach_terminal_runner_close_is_wire_valid(
+    app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+    runner_code: int | None,
+    expected_code: int,
+) -> None:
+    """Internal tunnel close signals must become serializable browser closes."""
+    from starlette.websockets import WebSocket
+    from websockets.exceptions import ConnectionClosedError
+    from websockets.frames import Close
+
+    reason = "tunnel aborted"
+    original_close = WebSocket.close
+
+    async def validated_close(
+        websocket: WebSocket, code: int = 1000, reason: str | None = None
+    ) -> None:
+        Close(code, reason or "").serialize()
+        await original_close(websocket, code=code, reason=reason)
+
+    monkeypatch.setattr(WebSocket, "close", validated_close)
+
+    class _ImmediateCloseConn(_FakeRunnerWSConn):
+        async def recv(self) -> bytes | str:
+            close = Close(runner_code, reason) if runner_code is not None else None
+            raise ConnectionClosedError(close, None, None)
+
+    set_runner_ws_factory(_FakeRunnerWSFactory(_ImmediateCloseConn()))
+
+    with TestClient(app).websocket_connect(
+        "/v1/sessions/conv_ws/resources/terminals/terminal_bash_s1/attach"
+    ) as ws:
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            ws.receive_bytes()
+
+    assert exc_info.value.code == expected_code
+    assert exc_info.value.reason == (reason if runner_code is not None else "")
+
+
 # ── WS attach: local fallback when no ws factory ─────────
 
 

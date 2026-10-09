@@ -101,3 +101,8 @@ deploy/databricks/.databricks/
 web/package-lock.json
 # Generated demo recordings belong in PR evidence or artifacts, not Git.
 recordings/
+
+# Windows native launcher assets are generated before wheel packaging.
+omnigent/resources/windows_launcher/*.exe
+omnigent/resources/windows_launcher/*.json
+omnigent/resources/windows_launcher/*.tmp

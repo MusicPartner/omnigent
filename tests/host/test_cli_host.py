@@ -1079,6 +1079,8 @@ def test_terminate_daemon_recycled_pid_discards_record_without_signalling(
         server_config_signature,
     )
 
+    monkeypatch.setattr("omnigent.cli.IS_WINDOWS", False)
+
     record = _HostDaemonRecord(
         pid=724,
         target="https://omnigent.example.com",
@@ -1125,6 +1127,8 @@ def test_terminate_daemon_permission_error_discards_record(
         _write_daemon_record,
         server_config_signature,
     )
+
+    monkeypatch.setattr("omnigent.cli.IS_WINDOWS", False)
 
     record = _HostDaemonRecord(
         pid=4242,

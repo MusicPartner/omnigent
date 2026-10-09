@@ -26,6 +26,7 @@ from cachetools import TTLCache
 from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed
 
+from omnigent._platform import IS_WINDOWS
 from omnigent.models import model_catalog
 from omnigent.models.model_fallbacks import CODEX_DEFAULT_MODEL
 from omnigent.native.shell import shell_join
@@ -85,10 +86,12 @@ from omnigent.inner.codex_executor import (
     read_codex_model_catalog,
     write_codex_hooks_file,
 )
+from omnigent.inner.codex_windows import native_codex_windows_sandbox
 from omnigent.inner.databricks_executor import (
     _databricks_gateway_host,
     _read_databrickscfg_host,
 )
+from omnigent.inner.windows_powershell import prepare_native_powershell_env
 from omnigent.models.codex_model_vocabulary import codex_reachable_model_slug, codex_spawn_model
 from omnigent.process_logging import (
     harness_stderr_capture_enabled,
@@ -1830,6 +1833,7 @@ class CodexNativeAppServer:
     session_id: str | None = None
     stderr_capture_error_type: str | None = field(default=None, init=False)
     _stderr_diagnostics: CodexStderrDiagnostics | None = field(default=None, init=False)
+    _windows_sandbox_override: str | None = field(default=None, init=False)
 
     async def start(self) -> None:
         """
@@ -1837,6 +1841,7 @@ class CodexNativeAppServer:
 
         :returns: None.
         """
+        windows_sandbox = native_codex_windows_sandbox()
         config_source = _codex_home_config_source_from_env()
         if self.codex_home.resolve() == config_source.resolve():
             raise ValueError(
@@ -1953,6 +1958,16 @@ class CodexNativeAppServer:
             self.codex_home,
             self.config_overrides,
         )
+        if self._windows_sandbox_override is not None:
+            for index in range(len(self.config_overrides) - 1, -1, -1):
+                if self.config_overrides[index] == self._windows_sandbox_override:
+                    del self.config_overrides[index]
+                    break
+        self._windows_sandbox_override = None
+        if windows_sandbox is not None:
+            # Both native processes receive this invocation-only host setting.
+            self._windows_sandbox_override = f"windows.sandbox={json.dumps(windows_sandbox)}"
+            self.config_overrides.append(self._windows_sandbox_override)
         if codex_version is not None and not policy_hooks_supported:
             self._disable_policy_hook(
                 f"Codex CLI {_format_codex_version(codex_version)} is older than "
@@ -1999,7 +2014,9 @@ class CodexNativeAppServer:
             config_overrides=self.config_overrides,
         )
         proc_env = codex_app_server_diagnostic_env(
-            {**self.env, "CODEX_HOME": str(self.codex_home)}
+            prepare_native_powershell_env(
+                {**self.env, "CODEX_HOME": str(self.codex_home)}, installation_env=os.environ
+            )
         )
         self.process_owner_lock = acquire_codex_native_process_owner_lock()
         try:
@@ -4310,12 +4327,16 @@ def codex_terminal_env(app_server: CodexNativeAppServer) -> dict[str, str]:
     :param app_server: Running app-server wrapper.
     :returns: Environment variables for the terminal process.
     """
+    env = prepare_native_powershell_env(
+        {**app_server.env, "CODEX_HOME": str(app_server.codex_home)}, installation_env=os.environ
+    )
     return {
         key: value
-        for key, value in {**app_server.env, "CODEX_HOME": str(app_server.codex_home)}.items()
+        for key, value in env.items()
         if key
         in {"CODEX_HOME", "DATABRICKS_HOST", "DATABRICKS_CODEX_TOKEN", "OTEL_RESOURCE_ATTRIBUTES"}
         or key.startswith(("OPENAI_", "HTTP_", "HTTPS_", "NO_PROXY", "ALL_PROXY"))
+        or (IS_WINDOWS and key.casefold() == "path")
     }
 
 

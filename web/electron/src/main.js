@@ -464,7 +464,7 @@ async function connectOnboardingArca(serverUrl, log, isClosed) {
  * to exercise the force-exit safety nets without waiting seconds in real
  * time. Production code never writes them.
  */
-let quitCleanupTimeoutMs = 10000;
+let quitCleanupTimeoutMs = process.platform === "win32" ? 130000 : 10000;
 let quitInstallFallbackMs = 3000;
 // Away-banner delay, `let` for the same reason: wiring tests shrink it via
 // testApi.setAwayBannerDelayMs instead of waiting out the real delay.
@@ -4829,8 +4829,8 @@ if (!gotLock) {
   // would otherwise stay up with its window still open — looking exactly like
   // "refuses to quit". So if graceful cleanup + the re-issued quit haven't
   // terminated the process within quitCleanupTimeoutMs, force-exit. Host
-  // children are SIGKILL'd at 4s and a normal `omnigent server stop` is sub-
-  // second, so a normal quit completes well under the cap; the cap only trips
+  // Windows allows native host-tree cleanup followed by server cleanup;
+  // POSIX children escalate at 4s. A normal quit completes under the cap; it trips
   // when something is genuinely stuck, and force-exiting then is strictly
   // better than a hung app. A cut-off server stop only leaves a daemon with a
   // pidfile that the next launch reuses or `omnigent server stop` reclaims.
@@ -4864,8 +4864,8 @@ if (!gotLock) {
 
     // resolvedCliPath() is evaluated inside the async IIFE so a throw (a future
     // change to settings/CLI resolution) becomes a rejection caught below,
-    // never stranding the quit. shutdown() always settles: host children are
-    // SIGKILL'd within 4s and `omnigent server stop` has its own exec timeout.
+    // never stranding the quit. Host cleanup and `omnigent server stop` both
+    // have bounded timeouts, including graceful Windows process-tree teardown.
     (async () => {
       const cliPath = resolvedCliPath();
       await serverManager.shutdown(cliPath);

@@ -789,7 +789,9 @@ async function tailLocalServerLog(onLine, opts = {}) {
  * @returns {Promise<{ ok: boolean, output: string }>}
  */
 async function stopLocalServer(cliPath) {
-  const res = await runCli(cliPath, ["server", "stop"], { timeoutMs: 15000 });
+  const res = await runCli(cliPath, ["server", "stop"], {
+    timeoutMs: process.platform === "win32" ? 75000 : 15000,
+  });
   return { ok: res.code === 0, output: (res.stdout || res.stderr).trim() };
 }
 
@@ -803,7 +805,7 @@ async function stopLocalServer(cliPath) {
  */
 async function stopHost(cliPath, serverUrl) {
   const res = await runCli(cliPath, ["host", "stop", "--server", serverUrl], {
-    timeoutMs: 15000,
+    timeoutMs: process.platform === "win32" ? 45000 : 15000,
   });
   return { ok: res.code === 0, output: (res.stdout || res.stderr).trim() };
 }

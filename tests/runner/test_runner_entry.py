@@ -2841,6 +2841,7 @@ async def test_install_signal_handlers_degrades_when_wakeup_fd_unusable(
     RuntimeError from ``add_signal_handler`` escaped ``main``. Handler
     registration must warn and stop after the first failure instead.
     """
+    monkeypatch.setattr("omnigent.runner._entry.IS_WINDOWS", False)
     loop = asyncio.get_running_loop()
     attempts: list[int] = []
 

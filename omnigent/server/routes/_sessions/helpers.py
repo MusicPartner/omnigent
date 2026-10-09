@@ -6913,7 +6913,8 @@ async def _stop_session_via_runner_impl(
         resp = await runner_client.post(
             f"/v1/sessions/{session_id}/events",
             json={"type": _STOP_SESSION_TYPE},
-            timeout=5.0,
+            # Native teardown can spend 15s cancelling and 5s closing its server.
+            timeout=30.0,
         )
     except (httpx.HTTPError, ConnectionError) as exc:
         # WSTunnelTransport raises bare ConnectionError on tunnel close.

@@ -391,3 +391,110 @@ async def test_start_can_delegate_global_process_reconciliation(
     await server.close()
 
     assert reconcile_calls == 0
+
+
+@pytest.mark.parametrize("existing_home", ["new", "existing", "symlink"])
+@pytest.mark.parametrize("mode", [None, "elevated", "unelevated"])
+@pytest.mark.parametrize("explicit_override", [False, True])
+async def test_start_applies_host_windows_sandbox_only_to_native_argv(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    existing_home: str,
+    mode: str | None,
+    explicit_override: bool,
+) -> None:
+    import tomlkit
+
+    from omnigent.harnesses.codex_native import app_server as native
+    from omnigent.inner import codex_windows
+
+    monkeypatch.setattr(codex_windows, "IS_WINDOWS", True)
+    monkeypatch.delenv(codex_windows.CODEX_WINDOWS_SANDBOX_ENV_VAR, raising=False)
+    if mode is not None:
+        monkeypatch.setenv(codex_windows.CODEX_WINDOWS_SANDBOX_ENV_VAR, mode)
+    source = tmp_path / "source"
+    source.mkdir()
+    original = '[windows]\nsandbox = "elevated"\n'
+    (source / "config.toml").write_text(original, encoding="utf-8")
+    monkeypatch.setenv("CODEX_HOME", str(source))
+    home = tmp_path / "private"
+    if existing_home != "new":
+        home.mkdir()
+        if existing_home == "symlink":
+            try:
+                (home / "config.toml").symlink_to(source / "config.toml")
+            except OSError:
+                pytest.skip("Config symlink creation is unavailable")
+        else:
+            (home / "config.toml").write_text(original, encoding="utf-8")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    server = _test_app_server(tmp_path, home, tmp_path / "bridge", workspace)
+    server.reconcile_process_registry = False
+    server.config_overrides = [
+        'model_provider="test_provider"',
+        'model_providers.test_provider.name="Test provider"',
+    ]
+    if explicit_override:
+        server.config_overrides.append('windows.sandbox="elevated"')
+
+    async def version(_path: str) -> tuple[int, int, int]:
+        return (0, 162, 0)
+
+    async def stop_before_spawn(*args: object, **kwargs: object) -> None:
+        assert (
+            tomlkit.parse((home / "config.toml").read_text(encoding="utf-8"))["windows"]["sandbox"]
+            == "elevated"
+        )
+        assert (source / "config.toml").read_text(encoding="utf-8") == original
+        argv = list(args)
+        overrides = [argv[index + 1] for index, arg in enumerate(argv) if arg == "-c"]
+        expected = ['windows.sandbox="elevated"'] if explicit_override else []
+        if mode is not None:
+            expected.append(f'windows.sandbox="{mode}"')
+        assert [value for value in overrides if value.startswith("windows.sandbox=")] == expected
+        assert overrides == server.config_overrides
+        assert not any(value.startswith("model_providers.") for value in overrides)
+        for thread_id in (None, "existing-thread"):
+            remote_args = native.build_codex_remote_args(
+                codex_args=(),
+                thread_id=thread_id,
+                remote_url="ws://127.0.0.1:9876",
+                config_overrides=tuple(server.config_overrides),
+                codex_cli_version=(0, 162, 0),
+            )
+            remote_overrides = [
+                remote_args[index + 1] for index, arg in enumerate(remote_args) if arg == "-c"
+            ]
+            assert [
+                value for value in remote_overrides if value.startswith("windows.sandbox=")
+            ] == expected
+            assert remote_args[: len(overrides) * 2] == argv[4:]
+        raise RuntimeError("verified before spawn")
+
+    monkeypatch.setattr(native, "_codex_cli_version", version)
+    monkeypatch.setattr(native.asyncio, "create_subprocess_exec", stop_before_spawn)
+    with pytest.raises(RuntimeError, match="verified before spawn"):
+        await server.start()
+    monkeypatch.delenv(codex_windows.CODEX_WINDOWS_SANDBOX_ENV_VAR, raising=False)
+    mode = None
+    with pytest.raises(RuntimeError, match="verified before spawn"):
+        await server.start()
+
+
+async def test_start_rejects_invalid_host_windows_sandbox_before_launch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from omnigent.harnesses.codex_native import app_server as native
+    from omnigent.inner import codex_windows
+
+    monkeypatch.setattr(codex_windows, "IS_WINDOWS", True)
+    monkeypatch.setenv(codex_windows.CODEX_WINDOWS_SANDBOX_ENV_VAR, "invalid")
+    probe = Mock(side_effect=AssertionError("must reject before probing"))
+    monkeypatch.setattr(native, "_codex_cli_version", probe)
+    home = tmp_path / "private"
+    server = _test_app_server(tmp_path, home, tmp_path / "bridge", tmp_path)
+    with pytest.raises(ValueError, match="OMNIGENT_CODEX_WINDOWS_SANDBOX"):
+        await server.start()
+    assert not home.exists()
+    probe.assert_not_called()

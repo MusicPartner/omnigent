@@ -1852,9 +1852,9 @@ def ensure_claude_workspace_trusted(workspace: Path) -> None:
         data["hasCompletedOnboarding"] = True
         changed = True
 
-    # Per-directory trust gate. Claude keys its ``projects`` map by the
-    # resolved absolute path, so match that exactly.
-    project_key = str(workspace.resolve())
+    # Claude's project keys use forward slashes, including on Windows.
+    # as_posix preserves literal backslashes in POSIX directory names.
+    project_key = workspace.resolve().as_posix()
     projects = data.setdefault("projects", {})
     if not isinstance(projects, dict):
         raise ValueError(f"{config_path} 'projects' is not a JSON object; refusing to overwrite.")

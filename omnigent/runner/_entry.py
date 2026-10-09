@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     from omnigent.inner.databricks_executor import _ReusedDatabricksTokenSource
+    from omnigent.inner.windows_process_shutdown import ShutdownListener as _ShutdownListener
     from omnigent.runner.native import ResolvedSpec
     from omnigent.runner.transports.ws_tunnel.serve import _ASGIApp
     from omnigent.spec.types import AgentSpec
@@ -1132,7 +1133,7 @@ def _run_parent_death_killer(
     *,
     adopted: threading.Event | None = None,
     poll_interval_s: float = 0.5,
-    grace_s: float = 2.0,
+    grace_s: float | None = None,
     exit_fn: Callable[[int], None] = os._exit,
 ) -> None:
     """Force the runner to exit once its parent (host daemon) dies.
@@ -1163,7 +1164,7 @@ def _run_parent_death_killer(
     :param poll_interval_s: Seconds between parent-liveness probes, e.g.
         ``0.5``.
     :param grace_s: Seconds to allow graceful shutdown before the hard
-        exit, e.g. ``2.0``.
+        exit. Defaults to ``30.0`` on Windows and ``2.0`` on POSIX.
     :param exit_fn: Hard-exit function, defaults to :func:`os._exit`;
         injectable so tests can observe it without killing the runner.
     :returns: None.
@@ -1176,8 +1177,35 @@ def _run_parent_death_killer(
     # parent's exit so an intentional detach is never torn down.
     if adopted is not None and adopted.is_set():
         return
+    if grace_s is None:
+        grace_s = 30.0 if IS_WINDOWS else 2.0
+    owned_children = None
+    if IS_WINDOWS:
+        import psutil
+
+        from omnigent.inner.windows_process_shutdown import snapshot_processes
+
+        try:
+            owned_children = snapshot_processes(psutil.Process().children())
+        except psutil.Error:
+            _logger.exception("Could not snapshot runner children before parent-death shutdown")
     request_shutdown()
     time.sleep(grace_s)
+    if IS_WINDOWS:
+        import psutil
+
+        from omnigent.inner.windows_process_shutdown import snapshot_processes
+
+        try:
+            late_children = snapshot_processes(psutil.Process().children())
+            if not late_children.kill():
+                _logger.error("Late runner children survived parent-death shutdown fallback")
+        except psutil.Error:
+            _logger.exception(
+                "Could not snapshot late runner children during parent-death shutdown"
+            )
+    if owned_children is not None and not owned_children.kill():
+        _logger.error("Runner children survived parent-death shutdown fallback")
     # The hard exit is a backstop reached only when graceful shutdown did not
     # finish within the grace window; record it since os._exit skips the
     # exit-reason logging in _run_tunnel_from_env's finally block. The file
@@ -1752,7 +1780,7 @@ async def _run_tunnel_from_env() -> None:
     # parent-death killer stand down so the runner outlives the CLI.
     adopted_event = threading.Event()
     _shutting_down_state = getattr(app.state, "shutting_down", None)
-    _install_signal_handlers(
+    shutdown_listener = _install_signal_handlers(
         stop_event,
         adopted_event=adopted_event,
         record_reason=_record_exit_reason,
@@ -1857,8 +1885,14 @@ async def _run_tunnel_from_env() -> None:
 
             :returns: None.
             """
-            _record_exit_reason("parent process died")
-            loop.call_soon_threadsafe(stop_event.set)
+
+            def shutdown_on_loop() -> None:
+                _record_exit_reason("parent process died")
+                if _shutting_down_state is not None:
+                    _shutting_down_state.set()
+                stop_event.set()
+
+            loop.call_soon_threadsafe(shutdown_on_loop)
 
         # Orphan guard runs on a dedicated daemon thread, not the event
         # loop: if the loop wedges during shutdown (harness mid-boot when
@@ -1916,7 +1950,11 @@ async def _run_tunnel_from_env() -> None:
         if direct_attach_listener is not None:
             with contextlib.suppress(Exception):
                 await direct_attach_listener.stop()
-        await _lifespan_cm.__aexit__(None, None, None)
+        try:
+            await _lifespan_cm.__aexit__(None, None, None)
+        finally:
+            if shutdown_listener is not None:
+                shutdown_listener.close()
 
 
 def _install_signal_handlers(
@@ -1924,7 +1962,7 @@ def _install_signal_handlers(
     adopted_event: threading.Event | None = None,
     record_reason: Callable[[str], None] | None = None,
     mark_shutting_down: Callable[[], None] | None = None,
-) -> None:
+) -> _ShutdownListener | None:
     """Install process signal handlers that request graceful shutdown.
 
     :param stop_event: Event set when SIGINT or SIGTERM arrives.
@@ -1939,7 +1977,7 @@ def _install_signal_handlers(
         shutdown signal arrives, before any teardown runs — lets app.py tell
         an intentional stop from a real crash when a terminal watcher races
         the shutdown. ``None`` skips it.
-    :returns: None.
+    :returns: Windows listener to close after teardown, otherwise ``None``.
     """
     loop = asyncio.get_running_loop()
 
@@ -1954,6 +1992,33 @@ def _install_signal_handlers(
         if mark_shutting_down is not None:
             mark_shutting_down()
         stop_event.set()
+
+    if IS_WINDOWS:
+        from omnigent.inner.windows_process_shutdown import install_shutdown_listener
+
+        def request_shutdown() -> None:
+            if record_reason is not None:
+                record_reason("host requested shutdown")
+            if mark_shutting_down is not None:
+                mark_shutting_down()
+            stop_event.set()
+
+        def notify_shutdown() -> None:
+            loop.call_soon_threadsafe(request_shutdown)
+
+        listener = install_shutdown_listener(notify_shutdown)
+        owner_task = asyncio.current_task()
+        if owner_task is not None:
+            owner_task.add_done_callback(lambda _task: listener.close())
+        for sig in (signal.SIGINT, signal.SIGTERM, getattr(signal, "SIGBREAK", None)):
+            if sig is not None:
+                signal.signal(
+                    sig,
+                    lambda signum, _frame: loop.call_soon_threadsafe(
+                        _handle_shutdown_signal, signum
+                    ),
+                )
+        return listener
 
     degraded = False
 
@@ -1994,8 +2059,9 @@ def _install_signal_handlers(
         from omnigent.runner.identity import RUNNER_ADOPT_SIGNAL
 
         if RUNNER_ADOPT_SIGNAL is None:
-            return
+            return None
         _try_add_handler(RUNNER_ADOPT_SIGNAL, adopted_event.set)
+    return None
 
 
 def _install_crash_logging() -> None:
