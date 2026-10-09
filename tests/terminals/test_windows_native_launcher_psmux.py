@@ -67,7 +67,7 @@ def _owned_process(record: dict[str, Any], key: str) -> psutil.Process:
 def _stop_recorded_processes(records: list[dict[str, Any]]) -> None:
     owned: list[psutil.Process] = []
     for record in records:
-        for key in ("target", "grandchild"):
+        for key in ("target", "grandchild", "launcher"):
             try:
                 process = _owned_process(record, key)
             except (psutil.NoSuchProcess, KeyError, AssertionError):
@@ -81,7 +81,7 @@ def _stop_recorded_processes(records: list[dict[str, Any]]) -> None:
             if process.is_running():
                 process.kill()
         _, alive = psutil.wait_procs(owned, timeout=5)
-        assert not alive, f"test-owned Python processes did not stop: {[p.pid for p in alive]}"
+        assert not alive, f"test-owned processes did not stop: {[p.pid for p in alive]}"
 
 
 @pytest.mark.asyncio
@@ -156,10 +156,19 @@ async def test_windows_psmux_close_stops_native_launcher_tree(
         assert "native-target-ready" in screen
         assert "native-grandchild-ready" in screen
 
-        processes = [
-            _owned_process(records[-1], "target"),
-            _owned_process(records[-1], "grandchild"),
-        ]
+        target = _owned_process(records[-1], "target")
+        launcher_identity = os.path.normcase(os.path.abspath(launcher_path))
+        launcher = next(
+            (
+                parent
+                for parent in target.parents()
+                if os.path.normcase(os.path.abspath(parent.exe())) == launcher_identity
+            ),
+            None,
+        )
+        assert launcher is not None, "target must descend from its exact native launcher"
+        records[-1].update(launcher_pid=launcher.pid, launcher_created=launcher.create_time())
+        processes = [target, _owned_process(records[-1], "grandchild")]
         await instance.close()
         instance = None
         _, alive = psutil.wait_procs(processes, timeout=10)
@@ -167,6 +176,8 @@ async def test_windows_psmux_close_stops_native_launcher_tree(
             "closing the psmux terminal left native launcher descendants alive: "
             f"{[process.pid for process in alive]}"
         )
+        _, alive = psutil.wait_procs([launcher], timeout=10)
+        assert not alive, "closing the psmux terminal left its native launcher alive"
     finally:
         if instance is not None:
             await instance.close()
