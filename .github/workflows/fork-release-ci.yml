@@ -578,7 +578,7 @@ jobs:
         run: |
           $desktopVersion = python -c "import pathlib, tomllib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])"
           if ($LASTEXITCODE -ne 0) { throw "Could not resolve desktop release version" }
-          pnpm --filter omnigent-desktop-electron exec electron-builder --win zip --x64 --publish never -c.appId=ai.omnigent.desktop-dev "-c.productName=Omnigent Dev" -c.directories.output=dist-fork-windows -c.extraMetadata.omnigentBuild=dev "-c.extraMetadata.version=$desktopVersion" "-c.extraMetadata.omnigentSourceCommit=$env:GITHUB_SHA"
+          pnpm --filter omnigent-desktop-electron exec electron-builder --win zip --x64 --publish never "-c.appId=ai.omnigent.desktop-dev" "-c.productName=Omnigent Dev" "-c.directories.output=dist-fork-windows" "-c.extraMetadata.omnigentBuild=dev" "-c.extraMetadata.version=$desktopVersion" "-c.extraMetadata.omnigentSourceCommit=$env:GITHUB_SHA"
           if ($LASTEXITCODE -ne 0) { throw "Windows desktop ZIP build failed" }
           $desktopArchives = @(Get-ChildItem web/electron/dist-fork-windows -Filter *.zip -File)
           if ($desktopArchives.Count -ne 1) { throw "Expected one Windows desktop ZIP" }
