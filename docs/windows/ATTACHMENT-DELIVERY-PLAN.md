@@ -7,8 +7,8 @@ than add a separate Windows format:
 
 - Resolved image/file data is materialized under the per-session
   `~/.omnigent/attachments/<session-key>/` cache (or `OMNIGENT_DATA_DIR`),
-  outside the agent's working tree. The cache is stable across turns and
-  resume rebuilds.
+  outside the agent's working tree. Turns reuse the launch cache; resume
+  rebuilds materialize attachments into the current launch's cache.
 - The original basename is retained when safe. Path components and marker
   delimiters are sanitized; collisions must not overwrite different bytes.
 - Images are delivered as paths for Claude Code and as Codex `localImage`
@@ -39,6 +39,14 @@ points instead of resolving an untrusted path and opening it in a separate
 operation. Do not grant or use attribute-only mutation as a substitute for the
 anchored create/open protection. Dispatch the resulting path through the
 existing executor path; no new process or transport mechanism is needed.
+
+The cache must be on a fixed local drive with Windows ACL support and trusted
+ancestors. UNC/removable locations, reparse points, hard-linked leaves, and
+directories granting unrelated identities mutation access are refused. New
+files receive a protected current-user/SYSTEM ACL without execute access; safe
+pre-existing cache owners (current user, SYSTEM, or Administrators) are retained
+while their ACLs are tightened. A custom `OMNIGENT_DATA_DIR` must satisfy the
+same rules. This protects attachment storage and does not add a process sandbox.
 
 Preserve spaces and Unicode filenames. Do not extract ZIP contents, mark
 uploaded files executable, or place them in the agent workspace. Keep
@@ -139,8 +147,9 @@ Unicode name such as `café.png`, and a ZIP named `sample archive.zip`.
    answer reflects the image. Confirm the attachment chip retains its filename
    and that its cached file is under Omnigent's attachment cache, outside the
    workspace.
-2. Attach the ZIP and ask Claude or Codex to list its contents. Confirm the
-   harness can read the archive by path and the user-provided filename survives.
+2. Attach the ZIP and ask Claude or Codex to list its contents without extracting
+   it. Confirm the harness can read the archive by path and the user-provided
+   filename survives.
    Confirm no archive members are extracted automatically and the workspace
    remains unchanged.
 3. Stop the native process/session, resume the same Omnigent conversation, and

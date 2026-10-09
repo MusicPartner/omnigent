@@ -27,7 +27,7 @@ not every recorded failure has a verified root cause.
 
 | Area | Evidence and next work |
 | --- | --- |
-| Native attachment delivery | Reproduced Claude and Antigravity failures use `os.O_DIRECTORY`, `os.O_NOFOLLOW`, and descriptor-relative file operations unavailable on Windows. Implement native directory/file handles that preserve reparse-point and identity checks, content reuse, and private cache ownership. Cover fresh/resumed images and filesystem attachments plus malicious replacement attempts. Ordinary path writes are not an equivalent substitute. Other attachment cases are listed below for verification. |
+| Native attachment delivery | The POSIX-only storage gap is fixed in the [Windows attachment follow-up](PARITY-NEXT-STEPS.md#windows-attachment-storage-follow-up-2026-10-09), production source `575754760` with test correction `208591ece`. Required Windows CI passed 109 cache/security and 35 consumer/resume checks. Relative native handles, private ACLs, collision/reuse, partial-write cleanup and real junction races are covered. Live Claude/Codex image/ZIP acceptance still needs the documented local check, especially Codex sandbox read access. The failure names below remain historical observations from `489665868`, not current attachment failures. |
 | Brokered signer support and fixtures | The terminal timeout was `test_cancelled_close_contains_worker_and_retains_incomplete_signer_cleanup`. The mock constructs `/private/signer/...` paths that Windows does not treat as absolute. Startup error handling then awaits its deliberately blocking `close()` before any worker spawns. The real signer uses bounded process shutdown. The fixture and signer contract match local `origin/main`; this timeout does not exercise desktop Quit. Private signer homes also use POSIX mode checks that reject Windows' reported `0777`. Preserve refusals pending a proven Windows ACL/containment contract. |
 | Platform-specific assertions/backends | Reproduced staging tests assume `chmod(0700)` changes POSIX permission bits; a copy-on-write test requests `linux_bwrap`, which correctly refuses Windows. Declare actual platform scope or add meaningful Windows tests; do not weaken the backend's refusal. |
 | Other recorded failures | Codex SDK/hook/catalog/containment, Databricks auth, and the remaining authentication tests require case-by-case diagnosis. The four auth failures include Unix-shell and POSIX ownership fixtures. Verbose names are reliable, but this aborted run contains no final failure tracebacks. Do not attribute unverified cases to shutdown or PowerShell discovery. |
@@ -44,6 +44,18 @@ provider services or credentials need their own explicit setup; the focused
 local reproductions above used mocks/fake agents only. Full UI acceptance of
 Claude, Codex, and Copilot remains described in
 [the parity record](PARITY-NEXT-STEPS.md#automatic-native-powershell-selection-for-the-primary-windows-harnesses).
+
+## Attachment follow-up diagnostic
+
+On test correction source `208591ece`,
+[release validation 37970056214](https://github.com/MusicPartner/omnigent/actions/runs/37970056214)
+passed both required OS gates, including 144 Windows attachment checks. Its
+separate non-blocking broad sweep recorded 64 `FAILED` names before the same
+signer lifecycle fixture hit its 300-second hard timeout. No attachment failures
+were recorded in that partial run; it still did not produce a completed suite
+summary. This does not establish a clean whole-Windows-suite result or resolve
+unverified causes of other historical failures. The 99-name inventory below is
+retained as the earlier build's observation.
 
 ## Observed failures before the timeout
 

@@ -1,7 +1,7 @@
 # Windows parity: remaining work and decisions
 
 Research date: 2026-10-08. Branch: `windows-parity/v0.17-integration`.
-Latest validated build: `489665868933fab513199060fd2349bc65d7ea01`.
+Latest validated build: `208591ece9026fd47f62f8ee8b4c2b77e5861a77`.
 The final release evidence and remaining Windows test gaps are recorded below.
 Previously validated baseline: `2d43e9d95c28d4cb623f98d3d49de1af959f90cc`.
 This record separates the new consumer fixes and blocked decisions from the
@@ -1120,7 +1120,8 @@ reproduction found existing native attachment failures at `os.O_DIRECTORY` /
 `os.O_NOFOLLOW` and descriptor-relative operations. Windows attachment delivery
 needs a native-handle implementation preserving reparse-point, directory, and
 file-identity checks; replacing those flags with ordinary path writes is unsafe.
-This affects attachment-dependent Claude/Codex workflows and remains open.
+At that build, attachment-dependent Claude/Codex workflows remained unsupported.
+The Windows storage follow-up below replaces those POSIX-only operations.
 Other reproduced gaps include POSIX chmod assertions, Linux-only bubblewrap
 tests, and signer-home refusals in mocked Codex SDK tests. Retain credential
 refusals and isolate those platform support tasks from shutdown/shell selection.
@@ -1143,3 +1144,97 @@ owned-session checks above. Live desktop acceptance with all three harnesses
 remains a human check. The native private-job candidate remains unsigned,
 explicitly opt-in, and refused by production `native` mode pending signing and
 release approval.
+
+
+## Windows attachment storage follow-up (2026-10-09)
+
+Feature source: `57575476067af12a311004860418e71c120e679c`; validated test
+correction: `208591ece9026fd47f62f8ee8b4c2b77e5861a77`. The latter changes tests
+and documentation only; production source is identical. No PR was created.
+The separate [attachment plan](ATTACHMENT-DELIVERY-PLAN.md) records the storage
+contract, upstream review, consumer coverage, and manual acceptance steps.
+
+`windows_attachments.py` owns the Windows filesystem implementation; two narrow
+dispatches select it from the shared attachment helper. Decoding, HTTP reads,
+capability declarations, executor transports, and resume resolution remain in
+their existing modules. POSIX file operations remain unchanged. Images and
+filesystem attachments are delivered through the existing Claude/Codex native
+interfaces; the existing Cursor/Kimi/Antigravity image consumers are covered.
+This does not register Copilot attachment support or add a streaming shell tool.
+
+Directory and file operations use validated handles and relative `NtCreateFile`
+opens. Tests reproduce attribute-only directory-to-junction mutations and prove
+refusal without redirected writes. The helper refuses reparses, hard-linked
+leaves, unsafe names, and untrusted mutation permissions. It preserves equal-byte
+reuse and deterministic collisions without overwriting different content,
+cleans up its exact partial file handle, and retains resize metadata aliases.
+New leaves receive protected current-user/SYSTEM ACLs without execute access.
+Safe existing owners are retained during ACL migration. The storage must be on a
+fixed local drive supporting Windows ACLs; this is not filesystem/network sandbox
+isolation. Refusal logs omit exception locals and attachment payloads.
+
+Required attachment results in
+[release validation 37970056214](https://github.com/MusicPartner/omnigent/actions/runs/37970056214):
+
+| Platform | Cache/security | Consumer and resume delivery |
+| --- | --- | --- |
+| Linux | 43 passed; 66 Windows-only skips | 35 passed; 82 unrelated tests deselected |
+| Windows x64 | 109 passed; no skips | 35 passed; 82 unrelated tests deselected |
+
+Local Windows security checks passed 64 cases with two actual symbolic-link
+privilege skips; the shared suite passed 38 with five such skips. Real junction,
+hard-link, concurrent writer, ACL, non-execute, and attribute-only race checks
+ran locally. The CI account could run all symbolic-link cases. Staged hooks
+passed, and the Linux-target Pyrefly check reported zero errors.
+
+The first release attempt, `37969495382`, passed Linux and failed two Windows
+migration assertions: its pre-existing directories/files used the trusted
+Administrators owner rather than the test's assumed current-user owner. The
+correction snapshots and validates that existing owner, requires it unchanged,
+and still asserts exact protected user/SYSTEM ACLs and non-execute file access.
+Production ownership validation was not weakened.
+
+Live Windows native-vendor acceptance remains separate. In Codex 0.162.0,
+`localImage` is read by the same-user app-server, while a ZIP path in text does
+not grant sandbox filesystem access. Test the ZIP read under the actual sandbox
+policy; do not implicitly loosen the cache ACL or switch to full access. See the
+plan's exact vendor source links and image/ZIP/Stop/resume steps. Linux mocked UI
+checks cannot establish this Windows sandbox acceptance.
+
+
+Both required compatibility jobs and both Windows artifact jobs passed in
+`37970056214`. The CLI bundle installer/uninstaller checks passed. Downloaded
+artifacts were independently inspected: twelve Python modules, including the
+Windows attachment helper and shared dispatch, match `208591ece`; four Electron
+modules and desktop source/version/dev metadata match the same build. The
+packaged native candidate still matches its unchanged manifest SHA-256 and
+remains unsigned without production native-mode approval.
+
+- [CLI bundle, artifact 11635294449](https://github.com/MusicPartner/omnigent/actions/runs/37970056214/artifacts/11635294449).
+- [Desktop ZIP, artifact 11637425061](https://github.com/MusicPartner/omnigent/actions/runs/37970056214/artifacts/11637425061).
+
+[Integration 37969521491](https://github.com/MusicPartner/omnigent/actions/runs/37969521491)
+and [E2E UI 37969530034](https://github.com/MusicPartner/omnigent/actions/runs/37969530034)
+passed on feature source `575754760`. UI includes Browser Contract UI and all ten
+shards using mocks. These were not rerun after the Windows migration assertion
+correction; application source is unchanged between the two commits.
+
+The separate non-blocking Windows diagnostic recorded 64 failures before its
+known signer lifecycle fixture hit the 300-second hard timeout. No attachment
+failures were recorded, but there is no completed whole-suite result. Keep the
+remaining platform/signer backlog in the maintained failure inventory.
+
+
+[Backend E2E 37969525794](https://github.com/MusicPartner/omnigent/actions/runs/37969525794)
+on feature source `575754760` passed three shards on its first attempt. Shard 3
+failed its Cursor forwarder FD-exhaustion test's initial session-items HTTP probe
+with `httpx.ConnectError`, before changing the descriptor limit or filling
+ballast. The test, its fixture, and forwarder are unchanged from the earlier
+successful `489665868` build. This fixture's server log was not included in the
+uploaded artifact, so server-exit versus transient connection failure was not
+established. Only the failed shard was retried; the original passing shards were
+preserved.
+
+Attempt 2 completed successfully: shard 3 passed, and the original passing
+shards 0, 1, and 2 remained preserved. The workflow is green after that targeted
+retry; the first-attempt baseline connection failure remains recorded above.
