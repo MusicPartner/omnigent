@@ -34,16 +34,21 @@ def split_command(command: str, *, windows: bool) -> list[str]:
     ]
 
 
-def shell_join(parts: list[str]) -> str:
-    """Join argv for the shell that executes native-harness hooks.
-
-    Claude and the other native CLIs may execute hook commands through a
-    POSIX shell even on Windows. Forward slashes keep native Windows paths
-    intact in that shell and remain valid to Windows process APIs.
+def shell_join(parts: list[str], *, consumer: str | None = None) -> str:
+    """Format argv for an explicit POSIX or PowerShell shell consumer.
 
     :param parts: Argument vector to serialize.
+    :param consumer: Shell that interprets the resulting program. Omitted
+        preserves the legacy host-based formatting for existing callers.
     :returns: Shell command string.
+    :raises ValueError: If the consumer is unknown.
     """
-    if IS_WINDOWS:
-        return subprocess.list2cmdline([part.replace("\\", "/") for part in parts])
+    if consumer is None:
+        if IS_WINDOWS:
+            return subprocess.list2cmdline([part.replace("\\", "/") for part in parts])
+        consumer = "posix"
+    if consumer == "powershell":
+        return "& " + " ".join("'" + part.replace("'", "''") + "'" for part in parts)
+    if consumer != "posix":
+        raise ValueError(f"Unknown shell consumer: {consumer}")
     return shlex.join(parts)

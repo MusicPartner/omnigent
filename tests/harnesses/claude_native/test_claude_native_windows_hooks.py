@@ -10,7 +10,7 @@ import pytest
 from omnigent.harnesses.claude_native import bridge as claude_native_bridge
 from omnigent.harnesses.claude_native.bridge import build_hook_settings
 from omnigent.harnesses.claude_native.windows_hooks import (
-    message_display_command,
+    command_hook,
     status_line_command,
 )
 from omnigent.native import shell as native_shell
@@ -21,12 +21,13 @@ def _force_windows_shell(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(native_shell, "IS_WINDOWS", True)
 
 
-def test_message_display_command_invokes_stdlib_hook_module(tmp_path: Path) -> None:
-    bridge_dir = tmp_path / "bridge"
-    command = message_display_command("C:/venv/Scripts/python.exe", bridge_dir)
-    assert "omnigent.harnesses.claude_native.message_display_hook" in command
-    assert str(bridge_dir).replace("\\", "/") in command
-    assert "--bridge-dir" in command
+def test_command_hook_preserves_literal_argv(tmp_path: Path) -> None:
+    parts = ["C:/venv/Scripts/python.exe", "-I", "-m", "owned.module", str(tmp_path)]
+    assert command_hook(parts) == {
+        "type": "command",
+        "command": parts[0],
+        "args": ["-X", "utf8", *parts[1:]],
+    }
 
 
 def test_status_line_command_without_chain_omits_chain_flag(tmp_path: Path) -> None:
@@ -49,7 +50,7 @@ def test_status_line_command_with_chain_roundtrips_base64(tmp_path: Path) -> Non
 def test_build_hook_settings_message_display_matches_windows_builder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``build_hook_settings`` must delegate to :func:`message_display_command`."""
+    """The canonical MessageDisplay hook uses direct executable transport."""
     monkeypatch.setattr(claude_native_bridge, "IS_WINDOWS", True)
     monkeypatch.setattr(claude_native_bridge, "read_user_status_line_command", lambda: None)
     bridge_dir = tmp_path / "bridge"
@@ -57,9 +58,17 @@ def test_build_hook_settings_message_display_matches_windows_builder(
 
     settings = build_hook_settings(bridge_dir, python_executable=python_executable)
 
-    expected = message_display_command(python_executable, bridge_dir)
-    actual = settings["hooks"]["MessageDisplay"][0]["hooks"][0]["command"]
-    assert actual == expected
+    actual = settings["hooks"]["MessageDisplay"][0]["hooks"][0]
+    assert actual == command_hook(
+        [
+            python_executable,
+            "-I",
+            "-m",
+            "omnigent.harnesses.claude_native.message_display_hook",
+            "--bridge-dir",
+            str(bridge_dir),
+        ]
+    )
 
 
 def test_build_hook_settings_status_line_matches_windows_builder(

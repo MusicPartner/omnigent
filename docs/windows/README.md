@@ -8,6 +8,7 @@ record is [`../windows-first-class-support-adr.md`](../windows-first-class-suppo
 Use this folder as the product/engineering workspace for native Windows support:
 
 - [`PARITY-NEXT-STEPS.md`](PARITY-NEXT-STEPS.md) — remaining launch fixes, evidence, options and decisions.
+- [`IMPLEMENTATION-PLAN-2026-10-09.md`](IMPLEMENTATION-PLAN-2026-10-09.md) — delegated implementation, verified outcomes and blocked adoption gates.
 - [`UPSTREAM-DIRECTION-2026-10-09.md`](UPSTREAM-DIRECTION-2026-10-09.md) — upstream evidence, revised decisions and future merge risks.
 - [`QUICKSTART.md`](QUICKSTART.md) — install, upgrade, connect, smoke test, and uninstall.
 - [`qa-matrix.md`](qa-matrix.md) — review gates, CI levels, manual QA, and PR evidence expectations.

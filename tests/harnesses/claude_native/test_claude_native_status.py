@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -153,9 +154,14 @@ def test_status_wrapper_chains_to_user_command(
     )
     assert rc == 0
     assert len(captured_calls) == 1
-    assert captured_calls[0]["args"] == ("echo claude-hud",)
+    if os.name == "nt":
+        from omnigent.harnesses.claude_native.windows_hooks import status_shell_command
+
+        assert captured_calls[0]["args"] == (status_shell_command("echo claude-hud"),)
+    else:
+        assert captured_calls[0]["args"] == ("echo claude-hud",)
     assert captured_calls[0]["kwargs"]["input"] == stdin
-    assert captured_calls[0]["kwargs"]["shell"] is True
+    assert captured_calls[0]["kwargs"]["shell"] is (os.name != "nt")
     out, _err = capsys.readouterr()
     assert "claude-hud line" in out
 

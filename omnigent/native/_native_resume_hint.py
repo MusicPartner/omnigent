@@ -19,7 +19,7 @@ def format_native_resume_command(
     server: str | None = None,
 ) -> str:
     """
-    Build a copyable native-wrapper resume command.
+    Build a copyable native-wrapper resume command (PowerShell on Windows).
 
     :param native_command: Native wrapper subcommand, e.g.
         ``"claude"``.
@@ -41,13 +41,13 @@ def format_native_resume_command(
             prefix_parts = []
         if prefix_parts:
             parts = [*prefix_parts, native_command, "--resume", session_id]
-            return shell_join(parts)
+            return shell_join(parts, consumer="powershell" if IS_WINDOWS else "posix")
 
     parts = ["omnigent", native_command]
     if server is not None:
         parts.extend(["--server", server])
     parts.extend(["--resume", session_id])
-    return shell_join(parts)
+    return shell_join(parts, consumer="powershell" if IS_WINDOWS else "posix")
 
 
 def echo_native_resume_hint(
@@ -72,7 +72,8 @@ def echo_native_resume_hint(
         session_id=session_id,
         server=server,
     )
-    click.echo(f"Resume with: {command}", err=True)
+    shell_label = " (PowerShell)" if IS_WINDOWS else ""
+    click.echo(f"Resume with{shell_label}: {command}", err=True)
 
 
 def echo_native_cold_resume_hint(

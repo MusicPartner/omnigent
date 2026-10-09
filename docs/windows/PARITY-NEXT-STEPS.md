@@ -1,11 +1,68 @@
 # Windows parity: remaining work and decisions
 
 Research date: 2026-10-08. Branch: `windows-parity/v0.17-integration`.
-Validated implementation: `2d43e9d95c28d4cb623f98d3d49de1af959f90cc`.
-This plan records deferred work; it does not enable the proposed changes.
+Previously validated baseline: `2d43e9d95c28d4cb623f98d3d49de1af959f90cc`.
+This record separates the new consumer fixes and blocked decisions from the
+baseline validation retained below.
 Upstream direction was reviewed on 2026-10-09 in
 [the evidence and merge-risk assessment](UPSTREAM-DIRECTION-2026-10-09.md).
 Its recommendations below distinguish merged upstream contracts from proposals.
+The accepted [implementation plan](IMPLEMENTATION-PLAN-2026-10-09.md) delegates
+the work and excludes v0.14 backporting, as confirmed by the user.
+
+## 2026-10-09 implementation outcome
+
+The distlib executable prototype was rejected for production adoption. Native
+Windows x64 tests proved literal argv, spaced/Unicode interpreter and cwd,
+stdin/stdout/stderr, exit code 37 and executable deletion. A deterministic
+process test also proved the blocker: Python and its target can start before
+parent-side `post_spawn()` assigns the outer executable to a Job Object. Closing
+that job terminates the outer executable while existing descendants survive.
+The test cleans up its owned processes; its passing result records this defect,
+not successful containment. This deliberately late assignment was not compared
+with the existing `.cmd` launcher, so it does not establish a new regression.
+Any launcher that starts descendants before assignment can have this race.
+
+Only the test-owned prototype and evidence are retained. The production sandbox
+seam and core dependencies are unchanged, so `.cmd` `%*` forwarding remains
+unresolved. No clean-wheel, ARM/x86 or filesystem/network isolation claim follows
+from this prototype. Existing credential rules and brokered-signer refusals
+remain unchanged.
+
+Package B adopts direct executable + args for eligible Windows command hooks,
+with Python-owned stderr handling and the canonical shared hook definitions.
+It also retains explicit consumer quoting, Git Bash status-line handling,
+popup/bootstrap/fallback behavior and PowerShell-labelled resume hints.
+Ordinary launches do not gain a PowerShell prerequisite.
+
+Package C's tracked gated capture passed all three native Claude versions:
+supported minimum **2.1.161**, CI pin **2.1.266**, and installed local **2.1.295**,
+with psmux **3.3.8**. Each run preserved its start/end CLI version, exact
+**9,283-byte settings** and **five literal Setup-hook arguments**, plus MCP JSON.
+The isolated `--init-only` fixture uses a dummy key and loopback endpoint without
+provider responses or real prompts. It compares production SessionStart settings
+but does not execute canonical SessionStart or prove a full conversation.
+Module/unit checks cover shared generation; branch CI remains to be recorded.
+The shared Windows argv parser is included in required CI; real capture is an
+explicit opt-in test against an existing native executable.
+
+The original five-attempt limit and subsequent automatic-review rejection are
+historical. The user revoked that limit and authorized the successful resumed
+capture. Launcher containment and brokered-signer isolation remain unresolved;
+no new ARM/x86 runtime support is claimed. v0.14 remains excluded.
+
+## Current-pass local evidence
+
+| Check | Result and limit |
+| --- | --- |
+| Isolated x64 launcher prototype | 3 passed, including the reproducible failed-containment assertion; no runtime adoption. |
+| Package B focused native tests | 50 passed; 1 POSIX `fcntl` check deselected. Actual PowerShell popup and Git Bash status-line Unicode/stdin checks passed. |
+| Canonical bridge/policy/framework/status integration subset | 4 passed. |
+| Broader Windows bridge sweep | 507 passed, 2 skipped, 5 failures from unchanged Unix-socket harness assumptions (`server.json['socket']`). This sweep is not all green. |
+| Direct-hook real-Claude capture | 2.1.161, 2.1.266 and 2.1.295 passed with psmux 3.3.8; exact 9,283-byte settings, MCP JSON and five literal Setup-hook args; start/end versions matched. Setup-only scope, not a full conversation. |
+
+Final build and branch-CI results are not yet recorded for this pass. The
+validated baseline table below does not cover these new edits.
 
 ## Completed audit items
 
@@ -24,7 +81,7 @@ The assertion now excludes that specific notice while retaining duplicate-reply
 checks. A separate CRLF-sensitive linter self-test mutation was corrected.
 Neither failure was dismissed as flaky without investigation.
 
-## Validation and failure classification
+## Previously validated baseline and failure classification
 
 | Check on implementation `2d43e9d95` | Result |
 | --- | --- |
@@ -75,7 +132,7 @@ is named `omnigent-windows-2d43e9d95c28d4cb623f98d3d49de1af959f90cc`.
 | PowerShell requirement | Keep ordinary terminal launches compatible with existing Windows clients; gate PowerShell-dependent popups separately. | No blanket new installation requirement. | More fallback behavior. Requiring PowerShell 7.3+ simplifies native argument handling but adds an installation prerequisite and does not fix batch forwarding. |
 | Exact Windows exit codes | Keep unknown status until psmux reports a real value. | Honest behavior and small maintenance surface. | Cannot distinguish success/failure from pane death alone. An Omnigent sidecar protocol could recover status but adds synchronization, crash and cleanup cases. |
 | Databricks signer auth on Windows | Defer full brokered-signer support unless release-critical; preserve upstream refusals. | Aligns with the merged fail-closed credential and containment contract. | Requires real filesystem/network isolation as well as provenance and lifecycle work. Job Objects plus ACL checks are insufficient; ordinary gateway login is a separate surface. |
-| v0.14 maintenance | Backport the shutdown escalation fix only if v0.14 remains supported. | Fixes ignored CTRL_BREAK on that maintained branch. | Additional branch validation and maintenance; no benefit if v0.14 is retired. |
+| v0.14 maintenance | Excluded; the user confirmed nobody uses v0.14. | No unnecessary backport work or branch validation. | Existing historical branches/worktree remain untouched. |
 
 Upstream merged #4586 deliberately preserves the filename-only launcher API,
 which strengthens the executable-prototype recommendation. Current upstream
@@ -108,31 +165,79 @@ resume/materialization behavior that must be preserved explicitly.
 See the pinned SDK [subprocess transport](https://github.com/anthropics/claude-agent-sdk-python/blob/v0.2.94/src/claude_agent_sdk/_internal/transport/subprocess_cli.py)
 and [client](https://github.com/anthropics/claude-agent-sdk-python/blob/v0.2.94/src/claude_agent_sdk/client.py).
 
-Options:
+### Follow-up: a filename-compatible native containment owner
 
-1. **Native console launcher:** package a small executable that invokes the
-   Python sandbox bootstrap with literal argv. A mature script-launcher library
-   such as [distlib](https://distlib.readthedocs.io/en/latest/tutorial.html#using-the-scripts-api)
-   offers Windows console executables. Prototype before choosing it: preserve
-   argv, stdin/stdout/stderr, exit code, sandbox activation, process-tree cleanup,
-   cwd, environment policy and temporary-file ownership. Verify wheel installs
-   and supported architectures; do not require an end-user compiler. Distlib
-   is currently present through development tooling, so production availability
-   must be declared or packaged explicitly, not assumed from the local venv.
-2. **Structured all-Python launch:** return a descriptor containing an argv
-   prefix and owned temporary paths, migrate all owned callers to direct spawn,
-   and integrate the filename-only SDK through a supported transport. This avoids
-   a new native asset but is a broader refactor with more SDK upgrade maintenance.
-3. **Harden `.cmd` quoting:** smallest diff, but nested shell parsing and percent
-   expansion remain. This does not meet the requirement for general literal argv
-   and is not recommended as the final solution.
+**Recommended next prototype: a native stub with its own private Job Object.**
+For an active Windows Job Object policy, create a non-inherited job with
+kill-on-close and no breakaway permissions, place Python in that job before it
+executes, and hold the sole job handle while waiting for Python's exit. Closing
+or terminating the stub then closes that handle and terminates the contained
+child tree. Parent-side `post_spawn()` may still assign the stub to an outer job;
+its late assignment no longer needs to retroactively enroll earlier children.
+This preserves the executable filename and can avoid a new parent handshake or
+migration of every SDK/caller API. It explicitly **adds launcher-owned
+containment**, rather than claiming the existing parent is the only owner.
+These are design inferences from
+[CreateJobObjectW](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-createjobobjectw)
+and [process termination](https://learn.microsoft.com/en-us/windows/win32/procthread/terminating-a-process),
+not tested properties of a new implementation.
 
-Implement neither 1 nor 2 until the contract choice is made. Preserve existing
-sandbox policy and refusal/fallback behavior during the migration. Audit who
-owns the Windows Job Object: `activate()` is a no-op and containment comes from
-parent-side `post_spawn()`, so simply calling the bootstrap does not establish
-process-tree containment. This launcher change must not claim filesystem or
-network isolation, which the current Windows backend does not provide.
+Creating Python suspended, assigning the job, then resuming prevents Python
+from running before assignment. However, killing the stub between creation and
+assignment can leave a suspended orphan. Prefer assigning at process creation
+through `STARTUPINFOEX` / `PROC_THREAD_ATTRIBUTE_JOB_LIST`, available on Windows
+10 / Server 2016 and later; prove abrupt termination across that boundary.
+Keep the job handle out of the child's inherited handle list, and never clear
+kill-on-close for a console event. Inactive/no-Job-Object policies should launch
+without imposing this containment. On an active policy, creation/assignment or
+resume failure must produce a clear nonzero exit and clean up the suspended
+child, not fall back to an uncontained launch.
+See [process creation attributes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute).
+
+Inherited jobs remain a compatibility gate. This host's Python already belongs
+to a job before the Omnigent backend acts. Modern Windows permits nested jobs
+when their hierarchy is valid and UI-limit constraints allow it; a host/worker
+job can still make assignment fail. Do not request breakaway to evade that
+supervisor. Prove inherited and nested job cases, late outer assignment, normal
+exit with surviving grandchildren, forced stub termination, cancellation and
+SDK version probes. Normal exit must preserve Python's status while closing
+the inner job; cancellation must allow only the defined cleanup window.
+See [Nested Jobs](https://learn.microsoft.com/en-us/windows/win32/procthread/nested-jobs)
+and [AssignProcessToJobObject](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-assignprocesstojobobject).
+
+**Membership polling alone is insufficient.** A native stub could wait before
+starting Python without changing the public filename API, but
+`IsProcessInJob(self, NULL)` detects any job, not the anonymous Omnigent job.
+A read-only native query on this host returned true before backend assignment.
+Matching kill-on-close/no-breakaway flags also does not prove intended ownership;
+`QueryInformationJobObject(NULL, ...)` queries only the immediate job.
+See [IsProcessInJob](https://learn.microsoft.com/en-us/windows/win32/api/jobapi/nf-jobapi-isprocessinjob)
+and [QueryInformationJobObject](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-queryinformationjobobject).
+Only `inner/os_env.py` currently calls `post_spawn()`; SDK and ACP launcher
+consumers do not. A required-membership wait would need a deliberate caller and
+job-identity design, plus a bounded deadline and verified parent-process handle
+for parent-death failure. It is not a universal fix under the current contract.
+
+**Alternative: parent-coordinated suspended spawn, assign, then resume.** The
+parent can assign its exact job before launcher code runs, avoiding inference
+and launcher-owned containment. This requires spawn/resume/failure cleanup
+across callers and the filename-only SDK. Merely passing `CREATE_SUSPENDED` to
+generic subprocess APIs leaves a thread-resume obligation. Creation-time job
+assignment should also be considered for abrupt parent-death cleanup.
+See [process creation flags](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags).
+
+Any native option adds maintained source, reproducible builds with a pinned
+toolchain, per-architecture assets, hashes/provenance and signing/antivirus
+release costs. Prove native x64 first; ARM/x86 need separate runtime evidence.
+Appending a per-launch Python/config payload changes the distributed executable
+and needs a signing design. An immutable signed stub plus separate configuration
+would instead need its own trust and temporary-file ownership contract.
+
+No alternative is implemented or adopted. The retained distlib prototype is
+rejected-candidate evidence, not a runtime API; distlib remains available only
+through development tooling. Windows `activate()` is still a no-op. A future
+launcher-owned process job would not provide filesystem/network isolation or
+enable brokered-signer authentication. Credential refusals remain unchanged.
 
 ## 2. Select quoting by the consumer
 
@@ -153,10 +258,11 @@ Consumer map to establish before edits:
 | Copyable resume hints | Match the user's selected terminal shell or provide clearly labelled shell variants. |
 
 Claude's official changelog identifies `2.1.139` as the introduction of hook
-`args`; current local CLI is `2.1.294`. The documented exec form passes an
+`args`; the current captured local CLI is `2.1.295`. The documented exec form passes an
 argument array directly and requires a real executable on Windows. This is a
-candidate for Python hooks, not proof of older Windows versions' behavior.
-Validate the selected versions on Windows before changing settings generation.
+transport now adopted for eligible Python command hooks. The tracked capture
+proves its Setup/argv behavior on 2.1.161, 2.1.266 and 2.1.295; full lifecycle
+behavior is a separate validation surface.
 See [Claude hooks](https://code.claude.com/docs/en/hooks) and the
 [official changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md#21139).
 The [status-line contract](https://code.claude.com/docs/en/statusline) still
@@ -177,7 +283,12 @@ clear popup capability refusal, rather than failing an ordinary Claude launch.
 
 ## 3. Real Claude launch evidence and future coverage
 
-The supplementary local capture is now complete on Claude Code 2.1.294 and
+The following is historical 2026-10-08 evidence, not a successful run of the new
+2026-10-09 fixture. The current gated fixture passed the three-version
+Setup/argv matrix after the user revoked the original retry limit; see the
+current outcome above for its exact scope.
+
+The supplementary local capture completed on Claude Code 2.1.294 and
 psmux 3.3.8. A real Claude child was launched through `PsmuxTerminalInstance`
 with the isolated Python environment-removal wrapper. `Win32_Process.CommandLine`
 was captured and parsed with `CommandLineToArgvW`. Both the settings-file path
@@ -199,8 +310,9 @@ there were no retries beyond the agreed limit.
 Production `augment_claude_args()` already writes hooks into an invocation-local
 settings file, while `--mcp-config` remains inline JSON. This capture exercises
 the stronger full-settings inline case too; it does not change that production
-file contract. Next add repeatable, gated integration coverage and test the
-agreed CLI/shell versions before broadening the support claim:
+file contract. The tracked fixture now automates the following transport
+evidence. A full SessionStart/conversation journey remains separate from its
+`--init-only` Setup-hook assertions:
 
 1. Use an isolated Claude config and a uniquely named psmux server/pane. Generate
    settings through the production bridge, including hook strings with `2>>`,
@@ -224,6 +336,24 @@ fields are also placeholders. See
 [format.rs](https://github.com/psmux/psmux/blob/66cf613/src/format.rs).
 The [latest stable release](https://github.com/psmux/psmux/releases/tag/v3.3.8)
 checked on the research date is still 3.3.8, so upgrading is not a verified fix.
+
+### Repeat the tracked real-Claude transport check
+
+From `omnigent-v017` on native Windows, set the full path of an **existing native
+`claude.exe`** (not an npm `.cmd` shim). The test requires installed psmux, leaves
+the CLI installation unchanged, and cleans up only its isolated config and
+owned processes. For an executable already on PATH:
+
+```powershell
+$env:OMNIGENT_REAL_CLAUDE_EXE = (Get-Command claude.exe -ErrorAction Stop).Source
+.venv\Scripts\python.exe -m pytest tests/terminals/test_real_claude_windows_capture.py -n 0 -p no:cacheprovider -q
+Remove-Item Env:OMNIGENT_REAL_CLAUDE_EXE
+```
+
+For a separately installed version, assign its full filename to the same
+environment variable. Expect one passing Setup/argv capture with unchanged CLI
+version and exact settings/recorder arguments. This check does not exercise a
+provider response or full conversation. With no opt-in variable, it skips.
 
 ## 4. Non-blocking Windows auth sweep failure
 
@@ -266,31 +396,25 @@ kills the helper. Existing POSIX provenance and descendant tests must remain.
   tests passed without them. Reintroducing skips would reduce coverage.
 - **Optional PR:** unnecessary for this work; keep the existing no-PR-to-main
   constraint. Existing dispatchable workflows provide branch validation.
-- **v0.14 shutdown backport:** a separate task only if that branch remains in
-  use; use a normal commit, never rewrite published history.
+- **v0.14 shutdown backport:** excluded; the user confirmed nobody uses that
+  version. Leave historical branches and the old worktree untouched.
 - **Earlier broad manual validation:** accepted as completed by the user. Only
   the new launch/bridge behavior needs the focused verification below.
 
-## Implementation sequence after the decisions
+## Work remaining after this pass
 
-1. Turn the captured real Claude argv/settings proof into gated coverage and
-   establish the agreed CLI/shell versions, including the unproven minimal-env
-   and semicolon/percent cwd cases.
-2. Prototype a Windows executable behind the existing filename-only sandbox
-   launcher contract; avoid shared caller/SDK API migration unless the prototype
-   demonstrates a concrete need. Add literal-argument, sandbox-policy and
-   lifecycle regression checks.
-3. Apply explicit consumer quoting/direct hook argv; test POSIX, Git Bash,
-   PowerShell 5.1 and supported PowerShell 7 paths that remain in scope.
-4. Run staged pre-commit, targeted Windows tests and the existing branch Actions.
-   Keep unrelated POSIX-only Windows test failures separate from new regressions.
-5. Update installer/readiness documentation for any agreed dependency floor.
-   Consider the v0.14 shutdown backport independently.
+1. Review the native launcher-owned Job Object prototype recommended above;
+   preserve the filename API and explicitly agree on containment ownership.
+2. Retain the adopted direct command + args hooks and repeatable opt-in capture.
+   Keep Setup/argv evidence distinct from a full SessionStart/conversation
+   journey and record final branch-CI/build results when available.
+3. Run applicable pre-commit and unaffected validation when their implementation
+   is ready. Record resumed capture results separately from baseline CI. Publish
+   or claim final builds only after the changed behavior has the required proof.
 
-For each specific issue, make at most five fix/retest attempts. Inspect the
-failure evidence before retrying; rerun only an affected job for a transient
-failure. At the limit, record the blocker and evidence rather than suppressing
-assertions or retrying indefinitely.
+The original five-attempt limit is historical: the user revoked it and renewed
+authorization for capture. Keep failure evidence and do not suppress assertions
+or claim a fix merely because a retry passed. v0.14 remains outside this work.
 
 ## Published history and future updates
 

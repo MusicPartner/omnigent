@@ -3381,6 +3381,7 @@ def test_generated_claude_subprocesses_pin_runner_tmpdir(
     """MCP and Python hooks use the temp root that created the bridge."""
     monkeypatch.setattr(claude_native_bridge, "IS_WINDOWS", False)
     monkeypatch.setattr("omnigent.native.shell.IS_WINDOWS", False)
+    monkeypatch.setattr(native_cost_popup, "IS_WINDOWS", False)
     runner_tmpdir = tmp_path / "runner-tmp"
     bridge_dir = (
         runner_tmpdir
@@ -3431,21 +3432,23 @@ def test_windows_framework_context_hook_uses_native_quoting(
     bridge_dir = tmp_path / "bridge with spaces"
     python = r"C:\Program Files\Python\python.exe"
     settings = claude_native_bridge.build_hook_settings(bridge_dir, python_executable=python)
-    command = settings["hooks"]["UserPromptSubmit"][0]["hooks"][1]["command"]
-    expected = subprocess.list2cmdline(
-        [
-            python.replace("\\", "/"),
-            "-I",
-            "-m",
-            "omnigent.harnesses.claude_native.hook",
-            "framework-context",
-            "--bridge-dir",
-            bridge_dir.as_posix(),
-        ]
-    )
-    assert command.startswith(expected + " 2>> ")
-    assert "env TMPDIR=" not in command
-    assert claude_native_bridge._pin_runner_tmpdir(expected) == expected
+    hook = settings["hooks"]["UserPromptSubmit"][0]["hooks"][1]
+    assert hook["command"] == python
+    assert hook["args"] == [
+        "-X",
+        "utf8",
+        "-I",
+        "-m",
+        "omnigent.harnesses.claude_native.windows_hooks",
+        "--stderr",
+        str(bridge_dir / claude_native_bridge.OBSERVER_HOOK_STDERR_FILE),
+        "--",
+        "omnigent.harnesses.claude_native.hook",
+        "framework-context",
+        "--bridge-dir",
+        str(bridge_dir),
+    ]
+    assert claude_native_bridge._pin_runner_tmpdir("literal") == "literal"
 
 
 def test_prompt_preparation_preserves_pending_approval_guard(
@@ -8408,6 +8411,7 @@ def test_display_cost_approval_popup_builds_detached_tmux_command(
     """
     monkeypatch.setattr("omnigent.native.shell.IS_WINDOWS", False)
     monkeypatch.setattr(native_cost_popup, "IS_WINDOWS", False)
+    monkeypatch.setattr(native_cost_popup, "IS_WINDOWS", False)
     bridge_dir = tmp_path / "bridge"
     bridge_dir.mkdir()
     (bridge_dir / "tmux.json").write_text(
@@ -8477,6 +8481,7 @@ def test_display_cost_approval_popup_honors_config_file_override(
     401 and silently lose the approval.
     """
     monkeypatch.setattr("omnigent.native.shell.IS_WINDOWS", False)
+    monkeypatch.setattr(native_cost_popup, "IS_WINDOWS", False)
     bridge_dir = tmp_path / "bridge"
     bridge_dir.mkdir()
     (bridge_dir / "tmux.json").write_text(
@@ -11367,10 +11372,13 @@ def test_statusline_shell_command_captures_and_chains(
     stdin Claude sent.
     """
     from omnigent._platform import default_shell_argv
+    from omnigent.harnesses.claude_native.windows_hooks import status_shell_command
+
+    shell_argv = status_shell_command if os.name == "nt" else default_shell_argv
     from omnigent.harnesses.claude_native.status import CONTEXT_RAW_FILE, sync_raw_status_context
 
     chain_out = tmp_path / "chain_out.json"
-    chain_command = f'more > "{chain_out}"' if os.name == "nt" else f"cat > {chain_out}"
+    chain_command = f"cat > {shlex.quote(chain_out.as_posix())}"
     monkeypatch.setattr(
         "omnigent.harnesses.claude_native.bridge.read_user_status_line_command",
         lambda: chain_command,
@@ -11387,9 +11395,7 @@ def test_statusline_shell_command_captures_and_chains(
             "model": {"id": "claude-opus-4-8"},
         }
     )
-    result = subprocess.run(
-        default_shell_argv(command), input=payload, capture_output=True, text=True
-    )
+    result = subprocess.run(shell_argv(command), input=payload, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     chained = chain_out.read_text("utf-8")
     assert (chained if os.name != "nt" else chained.rstrip("\r\n")) == payload
@@ -11576,6 +11582,9 @@ async def test_curl_evaluate_policy_command_round_trips(
     (which owns the direct-server path and fail-closed shaping).
     """
     from omnigent._platform import default_shell_argv
+    from omnigent.harnesses.claude_native.windows_hooks import status_shell_command
+
+    shell_argv = status_shell_command if os.name == "nt" else default_shell_argv
 
     client = _ScriptedPolicyClient({"result": "POLICY_ACTION_DENY", "reason": "curl says no"})
     relay, bridge_dir = _hook_relay(tmp_path, monkeypatch, client)
@@ -11585,8 +11594,10 @@ async def test_curl_evaluate_policy_command_round_trips(
         pre_entries = [
             entry for entry in settings["hooks"]["PreToolUse"] if "matcher" not in entry
         ]
-        command = pre_entries[0]["hooks"][0]["command"]
-        assert "evaluate-policy" in command
+        hook = pre_entries[0]["hooks"][0]
+        command = hook["command"]
+        assert "evaluate-policy" in hook.get("args", []) or "evaluate-policy" in command
+        process_argv = [command, *hook["args"]] if "args" in hook else shell_argv(command)
         if os.name != "nt":
             assert "curl" in command
             # The Python hook must appear only as the relay-less fallback,
@@ -11597,7 +11608,7 @@ async def test_curl_evaluate_policy_command_round_trips(
         # blocking subprocess.run here would deadlock the curl round trip.
         result = await asyncio.to_thread(
             subprocess.run,
-            default_shell_argv(command),
+            process_argv,
             input=json.dumps(_PRE_TOOL_USE_PAYLOAD),
             capture_output=True,
             text=True,
@@ -11621,8 +11632,12 @@ async def test_curl_evaluate_policy_command_round_trips(
     )
     settings = _load_invocation_settings(args)
     pre_entries = [entry for entry in settings["hooks"]["PreToolUse"] if "matcher" not in entry]
+    hook = pre_entries[0]["hooks"][0]
+    process_argv = (
+        [hook["command"], *hook["args"]] if "args" in hook else shell_argv(hook["command"])
+    )
     result = subprocess.run(
-        default_shell_argv(pre_entries[0]["hooks"][0]["command"]),
+        process_argv,
         input=json.dumps(_PRE_TOOL_USE_PAYLOAD),
         capture_output=True,
         text=True,

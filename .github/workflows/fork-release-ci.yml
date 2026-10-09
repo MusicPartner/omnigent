@@ -79,6 +79,9 @@ jobs:
           tests/runner/test_python_probe.py
           tests/terminals/test_windows_psmux.py
           tests/harnesses/claude_native/test_claude_native_windows_hooks.py
+          tests/harnesses/claude_native/test_windows_hook_transport.py
+          tests/harnesses/claude_native/test_claude_native_bridge.py
+          tests/harnesses/claude_native/test_claude_native_status.py
           tests/test_native_shell.py
 
       - name: Focused integration tests
@@ -99,6 +102,11 @@ jobs:
           tests/terminals/test_windows_psmux.py
           tests/harnesses/claude_native/test_claude_native_windows_hooks.py
           tests/test_native_shell.py
+          tests/harnesses/claude_native/test_claude_native_bridge.py
+          tests/harnesses/claude_native/test_claude_native_status.py
+          tests/harnesses/claude_native/test_windows_hook_transport.py
+          tests/test_native_resume_hint.py
+          tests/test_native_cost_popup.py
 
   windows-native:
     name: Native Windows compatibility
@@ -151,6 +159,15 @@ jobs:
           $env:PATH = "$env:LOCALAPPDATA\Microsoft\WinGet\Links;$env:PATH"
           psmux --version
 
+      - name: Windows hook and shell consumer tests
+        run: >-
+          uv run pytest
+          tests/harnesses/claude_native/test_windows_hook_transport.py
+          tests/test_native_resume_hint.py
+          tests/test_native_cost_popup.py
+          --deselect tests/test_native_cost_popup.py::test_tmux_last_client_input_at_tracks_keypresses_not_control_clients
+          -n 0 -p no:cacheprovider -q
+
       - name: psmux terminal backend tests
         run: >-
           uv run pytest
@@ -161,6 +178,12 @@ jobs:
           tests/terminals/test_windows_psmux.py::test_psmux_launch_resolves_native_claude_before_spawning
           tests/terminals/test_windows_psmux.py::test_windows_claude_bridge_controls_psmux_pane
           tests/terminals/test_windows_psmux.py::test_windows_psmux_preserves_json_argv_and_clears_existing_server_env
+          -n 0 -p no:cacheprovider -q
+
+      - name: Windows command-line parsing helper
+        run: >-
+          uv run pytest
+          tests/terminals/test_windows_command_line.py
           -n 0 -p no:cacheprovider -q
 
       # Non-blocking, like upstream's windows.yml: v0.17.0 unit tests still

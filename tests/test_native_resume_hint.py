@@ -62,7 +62,8 @@ def test_format_native_resume_command_uses_native_windows_quoting(
     )
 
     assert command == (
-        'omnigent codex --server "C:/Omnigent Native/server" --resume "conversation with spaces"'
+        "& 'omnigent' 'codex' '--server' 'C:\\Omnigent Native\\server' "
+        "'--resume' 'conversation with spaces'"
     )
 
 

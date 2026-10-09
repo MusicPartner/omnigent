@@ -6,20 +6,27 @@ import argparse
 import json
 import sys
 import urllib.request
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from omnigent.native.shell import shell_join
 
 
-def hook_settings(bridge_dir: Path, python: str, module: str) -> dict[str, object]:
+def hook_settings(
+    bridge_dir: Path,
+    python: str,
+    module: str,
+    *,
+    command_formatter: Callable[[list[str]], Mapping[str, object]] | None = None,
+) -> dict[str, object]:
     """Use each harness's existing owned hook module and trust registration."""
-    return {
-        "type": "command",
-        "command": shell_join(
-            [python, "-I", "-m", module, "observe-tool", "--bridge-dir", str(bridge_dir)]
-        ),
-        "timeout": 3,
-    }
+    parts = [python, "-I", "-m", module, "observe-tool", "--bridge-dir", str(bridge_dir)]
+    command = (
+        command_formatter(parts)
+        if command_formatter is not None
+        else {"type": "command", "command": shell_join(parts)}
+    )
+    return {**command, "timeout": 3}
 
 
 def main(argv: list[str]) -> int:

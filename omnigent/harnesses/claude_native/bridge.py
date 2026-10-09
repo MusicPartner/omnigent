@@ -72,7 +72,9 @@ from omnigent.harnesses.claude_native.failure_telemetry import claude_failure_co
 from omnigent.harnesses.claude_native.message_display_hook import MESSAGE_DELTAS_FILE
 from omnigent.harnesses.claude_native.status import CONTEXT_RAW_FILE
 from omnigent.harnesses.claude_native.windows_hooks import (
-    message_display_command,
+    command_hook as windows_command_hook,
+)
+from omnigent.harnesses.claude_native.windows_hooks import (
     status_line_command,
 )
 from omnigent.harnesses.diagnostics import detect_sign_in_prompt, sign_in_next_step
@@ -2164,7 +2166,7 @@ def build_mcp_config(bridge_dir: Path, *, python_executable: str | None = None) 
 
 def _shell_join(parts: list[str]) -> str:
     """Quote an argv vector for the shell Claude uses to run hooks."""
-    return shell_join(parts)
+    return shell_join(parts, consumer="posix")
 
 
 def _shell_quote(value: str) -> str:
@@ -2182,6 +2184,16 @@ def _pin_runner_tmpdir(command: str) -> str:
 def _python_hook_command(parts: list[str]) -> str:
     """Build a Python hook command pinned to the runner's temp root."""
     return _pin_runner_tmpdir(_shell_join(parts))
+
+
+def _python_hook_settings(parts: list[str], *, stderr_file: Path | None = None) -> _JsonObject:
+    """Keep shell-only POSIX transport separate from Windows literal argv."""
+    if IS_WINDOWS:
+        return cast(_JsonObject, windows_command_hook(parts, stderr_file=stderr_file))
+    command = _python_hook_command(parts)
+    if stderr_file is not None:
+        command += f" 2>> {_shell_quote(str(stderr_file))}"
+    return {"type": "command", "command": command}
 
 
 def build_hook_settings(
@@ -2269,9 +2281,8 @@ def build_hook_settings(
     ]
     # Claude owns command-hook stderr, so it does not reach the runner logs.
     # Persist it for the forwarder to relay with the Omnigent session id.
-    observer_stderr = _shell_quote(str(bridge_dir / OBSERVER_HOOK_STDERR_FILE))
-    command = f"{_python_hook_command(command_parts)} 2>> {observer_stderr}"
-    hook = {"type": "command", "command": command}
+    observer_stderr = bridge_dir / OBSERVER_HOOK_STDERR_FILE
+    hook = _python_hook_settings(command_parts, stderr_file=observer_stderr)
     framework_context_parts = [
         python,
         "-I",
@@ -2281,31 +2292,36 @@ def build_hook_settings(
         "--bridge-dir",
         str(bridge_dir),
     ]
-    framework_context_hook = {
-        "type": "command",
-        "command": f"{_python_hook_command(framework_context_parts)} 2>> {observer_stderr}",
-    }
-    session_start_hook = {
-        "type": "command",
-        "command": command,
-    }
+    framework_context_hook = _python_hook_settings(
+        framework_context_parts, stderr_file=observer_stderr
+    )
+    session_start_hook = dict(hook)
     # ``MessageDisplay`` fires once per streamed assistant-text chunk and
     # Claude blocks on the hook. POSIX uses a shell appender to avoid an
     # interpreter spawn; native Windows uses the stdlib hook directly because
     # its command shell has no portable equivalent of the POSIX pipeline.
     deltas_quoted = _shell_quote(str(bridge_dir / MESSAGE_DELTAS_FILE))
-    message_display_hook = {
-        "type": "command",
-        "command": (
-            message_display_command(python, bridge_dir)
-            if IS_WINDOWS
-            else (
+    message_display_hook = (
+        _python_hook_settings(
+            [
+                python,
+                "-I",
+                "-m",
+                "omnigent.harnesses.claude_native.message_display_hook",
+                "--bridge-dir",
+                str(bridge_dir),
+            ]
+        )
+        if IS_WINDOWS
+        else {
+            "type": "command",
+            "command": (
                 "p=$(cat | tr -d '\\r\\n'); "
                 f'[ -n "$p" ] && printf \'%s\\n\' "$p" >> '
                 f"{deltas_quoted}; :"
-            )
-        ),
-    }
+            ),
+        }
+    )
     hooks: dict[str, list[_JsonObject]] = {
         "SessionStart": [{"hooks": [session_start_hook]}],
         "SessionEnd": [{"hooks": [hook]}],
@@ -2359,8 +2375,12 @@ def build_hook_settings(
     }
     from omnigent.native.tool_observer_hook import hook_settings
 
-    observer_hook = hook_settings(bridge_dir, python, "omnigent.harnesses.claude_native.hook")
-    observer_hook["command"] = _pin_runner_tmpdir(cast(str, observer_hook["command"]))
+    observer_hook = hook_settings(
+        bridge_dir,
+        python,
+        "omnigent.harnesses.claude_native.hook",
+        command_formatter=_python_hook_settings,
+    )
     hooks["PostToolUse"].append({"hooks": [observer_hook]})
     if turn_routing:
         hooks["UserPromptSubmit"].append({"hooks": [_claude_route_turn_hook(bridge_dir, python)]})
@@ -2391,8 +2411,7 @@ def build_hook_settings(
             str(bridge_dir),
         ]
         permission_hook: _JsonObject = {
-            "type": "command",
-            "command": _python_hook_command(permission_command_parts),
+            **_python_hook_settings(permission_command_parts),
             # Wait up to a day for the verdict. Claude Code's default
             # command-hook timeout (~60s) would otherwise kill the hook
             # subprocess long before the user answers, putting the
@@ -2416,17 +2435,16 @@ def build_hook_settings(
         # path and the phase-aware fail-closed contract — exactly the
         # pre-curl behavior.
         relay_env_quoted = _shell_quote(str(bridge_dir / _TOOL_RELAY_ENV_FILE))
-        evaluate_policy_python = _python_hook_command(
-            [
-                python,
-                "-I",
-                "-m",
-                "omnigent.harnesses.claude_native.hook",
-                "evaluate-policy",
-                "--bridge-dir",
-                str(bridge_dir),
-            ]
-        )
+        evaluate_policy_parts = [
+            python,
+            "-I",
+            "-m",
+            "omnigent.harnesses.claude_native.hook",
+            "evaluate-policy",
+            "--bridge-dir",
+            str(bridge_dir),
+        ]
+        evaluate_policy_python = _python_hook_command(evaluate_policy_parts)
         evaluate_policy_command = (
             evaluate_policy_python
             if IS_WINDOWS
@@ -2441,10 +2459,14 @@ def build_hook_settings(
                 f"printf '%s' \"$p\" | {evaluate_policy_python}"
             )
         )
-        evaluate_policy_hook: _JsonObject = {
-            "type": "command",
-            "command": evaluate_policy_command,
-        }
+        evaluate_policy_hook: _JsonObject = (
+            _python_hook_settings(evaluate_policy_parts)
+            if IS_WINDOWS
+            else {
+                "type": "command",
+                "command": evaluate_policy_command,
+            }
+        )
 
         # AskUserQuestion needs no PreToolUse forwarder: Claude Code raises its
         # permission prompt for the question in every mode, bypass included, so
@@ -2484,8 +2506,7 @@ def build_hook_settings(
         from omnigent.inner.hook_scripts.subagent_router import HOOK_TIMEOUT_S
 
         router_hook: _JsonObject = {
-            "type": "command",
-            "command": _python_hook_command(router_command_parts),
+            **_python_hook_settings(router_command_parts),
             # Outermost hop of the routing timeout budget documented in
             # ``omnigent.runner.subagent_routing``: derived from the hook
             # script's own request budget so it always exceeds it and the
@@ -2557,8 +2578,7 @@ def _claude_route_turn_hook(bridge_dir: Path, python: str) -> _JsonObject:
     from omnigent.runner.turn_routing import HARNESS_HOOK_TIMEOUT_S
 
     return {
-        "type": "command",
-        "command": _python_hook_command(
+        **_python_hook_settings(
             [
                 python,
                 "-I",

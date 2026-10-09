@@ -211,10 +211,15 @@ def _chain(command: str, stdin_payload: str) -> None:
         what Claude Code sent.
     """
     try:
+        shell_command: str | list[str] = command
+        if os.name == "nt":
+            from omnigent.harnesses.claude_native.windows_hooks import status_shell_command
+
+            shell_command = status_shell_command(command)
         proc = subprocess.run(
-            command,
+            shell_command,
             input=stdin_payload,
-            shell=True,
+            shell=os.name != "nt",
             capture_output=True,
             text=True,
             encoding="utf-8",

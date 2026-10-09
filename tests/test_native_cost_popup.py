@@ -30,6 +30,11 @@ _ELICITATION_ID = "elicit_deadbeef"
 _MESSAGE = "Session cost $0.12 crossed the $0.10 checkpoint. Continue?"
 
 
+@pytest.fixture(autouse=True)
+def _posix_popup_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(native_cost_popup, "IS_WINDOWS", False)
+
+
 @dataclass
 class _CapturedRequest:
     """
@@ -398,6 +403,8 @@ def test_popup_command_uses_native_windows_interpreter_quoting(
     from omnigent.native import shell as native_shell
 
     monkeypatch.setattr(native_shell, "IS_WINDOWS", True)
+    monkeypatch.setattr(native_cost_popup, "IS_WINDOWS", True)
+    monkeypatch.setattr(native_cost_popup.shutil, "which", lambda _: "pwsh.exe")
     monkeypatch.setattr(native_cost_popup, "_list_tmux_clients", lambda _s, _t: ["client"])
     spawned: list[list[str]] = []
 
@@ -417,8 +424,8 @@ def test_popup_command_uses_native_windows_interpreter_quoting(
 
     assert spawned
     inner = spawned[0][-1]
-    assert '"C:/Program Files/Omnigent/.venv/Scripts/python.exe"' in inner
-    assert "C:\\Program Files" not in inner
+    assert inner.startswith("& 'C:\\Program Files\\Omnigent\\.venv\\Scripts\\python.exe' ")
+    assert "runpy.run_module" in inner
 
 
 def test_launch_blocked_notice_skips_without_client(

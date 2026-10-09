@@ -32,9 +32,11 @@ in the web UI or resolved by the server-side approval timeout.
 from __future__ import annotations
 
 import argparse
+import base64
 import contextlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -211,6 +213,25 @@ def _tmux_last_client_input_at(socket_path: str, tmux_target: str) -> float | No
     return newest
 
 
+def _popup_command(argv: list[str]) -> str | None:
+    """Serialize for tmux sh or psmux's fixed pwsh popup consumer."""
+    if not IS_WINDOWS:
+        return shell_join(argv, consumer="posix")
+    if shutil.which("pwsh") is None:
+        return None
+    # Only ASCII base64 crosses PowerShell's native argument parser, including
+    # older pwsh releases with legacy embedded-double-quote handling.
+    payload = base64.b64encode(json.dumps(argv[4:], ensure_ascii=True).encode()).decode("ascii")
+    bootstrap = (
+        "import base64,json,runpy,sys;"
+        "sys.argv=['omnigent.native.native_cost_popup',*json.loads(base64.b64decode(sys.argv[1]))];"
+        "runpy.run_module('omnigent.native.native_cost_popup',run_name='__main__')"
+    )
+    return shell_join(
+        [argv[0], "-I", "-X", "utf8", "-c", bootstrap, payload], consumer="powershell"
+    )
+
+
 def launch_cost_popup(
     socket_path: str,
     tmux_target: str,
@@ -275,13 +296,15 @@ def launch_cost_popup(
     ]
     if policy_name:
         argv += ["--policy-name", policy_name]
-    inner_cmd = shell_join(argv)
+    inner_cmd = _popup_command(argv)
+    if inner_cmd is None:
+        return
     for client in clients:
         # ``-c`` targets a specific attached client (required: the runner
         # invoking this is not a tmux client). ``-E`` closes the popup when
         # the script exits; ``-w/-h`` are percentages (display-popup +
         # percentage args are tmux >= 3.2). The inner command is one
-        # shell-string run via /bin/sh.
+        # shell-string run via /bin/sh on tmux or pwsh on psmux.
         cmd = [
             *terminal_mux_command(socket_path, windows=IS_WINDOWS),
             "display-popup",
@@ -346,7 +369,9 @@ def launch_blocked_notice(
     ]
     if policy_name:
         argv += ["--policy-name", policy_name]
-    inner_cmd = shell_join(argv)
+    inner_cmd = _popup_command(argv)
+    if inner_cmd is None:
+        return
     for client in clients:
         cmd = [
             *terminal_mux_command(socket_path, windows=IS_WINDOWS),
