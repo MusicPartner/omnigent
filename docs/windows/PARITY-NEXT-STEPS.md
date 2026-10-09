@@ -3,6 +3,9 @@
 Research date: 2026-10-08. Branch: `windows-parity/v0.17-integration`.
 Validated implementation: `2d43e9d95c28d4cb623f98d3d49de1af959f90cc`.
 This plan records deferred work; it does not enable the proposed changes.
+Upstream direction was reviewed on 2026-10-09 in
+[the evidence and merge-risk assessment](UPSTREAM-DIRECTION-2026-10-09.md).
+Its recommendations below distinguish merged upstream contracts from proposals.
 
 ## Completed audit items
 
@@ -68,11 +71,17 @@ is named `omnigent-windows-2d43e9d95c28d4cb623f98d3d49de1af959f90cc`.
 | Decision | Recommended choice | Advantage | Cost / alternative |
 | --- | --- | --- | --- |
 | Sandbox launcher contract | Prototype a real Windows console executable preserving the existing filename API; decide on adoption after the prototype. | Works with filename-only SDK APIs and avoids `%*` forwarding with fewer caller changes. | Adds a packaged native launcher dependency and architecture/lifecycle validation. An all-Python command-prefix API avoids that binary but needs caller migrations and SDK transport work. |
-| Claude hook compatibility | Use direct `command` + `args` hooks for verified capable versions, with an explicit-shell fallback for older versions. | Removes shell parsing where the CLI supports it and keeps older installs usable. | Two paths to maintain. Requiring a tested minimum CLI simplifies this at the cost of mandatory upgrades. |
+| Claude hook compatibility | Reuse upstream's 2.1.161 floor; verify direct `command` + `args` on that Windows version and the CI pin. | Avoids a second compatibility policy; the floor is already above hook args introduction in 2.1.139. | Older supported Windows binaries still need testing. Keep status-line and shell-only hooks separate; do not promise pre-floor support. |
 | PowerShell requirement | Keep ordinary terminal launches compatible with existing Windows clients; gate PowerShell-dependent popups separately. | No blanket new installation requirement. | More fallback behavior. Requiring PowerShell 7.3+ simplifies native argument handling but adds an installation prerequisite and does not fix batch forwarding. |
 | Exact Windows exit codes | Keep unknown status until psmux reports a real value. | Honest behavior and small maintenance surface. | Cannot distinguish success/failure from pane death alone. An Omnigent sidecar protocol could recover status but adds synchronization, crash and cleanup cases. |
-| Databricks signer auth on Windows | Treat as a separate Windows support task unless it is required for this release. | Keeps the current launch fixes focused and makes the trust requirements explicit. | Enabling it needs executable/parent ACL validation and portable helper fixtures; simply removing ownership checks is unacceptable. |
+| Databricks signer auth on Windows | Defer full brokered-signer support unless release-critical; preserve upstream refusals. | Aligns with the merged fail-closed credential and containment contract. | Requires real filesystem/network isolation as well as provenance and lifecycle work. Job Objects plus ACL checks are insufficient; ordinary gateway login is a separate surface. |
 | v0.14 maintenance | Backport the shutdown escalation fix only if v0.14 remains supported. | Fixes ignored CTRL_BREAK on that maintained branch. | Additional branch validation and maintenance; no benefit if v0.14 is retired. |
+
+Upstream merged #4586 deliberately preserves the filename-only launcher API,
+which strengthens the executable-prototype recommendation. Current upstream
+main still disables native terminal harnesses on Windows; our psmux capability
+is an explicit fork extension. See the linked assessment for sources and the
+51 overlapping file changes to review at the next release.
 
 The first decision is architectural. The recommended prototype is not a claim
 that its packaging and sandbox lifecycle are already proven. The hook and
@@ -236,8 +245,11 @@ SIDs and DACLs, but reading them alone does not eliminate races; see Microsoft's
 
 Options are to schedule native Windows signer support with that trust design,
 or keep it explicitly outside this release's supported Windows surface until
-implemented. Do not bypass provenance checks or add blanket skips merely to
-make the sweep green. A future fixture update should use a real portable helper
+implemented. Upstream's merged brokered-auth contract also requires real worker
+filesystem/network isolation, which the Job Object backend does not provide.
+ACL/SID checks and portable test helpers alone cannot enable that feature.
+Ordinary gateway token minting is a separate auth surface. Do not bypass
+provenance checks or add blanket skips merely to make the sweep green. A future fixture update should use a real portable helper
 and a bounded startup wait that surfaces task failure, then verify cancellation
 kills the helper. Existing POSIX provenance and descendant tests must remain.
 
@@ -245,10 +257,11 @@ kills the helper. Existing POSIX provenance and descendant tests must remain.
 
 - **Non-git workspace response:** keep v0.17's HTTP 400; the UI uses it to
   identify `not_git`. Restoring HTTP 200 with an empty list changes that contract.
-- **Catalog-default model pin:** keep the validated replayed behavior unless
-  CLI-managed model selection is preferred. Catalog pinning gives predictable
-  Omnigent selection; CLI selection honors local CLI defaults but can differ
-  between hosts. This is a product preference, not a Windows launch bug.
+- **Catalog-default model pin:** preserve upstream mode-specific behavior: managed
+  sessions use shared provider/catalog policy, while an explicit native-config
+  choice should use CLI configuration. Do not introduce a Windows-wide default
+  override. Open upstream #7773 and #9247 address native-config persistence and
+  client-aware defaults; review them if merged rather than adopting them now.
 - **Two ACP Windows skips:** leave them dropped; the handover records that the
   tests passed without them. Reintroducing skips would reduce coverage.
 - **Optional PR:** unnecessary for this work; keep the existing no-PR-to-main
@@ -263,8 +276,10 @@ kills the helper. Existing POSIX provenance and descendant tests must remain.
 1. Turn the captured real Claude argv/settings proof into gated coverage and
    establish the agreed CLI/shell versions, including the unproven minimal-env
    and semicolon/percent cwd cases.
-2. Prototype and select the sandbox launcher contract; migrate callers and add
-   meaningful literal-argument, sandbox-policy and lifecycle regression checks.
+2. Prototype a Windows executable behind the existing filename-only sandbox
+   launcher contract; avoid shared caller/SDK API migration unless the prototype
+   demonstrates a concrete need. Add literal-argument, sandbox-policy and
+   lifecycle regression checks.
 3. Apply explicit consumer quoting/direct hook argv; test POSIX, Git Bash,
    PowerShell 5.1 and supported PowerShell 7 paths that remain in scope.
 4. Run staged pre-commit, targeted Windows tests and the existing branch Actions.
