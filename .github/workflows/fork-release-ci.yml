@@ -187,6 +187,7 @@ jobs:
           tests/inner/test_native_attachments.py
           tests/inner/test_windows_exec_launcher_runtime.py
           tests/scripts/test_windows_launcher_packaging.py
+          tests/scripts/test_install_windows_bundle_ps1.py
           tests/terminals/test_windows_native_launcher_psmux.py
           tests/inner/windows_private_job_launcher.py
           tests/inner/test_windows_private_job_launcher.py
@@ -215,6 +216,7 @@ jobs:
           tests/test_native_resume_hint.py
           tests/test_native_cost_popup.py
           tests/scripts/test_windows_launcher_packaging.py
+          tests/scripts/test_install_windows_bundle_ps1.py
 
   windows-native:
     name: Native Windows compatibility
@@ -386,6 +388,14 @@ jobs:
           tests/terminals/test_windows_psmux.py::test_psmux_launch_resolves_native_claude_before_spawning
           tests/terminals/test_windows_psmux.py::test_windows_claude_bridge_controls_psmux_pane
           tests/terminals/test_windows_psmux.py::test_windows_psmux_preserves_json_argv_and_clears_existing_server_env
+          tests/terminals/test_windows_psmux.py::test_windows_claude_paste_targets_resumed_session
+          -n 0 -p no:cacheprovider -q
+
+      - name: Claude chat paste routing and failure safety
+        run: >-
+          uv run pytest
+          tests/harnesses/claude_native/test_claude_native_bridge.py::test_inject_user_message_pastes_content_then_submits
+          tests/harnesses/claude_native/test_claude_native_bridge.py::test_inject_user_message_buffer_failure_cleans_file_without_submitting
           -n 0 -p no:cacheprovider -q
 
       - name: Windows command-line parsing helper
@@ -594,9 +604,14 @@ jobs:
 
                %LOCALAPPDATA%\Programs\Omnigent
 
-          The executable directory is added to your user PATH. If uv is missing,
+          The executable directory is prioritized at the front of your user PATH
+          so an older installation does not shadow this build. If uv is missing,
           the installer uses winget to install it. It also attempts to install
           psmux for native managed terminals.
+
+          Windows system certificates are used for uv's HTTPS requests during
+          installation, supporting corporate proxies and trusted internal roots.
+          The previous certificate setting is restored afterwards.
 
           After installation, open a new PowerShell and run:
 
@@ -625,6 +640,10 @@ jobs:
           Install without attempting psmux installation:
 
                .\install.ps1 -SkipPsmux
+
+          Use uv's bundled certificate roots instead of Windows system roots:
+
+            .\install.ps1 -NoSystemCertificates
 
           Install somewhere else:
 

@@ -4105,11 +4105,13 @@ def test_write_tmux_target_persists_socket_and_target(tmp_path: Path) -> None:
     ],
     ids=["plain", "multiline", "trailing-backslash", "crlf", "embedded-esc", "large"],
 )
+@pytest.mark.parametrize("windows", [False, True], ids=["tmux", "psmux"])
 def test_inject_user_message_pastes_content_then_submits(
     content: str,
     expected_payload: bytes,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    windows: bool,
 ) -> None:
     """
     Every message is delivered as one bracketed paste, then a separate Enter.
@@ -4123,6 +4125,7 @@ def test_inject_user_message_pastes_content_then_submits(
     regresses to send-keys argv delivery, drops the trailing Enter, or
     stops clearing the stale buffer.
     """
+    monkeypatch.setattr(claude_native_bridge, "IS_WINDOWS", windows)
     monkeypatch.setattr("omnigent.harnesses.claude_native.bridge._TRUSTED_PARENT", tmp_path)
     bridge_dir = tmp_path / "bridge"
     socket_path = _TEST_TMUX_SOCKET_PATH
@@ -4195,6 +4198,7 @@ def test_inject_user_message_pastes_content_then_submits(
         "-b",
         "omnigent-paste",
     ]
+    assert load[6:-1] == (["-t", "claude:0.0"] if windows else [])
     # -p (bracketed-paste markers) dropped = newlines submit per-line in
     # the TUI; -d dropped = stale buffer copies accumulate server-side.
     assert paste == [
@@ -4218,6 +4222,42 @@ def test_inject_user_message_pastes_content_then_submits(
         "claude:0.0",
         "Enter",
     ]
+
+
+@pytest.mark.parametrize("windows", [False, True], ids=["tmux", "psmux"])
+@pytest.mark.parametrize("failed_command", ["load-buffer", "paste-buffer"])
+def test_inject_user_message_buffer_failure_cleans_file_without_submitting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    windows: bool,
+    failed_command: str,
+) -> None:
+    """A failed buffer operation cannot submit a partial or stale draft."""
+    monkeypatch.setattr(claude_native_bridge, "IS_WINDOWS", windows)
+    monkeypatch.setattr(claude_native_bridge, "_TRUSTED_PARENT", tmp_path)
+    bridge_dir = tmp_path / "bridge"
+    write_tmux_target(bridge_dir, socket_path=_TEST_TMUX_SOCKET_PATH, tmux_target="claude:0.0")
+    (bridge_dir / claude_native_bridge._PROMPT_READY_FILE).touch()
+    commands: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **kwargs: object) -> SimpleNamespace:
+        del kwargs
+        if "capture-pane" in cmd:
+            return SimpleNamespace(returncode=0, stdout=_composer_pane(), stderr="")
+        commands.append(cmd)
+        if cmd[3] == "load-buffer":
+            assert Path(cmd[-1]).read_bytes() == b"hello\r"
+        failed = cmd[3] == failed_command
+        return SimpleNamespace(returncode=int(failed), stdout="", stderr="buffer failed")
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    with pytest.raises(RuntimeError, match="buffer failed"):
+        inject_user_message(bridge_dir, content="hello")
+
+    assert not any(cmd[-1] == "Enter" for cmd in commands)
+    assert list(bridge_dir.glob("paste_*.bin")) == []
+    if failed_command == "load-buffer":
+        assert not any(cmd[3] == "paste-buffer" for cmd in commands)
 
 
 @pytest.mark.parametrize(

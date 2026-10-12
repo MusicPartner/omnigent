@@ -55,6 +55,7 @@ Invoke-Step "stable Windows unit subset" @(
     'tests/spec/test_validator.py::test_os_env_windows_jobobject_rejects_network_deny',
     'tests/spec/test_validator.py::test_os_env_windows_jobobject_rejects_egress_rules',
     'tests/scripts/test_install_oss_ps1.py',
+    'tests/scripts/test_install_windows_bundle_ps1.py',
     'tests/host/test_host_listing.py',
     'tests/inner/test_codex_windows.py',
     'tests/inner/test_claude_windows.py',

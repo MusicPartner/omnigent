@@ -6,15 +6,22 @@ This follows current upstream's canonical wheel-install model: `uv tool install`
 The exact core/client/UI wheels shipped beside this script are installed into an
 isolated uv tool environment, and the wheel's console-script metadata creates
 both omni.exe and omnigent.exe in the tool bin directory.
+
+Windows system certificates are used during installation by default. Pass
+-NoSystemCertificates to use uv's bundled certificate roots instead.
 #>
 
 param(
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA "Programs\Omnigent"),
     [switch]$NoPath,
-    [switch]$SkipPsmux
+    [switch]$SkipPsmux,
+    [switch]$NoSystemCertificates
 )
 
 $ErrorActionPreference = "Stop"
+if ($InstallDir -match '^\s*--') {
+    throw "InstallDir must be a filesystem path, not a command-line option. Use -NoSystemCertificates to disable system certificate use."
+}
 $script:PythonVersion = "3.12"
 $script:BundleRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:WheelDir = Join-Path $script:BundleRoot "wheels"
@@ -88,23 +95,21 @@ function Add-UserPathEntry([string]$Dir) {
     $current = [Environment]::GetEnvironmentVariable("Path", "User")
     $parts = @()
     if ($current) {
-        $parts = @($current.Split(";") | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        $parts = @($current.Split(";") | Where-Object {
+            -not [string]::IsNullOrWhiteSpace($_) -and
+            -not [string]::Equals($_.TrimEnd("\"), $Dir.TrimEnd("\"), [System.StringComparison]::OrdinalIgnoreCase)
+        })
     }
-    $alreadyPresent = $false
-    foreach ($part in $parts) {
-        if ([string]::Equals($part.TrimEnd("\"), $Dir.TrimEnd("\"), [System.StringComparison]::OrdinalIgnoreCase)) {
-            $alreadyPresent = $true
-            break
-        }
-    }
-    if (-not $alreadyPresent) {
-        $newPath = if ($current) { "$current;$Dir" } else { $Dir }
+    $newPath = (@($Dir) + $parts) -join ";"
+    if (-not [string]::Equals($current, $newPath, [System.StringComparison]::OrdinalIgnoreCase)) {
         [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-        Write-Step "Added $Dir to the current user's PATH"
+        Write-Step "Added or prioritized $Dir at the front of the current user's PATH"
     }
-    if (-not (($env:PATH -split ";") -contains $Dir)) {
-        $env:PATH = "$Dir;$env:PATH"
-    }
+    $processParts = @($env:PATH -split ";" | Where-Object {
+        -not [string]::IsNullOrWhiteSpace($_) -and
+        -not [string]::Equals($_.TrimEnd("\"), $Dir.TrimEnd("\"), [System.StringComparison]::OrdinalIgnoreCase)
+    })
+    $env:PATH = (@($Dir) + $processParts) -join ";"
 }
 
 if (-not (Test-Path $script:WheelDir)) {
@@ -133,8 +138,20 @@ $env:UV_TOOL_DIR = $toolDir
 $env:UV_TOOL_BIN_DIR = $binDir
 
 Write-Step "Installing Omnigent from the bundled wheels with uv tool"
-& $uv tool install --force --python $script:PythonVersion --with $clientWheel --with $uiWheel $coreWheel
-if ($LASTEXITCODE -ne 0) {
+$previousUvSystemCerts = $env:UV_SYSTEM_CERTS
+try {
+    $env:UV_SYSTEM_CERTS = if ($NoSystemCertificates) { "false" } else { "true" }
+    & $uv tool install --force --python $script:PythonVersion --with $clientWheel --with $uiWheel $coreWheel
+    $uvInstallExitCode = $LASTEXITCODE
+}
+finally {
+    if ($null -eq $previousUvSystemCerts) {
+        Remove-Item Env:\UV_SYSTEM_CERTS -ErrorAction SilentlyContinue
+    } else {
+        $env:UV_SYSTEM_CERTS = $previousUvSystemCerts
+    }
+}
+if ($uvInstallExitCode -ne 0) {
     throw "uv tool install could not install the artifact wheels."
 }
 

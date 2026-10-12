@@ -702,3 +702,89 @@ def test_psmux_does_not_infer_exit_status_or_signal_from_placeholders(
     assert instance._exit_status_is_pending(fields) is False
     assert instance.last_exit_status() is None
     assert instance.last_exit_signal() is None
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows psmux test")
+@pytest.mark.skipif(shutil.which("psmux") is None, reason="psmux not installed")
+@pytest.mark.parametrize(
+    "content",
+    ["hello", "Å 日本語\nsecond\tline\\", "x" * 20_000],
+    ids=["short", "unicode-multiline", "large"],
+)
+async def test_windows_claude_paste_targets_resumed_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: str
+) -> None:
+    """A different pane's TMUX context cannot steal a resumed chat's buffer."""
+    from omnigent.harnesses.claude_native import bridge
+
+    data_dir = tmp_path / "psmux-data"
+    monkeypatch.setenv("PSMUX_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("PSMUX_NO_WARM", "1")
+    for name in ("TMUX", "TMUX_PANE", "PSMUX_TARGET_SESSION", "PSMUX_TARGET_FULL"):
+        monkeypatch.delenv(name, raising=False)
+    reader = (
+        "import ctypes,json,pathlib,sys\n"
+        "kernel = ctypes.windll.kernel32\n"
+        "kernel.GetStdHandle.restype = ctypes.c_void_p\n"
+        "kernel.SetConsoleMode.argtypes = [ctypes.c_void_p, ctypes.c_ulong]\n"
+        "handle = kernel.GetStdHandle(-10)\n"
+        "assert kernel.SetConsoleMode(handle, 0x0200)\n"
+        "output = pathlib.Path(sys.argv[1])\n"
+        "sys.stdout.write('\\x1b[?2004hREADY\\n'); sys.stdout.flush()\n"
+        "output.with_suffix('.ready').touch()\n"
+        "received = b''\n"
+        "while True:\n"
+        "    received += sys.stdin.buffer.read(1)\n"
+        "    if b'\\x1b[201~' in received and received.endswith(b'\\r'):\n"
+        "        output.write_text(json.dumps(received.decode('utf-8')), encoding='utf-8')\n"
+        "        break\n"
+    )
+    instances: list[PsmuxTerminalInstance] = []
+    try:
+        for name in ("resumed", "other"):
+            private_dir = tmp_path / name
+            private_dir.mkdir()
+            instance = PsmuxTerminalInstance(
+                name=name,
+                session_key="paste-test",
+                socket_path=private_dir / "psmux.sock",
+                private_dir=private_dir,
+                command=sys.executable,
+                args=["-I", "-u", "-c", reader, str(private_dir / "received.json")],
+                env={"PYTHONIOENCODING": "utf-8"},
+                keep_alive_after_exit=True,
+            )
+            instances.append(instance)
+            await instance.launch(cwd=tmp_path)
+            for _ in range(100):
+                if (private_dir / "received.ready").exists():
+                    break
+                await asyncio.sleep(0.1)
+            assert (private_dir / "received.ready").exists()
+
+        resumed, other = instances
+        other_port = (data_dir / f"{other.tmux_target}.port").read_text().strip()
+        monkeypatch.setenv("TMUX", f"{other.socket_path},{other_port},0")
+        monkeypatch.setattr(bridge, "_PASTE_COMMIT_TIMEOUT_S", 0.0)
+        monkeypatch.setattr(bridge, "_PASTE_SETTLE_S", 0.0)
+        await asyncio.to_thread(
+            bridge._paste_and_submit,
+            resumed.private_dir,
+            str(resumed.socket_path),
+            resumed.tmux_target,
+            text=content,
+            needle="",
+        )
+        output_path = resumed.private_dir / "received.json"
+        for _ in range(100):
+            if output_path.exists():
+                break
+            await asyncio.sleep(0.1)
+        received = json.loads(output_path.read_text(encoding="utf-8"))
+        payload = bridge._paste_payload_bytes(content + "\n").decode("utf-8")
+        assert received == "\x1b[97;5u\x1b[107;5u\x1b[200~" + payload + "\x1b[201~\r"
+        assert not (other.private_dir / "received.json").exists()
+        assert list(resumed.private_dir.glob("paste_*.bin")) == []
+    finally:
+        for instance in reversed(instances):
+            await instance.close()

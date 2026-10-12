@@ -4275,7 +4275,10 @@ def _paste_and_submit(
         paste_file.write(_paste_payload_bytes(text + "\n"))
         paste_path = paste_file.name
     try:
-        _run_tmux(socket_path, "load-buffer", "-b", "omnigent-paste", paste_path)
+        # psmux buffers belong to a session; an untargeted load can follow
+        # another pane's TMUX context instead of the pane receiving the paste.
+        load_target = ("-t", tmux_target) if IS_WINDOWS else ()
+        _run_tmux(socket_path, "load-buffer", "-b", "omnigent-paste", *load_target, paste_path)
         _run_tmux(
             socket_path,
             "paste-buffer",
