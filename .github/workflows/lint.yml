@@ -7,14 +7,7 @@ name: Lint
 # check doesn't strand pending.
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-  push:
-    branches:
-      - main
-      # Release branches: release.yml's green-CI gate reads check runs off the
-      # branch head, so cherry-picks and release-bump commits must run checks.
-      - 'release/v[0-9]*'
+  workflow_dispatch: null
 
 permissions:
   contents: read

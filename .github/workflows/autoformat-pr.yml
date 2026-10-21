@@ -6,8 +6,7 @@ name: PR Autoformat
 # out only the default-branch script and updates PR metadata via the API.
 
 on:
-  issue_comment:
-    types: [created]
+  workflow_dispatch: null
 
 permissions:
   contents: read

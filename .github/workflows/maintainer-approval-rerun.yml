@@ -8,8 +8,7 @@ name: Maintainer Approval Rerun
 # See https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
 
 on:
-  pull_request_review:
-    types: [submitted]
+  workflow_dispatch: null
 
 permissions:
   contents: read

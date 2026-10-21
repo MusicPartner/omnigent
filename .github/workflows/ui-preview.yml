@@ -39,39 +39,25 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: 'PR whose preview should be deleted'
+        description: PR whose preview should be deleted
         required: true
         type: string
       expected_id:
-        description: 'App ID observed by the cleanup reconciler'
+        description: App ID observed by the cleanup reconciler
         required: true
         type: string
       expected_create_time:
-        description: 'App creation timestamp observed by the cleanup reconciler'
+        description: App creation timestamp observed by the cleanup reconciler
         required: true
         type: string
       expected_update_time:
-        description: 'App update timestamp observed by the cleanup reconciler'
+        description: App update timestamp observed by the cleanup reconciler
         required: true
         type: string
       expected_creator:
-        description: 'App creator observed by the cleanup reconciler'
+        description: App creator observed by the cleanup reconciler
         required: true
         type: string
-  push:
-    branches:
-      - main
-    paths:
-      - web/**
-      - .github/workflows/ui-preview.yml
-      - .github/ui-preview/**
-  pull_request_target:
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - labeled
-      - closed
 
 concurrency:
   group: >-

@@ -28,12 +28,7 @@ name: Auto-assign Reviewer
 # test (auto-assign-reviewer.test.js) covers the logic.
 
 on:
-  pull_request_target:
-    # `edited` catches a `closes #N` link added after open (stub body, then
-    # filled in): on that event the script is promote-only (adopt a linked-issue
-    # assignee if one now exists, else leave the current pick untouched). Still
-    # checks out only the trusted default branch, never PR head -- no PR code runs.
-    types: [opened, reopened, ready_for_review, edited]
+  workflow_dispatch: null
 
 permissions:
   contents: read

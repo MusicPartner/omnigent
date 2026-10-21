@@ -1,12 +1,8 @@
 name: Demo Check Policy Test
 
 on:
-  pull_request:
-    paths:
-      - .github/workflows/demo-check.js
-      - .github/workflows/demo-check.test.js
-      - .github/workflows/demo-check-test.yml
-  workflow_dispatch:
+  workflow_dispatch: null
+
 
 permissions:
   contents: read

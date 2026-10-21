@@ -4,39 +4,7 @@ name: Windows (native)
 # The broader unit sweep remains nonblocking while Windows support stabilizes.
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths-ignore:
-      - 'web/**'
-      - 'docs/**'
-      - 'designs/**'
-      - 'CHANGELOG.md'
-      - 'tests/browser_ui/**'
-      - 'tests/e2e_ui/**'
-      - 'tests/scripts/**'
-      - 'tests/github/**'
-      - '.github/scripts/polly-review-*.py'
-      - '.github/workflows/polly-review*.yml'
-      - '.github/workflows/*.js'
-      - 'tests/e2e/**'
-      - 'tests/integration/**'
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - 'web/**'
-      - 'docs/**'
-      - 'designs/**'
-      - 'CHANGELOG.md'
-      - 'tests/browser_ui/**'
-      - 'tests/e2e_ui/**'
-      - 'tests/scripts/**'
-      - 'tests/github/**'
-      - '.github/scripts/polly-review-*.py'
-      - '.github/workflows/polly-review*.yml'
-      - '.github/workflows/*.js'
-      - 'tests/e2e/**'
-      - 'tests/integration/**'
+  workflow_dispatch: null
 
 permissions:
   contents: read

@@ -9,8 +9,7 @@ name: Reopen PR on /reopen comment
 # PR-authored code, only the issues/PRs API.
 
 on:
-  issue_comment:
-    types: [created]
+  workflow_dispatch: null
 
 permissions:
   contents: read

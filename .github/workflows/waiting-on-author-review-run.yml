@@ -5,9 +5,7 @@ name: Waiting on Author Review Run
 # actor identity, review state, or comment content. No PR code is checked out.
 
 on:
-  workflow_run:
-    workflows: [Waiting on Author Review]
-    types: [completed]
+  workflow_dispatch: null
 
 permissions:
   contents: read

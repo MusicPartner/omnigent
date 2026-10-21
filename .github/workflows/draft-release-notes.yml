@@ -23,9 +23,6 @@ name: Draft release notes
 # only ever sees already-merged, released history.
 
 on:
-  workflow_run:
-    workflows: ["GitHub Release"]
-    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -33,20 +30,21 @@ on:
         required: true
         type: string
       base:
-        description: >-
-          Optional range-start override (tag/branch/sha). Needed when `tag` is not
-          a final vX.Y.Z. Providing it makes the run a preview unless dry_run=false.
+        description: Optional range-start override (tag/branch/sha). Needed when `tag`
+          is not a final vX.Y.Z. Providing it makes the run a preview unless
+          dry_run=false.
         required: false
         type: string
       dry_run:
-        description: >-
-          Preview only:
-          auto (default) - preview for dev/rc tags, real PR for final versions;
-          true - print the generated notes, don't open a PR;
-          false - open a real PR to CHANGELOG.md
+        description: "Preview only: auto (default) - preview for dev/rc tags, real PR
+          for final versions; true - print the generated notes, don't open a PR;
+          false - open a real PR to CHANGELOG.md"
         required: false
         type: choice
-        options: [auto, "true", "false"]
+        options:
+          - auto
+          - "true"
+          - "false"
         default: auto
 
 permissions:

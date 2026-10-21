@@ -7,20 +7,8 @@ name: Auto-assign Reviewer Test
 # so it tests the PR's own version. No secrets, no network.
 
 on:
-  pull_request:
-    paths:
-      - .github/workflows/auto-assign-reviewer.js
-      - .github/workflows/auto-assign-reviewer.test.js
-      - .github/workflows/auto-assign-reviewer.yml
-      - .github/workflows/auto-assign-reviewer-test.yml
-      - .github/workflows/areas.test.js
-      - .github/workflows/issue-triage.yml
-      - .github/scripts/issue_triage_assignment_test.py
-      - .github/triage_v2/**
-      - .github/areas.json
-      - .github/MAINTAINER
-      - .python-version
-  workflow_dispatch:
+  workflow_dispatch: null
+
 
 permissions:
   contents: read

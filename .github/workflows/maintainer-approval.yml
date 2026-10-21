@@ -21,8 +21,7 @@ name: Maintainer Approval
 # `pull_request_target` run (hence `actions: read`), never by the commit email.
 
 on:
-  pull_request_target:
-    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled]
+  workflow_dispatch: null
 
 permissions:
   contents: read

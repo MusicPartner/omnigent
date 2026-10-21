@@ -10,19 +10,29 @@ name: Benchmark (release)
 # runs on PRs that edit this file so a change is exercised before a release.
 
 on:
+  workflow_dispatch:
+    inputs:
+      candidate_ref:
+        description: Ref to benchmark as the candidate (blank = dispatch ref HEAD).
+        required: false
+        default: ""
+      baseline_ref:
+        description: Ref to compare against (blank = latest stable release).
+        required: false
+        default: ""
   workflow_call:
     inputs:
       candidate_ref:
-        description: "Ref to benchmark as the candidate."
+        description: Ref to benchmark as the candidate.
         required: true
         type: string
       baseline_ref:
-        description: "Ref to compare against (blank = latest stable release)."
+        description: Ref to compare against (blank = latest stable release).
         required: false
         type: string
         default: ""
       require_journeys:
-        description: "Comma-separated journeys that must be measured on both sides."
+        description: Comma-separated journeys that must be measured on both sides.
         required: false
         type: string
         default: ""
@@ -34,22 +44,8 @@ on:
         description: "'false' when a required journey was not measured on both sides."
         value: ${{ jobs.benchmark.outputs.complete }}
       unmeasured:
-        description: "Comma-separated required journeys that were not measured."
+        description: Comma-separated required journeys that were not measured.
         value: ${{ jobs.benchmark.outputs.unmeasured }}
-  workflow_dispatch:
-    inputs:
-      candidate_ref:
-        description: "Ref to benchmark as the candidate (blank = dispatch ref HEAD)."
-        required: false
-        default: ""
-      baseline_ref:
-        description: "Ref to compare against (blank = latest stable release)."
-        required: false
-        default: ""
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - ".github/workflows/benchmark-release.yml"
 
 permissions:
   contents: read

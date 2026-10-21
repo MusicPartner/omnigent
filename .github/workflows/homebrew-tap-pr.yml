@@ -28,8 +28,6 @@ name: Homebrew tap PR
 # run while racing this workflow on the same `release: published` event.
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:

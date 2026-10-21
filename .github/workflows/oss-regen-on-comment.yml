@@ -21,8 +21,7 @@
 name: OSS regenerate lockfiles on /regen comment
 
 on:
-  issue_comment:
-    types: [created]
+  workflow_dispatch: null
 
 # Read-only at the top level; write scopes live on the jobs below.
 permissions:

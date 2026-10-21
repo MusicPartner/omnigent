@@ -40,12 +40,10 @@ name: UI Snapshot
 # (label the PR for same-repo branches, the local Docker script for forks).
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       ref:
-        description: "Branch/ref to regenerate the baseline against"
+        description: Branch/ref to regenerate the baseline against
         required: false
         default: ""
 

@@ -15,13 +15,7 @@ name: Sync OpenAPI to site
 # — scoped to omnigent-site. The App must be installed on omnigent-site
 # with contents + pull-requests write.
 on:
-  push:
-    branches: [main]
-    paths: [openapi.json]
-  # Manual trigger for backfills / re-syncs after editing this workflow.
-  workflow_dispatch:
-
-# One sync at a time; a newer spec supersedes an in-flight run.
+  workflow_dispatch: null
 concurrency:
   group: sync-openapi-to-site
   cancel-in-progress: true

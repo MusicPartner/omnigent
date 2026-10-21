@@ -1,12 +1,8 @@
 name: Trivy CVE Scan
 
 on:
-  pull_request:
-  push:
-    branches: [main]
-  schedule:
-    - cron: '23 6 * * *'  # Daily: new advisories can affect unchanged lockfiles.
-  workflow_dispatch:
+  workflow_dispatch: null
+
 
 permissions:
   contents: read

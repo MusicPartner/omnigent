@@ -22,13 +22,7 @@ name: Security Scan
 # by GitHub's native fork-approval gate first.
 
 on:
-  pull_request:
-    # labeled/unlabeled so applying or removing the skip label
-    # (skip-security-scan) re-runs the scan and flips this check. The waiver is
-    # label-only (should-scan.sh): applying it needs Triage permission, so the
-    # label alone is the maintainer gate -- no separate approval, hence no
-    # pull_request_review trigger.
-    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+  workflow_dispatch: null
 
 permissions:
   contents: read

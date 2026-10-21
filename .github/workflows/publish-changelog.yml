@@ -24,8 +24,6 @@ name: Publish Changelog
 # publish.
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -33,9 +31,8 @@ on:
         required: true
         type: string
       dry_run:
-        description: >-
-          Preview only: render the site page and print it to the run log +
-          job summary, but do NOT mint a token or open any PR.
+        description: "Preview only: render the site page and print it to the run log +
+          job summary, but do NOT mint a token or open any PR."
         required: false
         type: boolean
         default: false

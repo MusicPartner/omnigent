@@ -1,11 +1,8 @@
 name: Setup uv action tests
 
 on:
-  pull_request:
-    paths:
-      - ".github/actions/setup-uv/**"
-      - ".github/workflows/setup-uv-test.yml"
-  workflow_dispatch:
+  workflow_dispatch: null
+
 
 permissions:
   contents: read

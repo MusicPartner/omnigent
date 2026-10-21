@@ -12,9 +12,7 @@ name: Nightly Failure Monitor
 # broken cut blocks nobody and consumers just silently stop getting new builds.
 
 on:
-  workflow_run:
-    workflows: ["E2E Tests", "E2E UI Tests", "Nightly Release"]
-    types: [completed]
+  workflow_dispatch: null
 
 permissions:
   # issues: open/comment/close the tracking issue; actions:read: inspect the

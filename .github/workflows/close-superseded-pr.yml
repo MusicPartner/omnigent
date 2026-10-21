@@ -1,8 +1,7 @@
 name: Close Superseded PR
 
 on:
-  pull_request_target:
-    types: [closed]
+  workflow_dispatch: null
 
 permissions: {}
 

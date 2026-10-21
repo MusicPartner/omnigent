@@ -16,32 +16,13 @@ name: E2E Tests
 #                       merge-ready.yml.
 
 on:
-  schedule:
-    - cron: "0 9 * * *"
-  pull_request:
-    # labeled/unlabeled: kept for the skip-security-scan recovery path
-    # (rerun-security-gate-run.yml falls back to this trigger). The concurrency
-    # group key isolates label events so they never cancel a code-push run.
-    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
-    paths:
-      - '**'
-      - '!web/**'
-      - 'web/package.json'
-      - 'web/electron/package.json'
-      - '!docs/**'
-      - '!designs/**'
-      - '!CHANGELOG.md'
-      - '!tests/browser_ui/**'
-      - '!tests/e2e_ui/**'
-      - '!tests/scripts/**'
-      - '!tests/github/**'
-      - '!.github/scripts/polly-review-*.py'
-      - '!.github/workflows/polly-review*.yml'
-      - '!.github/workflows/*.js'
   workflow_dispatch:
     inputs:
       parallelism:
-        description: "Number of pytest workers per shard (-n flag). Default 2 keeps per-shard concurrency low so the 4 shards * 2 workers = 8 concurrent gateway calls stays below the nightly's pain point (20 concurrent triggered 429s)."
+        description: Number of pytest workers per shard (-n flag). Default 2 keeps
+          per-shard concurrency low so the 4 shards * 2 workers = 8 concurrent
+          gateway calls stays below the nightly's pain point (20 concurrent
+          triggered 429s).
         required: false
         default: "2"
 

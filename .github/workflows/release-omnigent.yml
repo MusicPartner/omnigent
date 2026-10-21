@@ -21,25 +21,15 @@
 name: Release omnigent (PyPI)
 
 on:
-  # PyPI publishing moved to the central secure-release repo; the tag-push
-  # trigger is REMOVED so a tag no longer double-publishes. Kept as a manual
-  # fallback only, to be deleted once the secure path has done a prod release.
-  # Manual run: build + gates always run; destination picks the index, with
-  # `pypi` binding the protected environment.
   workflow_dispatch:
     inputs:
       destination:
-        description: "Index to publish to."
+        description: Index to publish to.
         type: choice
         default: test-pypi
         options:
           - test-pypi
           - pypi
-  # CI-test the workflow on change: build + gates run on the PR; publish
-  # steps are condition-gated off PR events.
-  pull_request:
-    paths:
-      - ".github/workflows/release-omnigent.yml"
 
 permissions:
   contents: read

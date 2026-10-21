@@ -7,12 +7,7 @@ name: PR Size Labeling
 # updates labels via the API, using only the default-branch script.
 
 on:
-  pull_request_target:
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - ready_for_review
+  workflow_dispatch: null
 
 permissions:
   pull-requests: write

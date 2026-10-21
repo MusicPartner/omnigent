@@ -16,8 +16,7 @@ name: Polly Review On Approval
 # MAINTAINER@main (this read-only stage is not trusted to make that decision).
 
 on:
-  pull_request_review:
-    types: [submitted]
+  workflow_dispatch: null
 
 permissions:
   contents: read

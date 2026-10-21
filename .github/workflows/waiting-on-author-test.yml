@@ -4,16 +4,8 @@ name: Waiting on Author Test
 # secrets or network and only when the workflow logic changes.
 
 on:
-  pull_request:
-    paths:
-      - .github/scripts/waiting_on_author.py
-      - .github/scripts/waiting_on_author_test.py
-      - .github/areas.json
-      - .github/workflows/waiting-on-author.yml
-      - .github/workflows/waiting-on-author-review.yml
-      - .github/workflows/waiting-on-author-review-run.yml
-      - .github/workflows/waiting-on-author-test.yml
-  workflow_dispatch:
+  workflow_dispatch: null
+
 
 permissions:
   contents: read

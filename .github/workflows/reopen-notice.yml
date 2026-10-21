@@ -11,8 +11,7 @@ name: Reopen notice on PR close
 # discussion/reviews and timeline, checks out the default branch's `.github`, and runs no PR code.
 
 on:
-  pull_request_target:
-    types: [closed]
+  workflow_dispatch: null
 
 permissions:
   contents: read

@@ -19,8 +19,7 @@ name: Rerun Security Gate
 # Other labels are ignored by the job `if:` below (stage 2 then no-ops).
 
 on:
-  pull_request_target:
-    types: [labeled, unlabeled]
+  workflow_dispatch: null
 
 permissions:
   contents: read

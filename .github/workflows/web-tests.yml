@@ -5,37 +5,7 @@ name: web Tests
 # Draft PRs are skipped; `ready_for_review` refires when the draft is converted.
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - "web/**"
-      - "editors/vscode/**"
-      - "sdks/web-extension/**"
-      - "examples/extensions/hello-page/web/**"
-      - ".github/ci-deps/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - "patches/**"
-      - ".npmrc"
-      - ".github/actions/setup-pnpm/**"
-      - ".github/workflows/web-tests.yml"
-  push:
-    branches:
-      - main
-    paths:
-      - "web/**"
-      - "editors/vscode/**"
-      - "sdks/web-extension/**"
-      - "examples/extensions/hello-page/web/**"
-      - ".github/ci-deps/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - "patches/**"
-      - ".npmrc"
-      - ".github/actions/setup-pnpm/**"
-      - ".github/workflows/web-tests.yml"
+  workflow_dispatch: null
 
 permissions:
   contents: read

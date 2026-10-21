@@ -10,10 +10,7 @@ name: PR Hygiene (live)
 # runs no PR-authored code, matching the sweep.
 
 on:
-  pull_request_target:
-    # Description edits can satisfy either content rule. Draft conversion and
-    # closure clear a stale demo label.
-    types: [opened, reopened, ready_for_review, converted_to_draft, edited, synchronize, closed]
+  workflow_dispatch: null
 
 permissions:
   contents: read

@@ -2,11 +2,6 @@ name: Open Code Review
 run-name: "OCR #${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }} @${{ inputs.expected_head || 'current' }}"
 
 on:
-  # Use trusted base-branch configuration for automatic reviews.
-  pull_request_target:
-    types: [opened, reopened, ready_for_review]
-  issue_comment:
-    types: [created]
   workflow_dispatch:
     inputs:
       pr:

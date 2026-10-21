@@ -8,21 +8,19 @@ on:
   workflow_dispatch:
     inputs:
       version-code:
-        description: "versionCode (must be higher than the last uploaded to Play; starts at 3)"
+        description: versionCode (must be higher than the last uploaded to Play; starts
+          at 3)
         required: true
         type: string
       version-name:
-        description: "versionName shown to users (e.g. 0.2.0). Blank keeps the default in app/build.gradle.kts"
+        description: versionName shown to users (e.g. 0.2.0). Blank keeps the default in
+          app/build.gradle.kts
         required: false
         default: ""
       version-note:
-        description: "Optional note appended to the artifact filename (e.g. rc1)"
+        description: Optional note appended to the artifact filename (e.g. rc1)
         required: false
         default: ""
-  pull_request:
-    paths:
-      - ".github/workflows/android-bundle.yml"
-      - "web/android/**"
 
 permissions:
   contents: read

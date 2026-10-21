@@ -1,14 +1,10 @@
 name: Benchmark (UI)
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-  schedule:
-    - cron: "19 8 * * *"
   workflow_dispatch:
     inputs:
       compare_same_build:
-        description: "Compare the same production build twice to check measurement noise"
+        description: Compare the same production build twice to check measurement noise
         type: boolean
         required: false
         default: false

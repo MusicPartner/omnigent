@@ -5,18 +5,7 @@ name: Kustomize validate
 # rather than at deploy time. Only runs when overlay or base files change.
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - '.github/workflows/kustomize-validate.yml'
-      - 'deploy/kubernetes/**'
-  push:
-    branches:
-      - main
-      - 'release/v[0-9]*'
-    paths:
-      - '.github/workflows/kustomize-validate.yml'
-      - 'deploy/kubernetes/**'
+  workflow_dispatch: null
 
 permissions:
   contents: read

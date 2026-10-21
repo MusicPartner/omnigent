@@ -19,10 +19,6 @@ run-name: "Polly #${{ github.event.pull_request.number || github.event.issue.num
 # review. `/review force` or the manual force input overrides that.
 
 on:
-  pull_request_target:
-    types: [opened, reopened, ready_for_review]
-  issue_comment:
-    types: [created]
   workflow_dispatch:
     inputs:
       pr:

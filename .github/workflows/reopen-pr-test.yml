@@ -6,12 +6,8 @@ name: Reopen PR Test
 # no network.
 
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/reopen-pr-test.yml'
-      - .github/workflows/reopen-pr.js
-      - .github/workflows/reopen-pr.test.js
-  workflow_dispatch:
+  workflow_dispatch: null
+
 
 permissions:
   contents: read

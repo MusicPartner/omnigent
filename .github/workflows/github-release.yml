@@ -25,14 +25,7 @@
 name: GitHub Release
 
 on:
-  push:
-    tags:
-      # Version tags only (v0.2.0, v0.2.0rc1, …) — `v[0-9]*` avoids triggering
-      # on non-release tags like `v-infra-*`. Pre-release tags (rcN / devN /
-      # preN) still match the glob but are skipped in the job below — no
-      # GitHub release is created for them; their installable artifacts live
-      # only on PyPI, and a curated release page is reserved for the final cut.
-      - "v[0-9]*"
+  workflow_dispatch: null
 
 # Least privilege: creating a release requires `contents: write`; nothing here
 # needs anything more.

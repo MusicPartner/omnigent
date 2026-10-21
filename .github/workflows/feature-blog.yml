@@ -26,9 +26,6 @@ name: Draft feature blogs
 # screenshot) and hero art / byline are added by a human before merge.
 
 on:
-  workflow_run:
-    workflows: ["GitHub Release"]
-    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -36,25 +33,24 @@ on:
         required: true
         type: string
       base:
-        description: >-
-          Optional range-start override (tag/branch/sha). Needed when `tag` is
-          not a final vX.Y.Z. Providing it makes the run a preview unless
+        description: Optional range-start override (tag/branch/sha). Needed when `tag`
+          is not a final vX.Y.Z. Providing it makes the run a preview unless
           dry_run=false.
         required: false
         type: string
       dry_run:
-        description: >-
-          Preview only:
-          auto (default) - preview for dev/rc tags, real PRs for final versions;
-          true - run the scout/drafter, print output, don't open PRs;
-          false - open real DRAFT PRs.
+        description: "Preview only: auto (default) - preview for dev/rc tags, real PRs
+          for final versions; true - run the scout/drafter, print output, don't
+          open PRs; false - open real DRAFT PRs."
         required: false
         type: choice
-        options: [auto, "true", "false"]
+        options:
+          - auto
+          - "true"
+          - "false"
         default: auto
       max_posts:
-        description: >-
-          Maximum number of blog posts to draft (the scout still only picks
+        description: Maximum number of blog posts to draft (the scout still only picks
           features that clear the bar, so it may pick fewer). Default 3.
         required: false
         type: string

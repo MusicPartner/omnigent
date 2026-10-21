@@ -5,10 +5,7 @@ name: Waiting on Author Review
 # for the privileged workflow_run consumer. No PR code is checked out.
 
 on:
-  pull_request_review_comment:
-    types: [created]
-  pull_request_review:
-    types: [submitted]
+  workflow_dispatch: null
 
 permissions:
   contents: read
