@@ -2152,9 +2152,10 @@ async def test_gateway_refresh_reuses_process_and_fails_closed(
         assert not [e for e in events if isinstance(e, ExecutorError)]
         rpc = executor._session_states["__default__"].rpc
         agent_dir = Path(rpc._tmp_dir)
-        assert agent_dir.stat().st_mode & 0o777 == 0o700
-        assert (agent_dir / "gateway-auth.cjs").stat().st_mode & 0o777 == 0o600
-        assert (agent_dir / "gateway-auth.json").stat().st_mode & 0o777 == 0o600
+        if os.name != "nt":
+            assert agent_dir.stat().st_mode & 0o777 == 0o700
+            assert (agent_dir / "gateway-auth.cjs").stat().st_mode & 0o777 == 0o600
+            assert (agent_dir / "gateway-auth.json").stat().st_mode & 0o777 == 0o600
         models_text = (agent_dir / "models.json").read_text()
         bridge_token = executor._tool_server.token
         assert bridge_token not in models_text

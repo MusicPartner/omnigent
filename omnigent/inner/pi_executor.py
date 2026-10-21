@@ -87,6 +87,7 @@ from omnigent.util.reasoning_effort import (
     validate_effort,
 )
 
+from ._proc import kill_tree
 from ._subprocess_lifecycle import close_subprocess_transport
 from .async_utils import run_sync_on_thread
 from .databricks_executor import _read_databrickscfg
@@ -139,8 +140,11 @@ async def _fetch_shell_command_token(command: str) -> str:
             stdout, _ = await asyncio.wait_for(process.communicate(), _GATEWAY_AUTH_TIMEOUT_S)
         except (TimeoutError, asyncio.CancelledError):
             # Children may still hold stdout open after the helper shell exits.
-            with contextlib.suppress(ProcessLookupError):
-                os.killpg(process.pid, signal.SIGKILL)
+            if IS_WINDOWS:
+                await run_sync_on_thread(kill_tree, process)
+            else:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGKILL)
             await process.communicate()
             raise
         if process.returncode != 0:

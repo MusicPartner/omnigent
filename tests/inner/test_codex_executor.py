@@ -3877,7 +3877,8 @@ def test_populate_codex_home_config_copies_remote_mcp_oauth_across_filesystems(
     assert not bridged.is_symlink()
     assert not bridged.samefile(source / ".credentials.json")
     assert bridged.read_text() == '{"linear|abc": {"access_token": "t"}}'
-    assert stat.S_IMODE(bridged.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(bridged.stat().st_mode) == 0o600
     bridged.write_text('{"linear|abc": {"access_token": "t2"}}')
     assert (source / ".credentials.json").read_text() == '{"linear|abc": {"access_token": "t"}}'
 

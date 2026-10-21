@@ -243,6 +243,20 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --group test --extra tracing
 
+      - name: Focused Windows release regressions
+        run: >-
+          uv run pytest
+          tests/inner/test_codex_executor.py::test_populate_codex_home_config_copies_remote_mcp_oauth_across_filesystems
+          tests/inner/test_os_env_grant_reach.py::test_delete_follows_parents_only_into_write_reach
+          tests/inner/test_os_env_grant_reach.py::test_delete_removes_a_leaf_link_not_its_target
+          tests/inner/test_os_env_grant_reach.py::test_delete_directory_needs_recursive_unless_empty
+          tests/inner/test_os_env_grant_reach.py::test_delete_refuses_a_component_that_became_a_symlink
+          tests/inner/test_pi_executor.py::test_gateway_refresh_reuses_process_and_fails_closed
+          tests/inner/test_pi_executor.py::test_gateway_helper_failure_is_bounded_and_redacted
+          tests/inner/test_pi_executor.py::test_gateway_bridge_authenticates_and_cancels_helper_on_shutdown
+          tests/terminals/test_windows_psmux.py::test_psmux_launch_uses_isolated_absolute_python_wrapper
+          -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -q -ra
+
       - name: Portable Codex lifecycle and platform-scoped fixtures
         run: >-
           uv run pytest

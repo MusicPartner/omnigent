@@ -380,8 +380,15 @@ def test_delete_follows_parents_only_into_write_reach(
     assert escaped["code"] == "invalid_path"
     assert str(outside) not in escaped["error"]
     assert (outside / "victim.txt").read_text() == "keep me"
-    assert granted == {"deleted": True, "type": "file", "bytes_deleted": len("granted")}
-    assert not (grant / "granted.txt").exists()
+    if os.name == "nt":
+        assert granted == {
+            "error": "Safe directory traversal is unavailable on this platform",
+            "code": "permission_denied",
+        }
+        assert (grant / "granted.txt").read_text() == "granted"
+    else:
+        assert granted == {"deleted": True, "type": "file", "bytes_deleted": len("granted")}
+        assert not (grant / "granted.txt").exists()
 
 
 @pytest.mark.parametrize("recursive", [False, True])
@@ -392,8 +399,15 @@ def test_delete_removes_a_leaf_link_not_its_target(
 
     res = _req("delete", Path("to_outside"), workspace, _grant_policy(), recursive=recursive)
 
-    assert res == {"deleted": True, "type": "symlink", "bytes_deleted": None}
-    assert not (workspace / "to_outside").is_symlink()
+    if os.name == "nt":
+        assert res == {
+            "error": "Safe directory traversal is unavailable on this platform",
+            "code": "permission_denied",
+        }
+        assert (workspace / "to_outside").is_symlink()
+    else:
+        assert res == {"deleted": True, "type": "symlink", "bytes_deleted": None}
+        assert not (workspace / "to_outside").is_symlink()
     assert (outside / "victim.txt").read_text() == "keep me"
 
 
@@ -408,11 +422,21 @@ def test_delete_directory_needs_recursive_unless_empty(tmp_path: Path, delete_mo
     kept = (tmp_path / "full" / "keep.txt").read_text()
     removed = _req("delete", Path("full"), tmp_path, policy, recursive=True)
 
-    assert emptied == {"deleted": True, "type": "directory", "bytes_deleted": None}
-    assert refused["code"] == "directory_not_empty"
-    assert kept == "keep"
-    assert removed["type"] == "directory"
-    assert list(tmp_path.iterdir()) == []
+    if os.name == "nt":
+        for result in (emptied, refused, removed):
+            assert result == {
+                "error": "Safe directory traversal is unavailable on this platform",
+                "code": "permission_denied",
+            }
+        assert kept == "keep"
+        assert (tmp_path / "empty").is_dir()
+        assert (tmp_path / "full" / "keep.txt").read_text() == "keep"
+    else:
+        assert emptied == {"deleted": True, "type": "directory", "bytes_deleted": None}
+        assert refused["code"] == "directory_not_empty"
+        assert kept == "keep"
+        assert removed["type"] == "directory"
+        assert list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.skipif(_IS_ROOT, reason="root bypasses permission checks")
@@ -538,7 +562,13 @@ def test_delete_refuses_a_component_that_became_a_symlink(
 
     res = _delete_beneath(workspace, ("to_outside",), "victim.txt", recursive=False)
 
-    assert res["code"] == "invalid_path"
+    if os.name == "nt":
+        assert res == {
+            "error": "Safe directory traversal is unavailable on this platform",
+            "code": "permission_denied",
+        }
+    else:
+        assert res["code"] == "invalid_path"
     assert (outside / "victim.txt").read_text() == "keep me"
 
 
