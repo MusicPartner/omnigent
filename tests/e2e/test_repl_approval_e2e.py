@@ -879,6 +879,7 @@ def test_repl_tool_call_refusal_blocks_tool(
     ap_cli: str,
     repl_env: dict[str, str],
     mock_llm_server_url: str,
+    repl_transcript: TextIO,
 ) -> None:
     """
     TOOL_CALL ASK → explicit decline → turn aborts → tool NEVER runs.
@@ -889,8 +890,8 @@ def test_repl_tool_call_refusal_blocks_tool(
     terminal or reach the mock LLM as a function_call_output.
 
     The mock LLM is scripted to emit the ``echo`` ``function_call`` so
-    the TOOL_CALL ASK fires. (The follow-up text is never reached: the
-    turn aborts on decline before any second LLM call.)
+    the TOOL_CALL ASK fires. Its tool-follow-up response is never reached.
+    A separate user turn proves the REPL remains usable after refusal.
     """
     _configure_mock_tool_then_text(
         mock_llm_server_url,
@@ -913,26 +914,33 @@ def test_repl_tool_call_refusal_blocks_tool(
         dimensions=(40, 120),
         timeout=_LAUNCH_TIMEOUT,
     )
+    child.logfile_read = repl_transcript
     try:
         _wait_for_prompt_ready(child, timeout=_LAUNCH_TIMEOUT, welcome_pattern="e2e.tool.gate")
         child.send("testing456" + "\r")
         child.expect("approval required", timeout=45)
         child.send("n" + "\r")
         child.expect("refused", timeout=5)
-        # Turn is now aborted — wait for the REPL to return to idle.
-        _wait_for_turn_complete(child, timeout=30)
-        # The tool must never have run: raw echo output must not appear
-        # anywhere in the terminal buffer captured so far.
-        assert "echo: testing456" not in child.before, (
-            "Raw tool output appeared in REPL despite refusal — the tool "
-            "ran when it must not have."
-        )
         # The mock LLM must NOT have received a second request carrying a
         # function_call_output, because the turn was aborted before the
         # denial reached the LLM.
         joined = _wait_for_function_call_outputs(mock_llm_server_url, timeout=5.0)
         assert "echo: testing456" not in joined, (
             "Raw tool output leaked to the LLM despite refusal — "
+            f"function_call_outputs: {joined[:800]}"
+        )
+        follow_up = "tool-call-refusal-recovery-ok"
+        _configure_mock_text(mock_llm_server_url, [follow_up], match="post-refusal-probe")
+        child.send("post-refusal-probe" + "\r")
+        # A real reply proves input recovered; the idle toolbar can redraw in fragments.
+        child.expect(follow_up, timeout=45)
+        assert "echo: testing456" not in child.before, (
+            "Raw tool output appeared in REPL despite refusal — the tool "
+            "ran when it must not have."
+        )
+        joined = _wait_for_function_call_outputs(mock_llm_server_url, timeout=5.0)
+        assert "echo: testing456" not in joined, (
+            "Refused tool output leaked into the next user turn — "
             f"function_call_outputs: {joined[:800]}"
         )
     finally:
