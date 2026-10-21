@@ -195,12 +195,26 @@ the actual `TMUX` value supplied to each child and uses the other pane's real
 context for the cross-session paste test. No namespace hash is duplicated,
 deadline extended, production behavior changed or assertion removed.
 
+Round 1 reached all three real paste payload comparisons. Their only mismatch
+was the canonical v0.19 focus-probe space preceding Ctrl-A/Ctrl-K, which a raw
+reader records but Claude's editor clears. Round 2 updates the exact byte
+expectation to that upstream prelude; payload, Unicode/multiline/20,000-character,
+cross-session non-delivery and temporary-file cleanup assertions remain intact.
+
+Backend E2E run [39661930031](https://github.com/MusicPartner/omnigent/actions/runs/39661930031)
+passed all four shards at `008949b15688d19ab16213b606840935c4c65f6d`. UI run
+[39661934560](https://github.com/MusicPartner/omnigent/actions/runs/39661934560)
+passed Browser Contract, all ten shards and its aggregate gate at the same SHA.
+The later changes are confined to the Windows fixture and documentation;
+production code and these E2E test paths are unchanged.
+
 ## Current attempt budget
 
 At 21:40 on 2026-10-21, the user set a shared maximum of four additional
 push/retry rounds, replacing the preceding two-round cap. Already-running
 checks do not count; documentation-only pushes do. The first additional round
-carries the namespace-independent psmux fixture correction. Obtain explicit
+carries the namespace-independent psmux fixture correction. The second
+reconciles its raw-reader expectation with the upstream focus probe. Obtain explicit
 user confirmation before a fifth additional round, including across handovers.
 
 ## Acceptance limits and rollback

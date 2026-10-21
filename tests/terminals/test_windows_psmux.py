@@ -825,7 +825,8 @@ async def test_windows_claude_paste_targets_resumed_session(
             await asyncio.sleep(0.1)
         received = json.loads(output_path.read_text(encoding="utf-8"))
         payload = bridge._paste_payload_bytes(content + "\n").decode("utf-8")
-        assert received == "\x1b[97;5u\x1b[107;5u\x1b[200~" + payload + "\x1b[201~\r"
+        # The raw reader includes the focus probe that Claude's clear-line keys remove.
+        assert received == " \x1b[97;5u\x1b[107;5u\x1b[200~" + payload + "\x1b[201~\r"
         assert not (other.private_dir / "received.json").exists()
         assert list(resumed.private_dir.glob("paste_*.bin")) == []
     finally:
