@@ -755,7 +755,7 @@ async def test_windows_claude_paste_targets_resumed_session(
     for name in ("TMUX", "TMUX_PANE", "PSMUX_TARGET_SESSION", "PSMUX_TARGET_FULL"):
         monkeypatch.delenv(name, raising=False)
     reader = (
-        "import ctypes,json,pathlib,sys\n"
+        "import ctypes,json,os,pathlib,sys\n"
         "kernel = ctypes.windll.kernel32\n"
         "kernel.GetStdHandle.restype = ctypes.c_void_p\n"
         "kernel.SetConsoleMode.argtypes = [ctypes.c_void_p, ctypes.c_ulong]\n"
@@ -763,7 +763,7 @@ async def test_windows_claude_paste_targets_resumed_session(
         "assert kernel.SetConsoleMode(handle, 0x0200)\n"
         "output = pathlib.Path(sys.argv[1])\n"
         "sys.stdout.write('\\x1b[?2004hREADY\\n'); sys.stdout.flush()\n"
-        "output.with_suffix('.ready').touch()\n"
+        "output.with_suffix('.ready').write_text(os.environ['TMUX'], encoding='utf-8')\n"
         "received = b''\n"
         "while True:\n"
         "    received += sys.stdin.buffer.read(1)\n"
@@ -772,7 +772,7 @@ async def test_windows_claude_paste_targets_resumed_session(
         "        break\n"
     )
     instances: list[PsmuxTerminalInstance] = []
-    session_ports: dict[str, str] = {}
+    session_contexts: dict[str, str] = {}
     try:
         for name in ("resumed", "other"):
             private_dir = tmp_path / name
@@ -790,26 +790,24 @@ async def test_windows_claude_paste_targets_resumed_session(
             instances.append(instance)
             await instance.launch(cwd=tmp_path)
             ready_path = private_dir / "received.ready"
-            port_path = data_dir / f"{instance.tmux_target}.port"
-            port = ""
+            context = ""
             for _ in range(100):
-                if ready_path.exists():
-                    try:
-                        port = port_path.read_text(encoding="ascii").strip()
-                    except FileNotFoundError:
-                        port = ""
-                    if port.isdecimal() and 0 < int(port) < 65536:
-                        break
+                try:
+                    context = ready_path.read_text(encoding="utf-8").strip()
+                except FileNotFoundError:
+                    context = ""
+                parts = context.rsplit(",", 2)
+                if len(parts) == 3 and parts[0] and parts[1].isdecimal():
+                    break
                 await asyncio.sleep(0.1)
             assert ready_path.exists()
-            assert port.isdecimal() and 0 < int(port) < 65536, (
-                f"psmux did not publish a valid session port for {instance.tmux_target}"
+            assert len(parts) == 3 and parts[0] and parts[1].isdecimal(), (
+                f"psmux child did not receive a valid TMUX context: {context!r}"
             )
-            session_ports[instance.tmux_target] = port
+            session_contexts[instance.tmux_target] = context
 
         resumed, other = instances
-        other_port = session_ports[other.tmux_target]
-        monkeypatch.setenv("TMUX", f"{other.socket_path},{other_port},0")
+        monkeypatch.setenv("TMUX", session_contexts[other.tmux_target])
         monkeypatch.setattr(bridge, "_PASTE_COMMIT_TIMEOUT_S", 0.0)
         monkeypatch.setattr(bridge, "_PASTE_SETTLE_S", 0.0)
         await asyncio.to_thread(

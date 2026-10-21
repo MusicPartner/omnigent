@@ -58,7 +58,8 @@ Earlier default-model attempts were interrupted before returning implementation
 results; they are not reported as Luna work.
 
 The [per-file ledger](RELEASE-INTEGRATION-0.19-ledger.csv) accounts for all 307
-original fork paths plus four release-version conflicts. Raw command logs
+original fork paths, four release-version conflicts and three additional
+integration-compatibility files. Raw command logs
 remain in the local session evidence directory, not in the repository.
 Each drop requires equivalent upstream behavior or an explicit obsolete-contract
 explanation; a clean textual merge alone does not establish semantic
@@ -165,11 +166,52 @@ Focused Windows failures stop at the first failure with a short traceback,
 instead of allowing a later hard timeout to hide earlier assertion details.
 These later repairs are not covered by the earlier green lint/E2E results.
 
+At `e5b3b81f6c5f065f48cac521a14e7c81543c9711`, remote lint, integration and
+nonpublishing Docker checks passed again. Release validation's full Linux job
+passed. Windows passed the focused regression matrix, portable families,
+attachment cache/consumers, Stop/ownership, desktop tests, CLI smoke, upstream
+hard tests, launcher, stable subset and hook tests. Its real psmux step failed
+before the broader sweep; CLI/desktop artifacts remained correctly blocked.
+The UI run passed Browser Contract and nine shards, including the repaired
+slow-ready and Windows-picker cases; the remaining recovery test is being
+diagnosed. Do not describe these incomplete release/E2E gates as green.
+
+The remaining test contracts were reconciled without further production
+changes: psmux readiness includes its valid session-port metadata, and the
+native recovery journey uses the visible queued-follow-up textbox and keyboard
+submit path. The REPL failure advanced past startup and refusal before missing
+the cosmetic ready-toolbar marker. Its replacement barrier sends a distinct
+user turn and requires the scripted reply, retaining denied-tool output checks
+before and after that round trip and recording the full PTY stream.
+The earlier host-online timeout and later idle-marker timeout are different
+observations, not a demonstrated shared root cause.
+
+The psmux metadata wait did not resolve the failure in run
+[39661729758](https://github.com/MusicPartner/omnigent/actions/runs/39661729758).
+Source inspection of psmux 3.4.0's `socket_path.rs` established that custom `-S`
+paths use `sock-<hash>__<session>` metadata namespaces. The fixture's guessed
+`<session>.port` filename was therefore wrong, not merely late. It now captures
+the actual `TMUX` value supplied to each child and uses the other pane's real
+context for the cross-session paste test. No namespace hash is duplicated,
+deadline extended, production behavior changed or assertion removed.
+
+## Current attempt budget
+
+At 21:40 on 2026-10-21, the user set a shared maximum of four additional
+push/retry rounds, replacing the preceding two-round cap. Already-running
+checks do not count; documentation-only pushes do. The first additional round
+carries the namespace-independent psmux fixture correction. Obtain explicit
+user confirmation before a fifth additional round, including across handovers.
+
 ## Acceptance limits and rollback
 
 Historical passing v0.17 CI at `e6a14a5e9` does not validate source `f50a1f1cd`
 or this merge. Setup-only Claude capture does not prove a provider conversation.
 Keep live acceptance distinct from mocked/unit coverage:
+
+Use isolated config/data and a fresh database for initial acceptance. Back up
+the real v0.17 configuration and data before an in-place upgrade; do not point
+v0.17 at a database already migrated by v0.19 without restoring its backup.
 
 1. Launch the exact verified checkout or source-matched artifact explicitly.
 2. Verify the executable path, version and UI URL.
