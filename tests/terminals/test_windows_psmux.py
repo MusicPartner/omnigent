@@ -772,6 +772,7 @@ async def test_windows_claude_paste_targets_resumed_session(
         "        break\n"
     )
     instances: list[PsmuxTerminalInstance] = []
+    session_ports: dict[str, str] = {}
     try:
         for name in ("resumed", "other"):
             private_dir = tmp_path / name
@@ -788,14 +789,26 @@ async def test_windows_claude_paste_targets_resumed_session(
             )
             instances.append(instance)
             await instance.launch(cwd=tmp_path)
+            ready_path = private_dir / "received.ready"
+            port_path = data_dir / f"{instance.tmux_target}.port"
+            port = ""
             for _ in range(100):
-                if (private_dir / "received.ready").exists():
-                    break
+                if ready_path.exists():
+                    try:
+                        port = port_path.read_text(encoding="ascii").strip()
+                    except FileNotFoundError:
+                        port = ""
+                    if port.isdecimal() and 0 < int(port) < 65536:
+                        break
                 await asyncio.sleep(0.1)
-            assert (private_dir / "received.ready").exists()
+            assert ready_path.exists()
+            assert port.isdecimal() and 0 < int(port) < 65536, (
+                f"psmux did not publish a valid session port for {instance.tmux_target}"
+            )
+            session_ports[instance.tmux_target] = port
 
         resumed, other = instances
-        other_port = (data_dir / f"{other.tmux_target}.port").read_text().strip()
+        other_port = session_ports[other.tmux_target]
         monkeypatch.setenv("TMUX", f"{other.socket_path},{other_port},0")
         monkeypatch.setattr(bridge, "_PASTE_COMMIT_TIMEOUT_S", 0.0)
         monkeypatch.setattr(bridge, "_PASTE_SETTLE_S", 0.0)

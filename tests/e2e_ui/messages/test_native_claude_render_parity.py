@@ -711,6 +711,7 @@ def _send_turn_and_settle(
     assistant_token: str,
     expected_assistant_bubbles: int,
     turn_timeout_ms: int = _MOCK_TURN_TIMEOUT_MS,
+    queue_follow_up: bool = False,
 ) -> None:
     """Send one composer turn and wait until Claude has answered it.
 
@@ -726,10 +727,18 @@ def _send_turn_and_settle(
     :param assistant_token: Unique token the agent is asked to echo back.
     :param expected_assistant_bubbles: Assistant bubbles once this turn is answered.
     :param turn_timeout_ms: Budget for the answer to render.
+    :param queue_follow_up: Submit through the working turn's follow-up composer.
     """
     set_fallback_mock_llm(mock_llm_server_url, "default", assistant_token)
     set_fallback_mock_llm(mock_llm_server_url, _CLAUDE_MOCK_MODEL, assistant_token)
-    _send(page, _turn_prompt(index, user_marker, assistant_token))
+    prompt = _turn_prompt(index, user_marker, assistant_token)
+    if queue_follow_up:
+        composer = page.get_by_role("textbox", name="Message the agent", exact=True)
+        expect(composer).to_be_visible(timeout=30_000)
+        composer.fill(prompt)
+        composer.press("Enter")
+    else:
+        _send(page, prompt)
     # The undelivered-message notice occupies its own assistant bubble.
     replies = page.locator(_ASSISTANT).filter(
         has_not=page.get_by_test_id("error-headline").filter(has_text=_UNDELIVERED_HEADLINE)
@@ -869,6 +878,7 @@ def test_native_claude_lost_message_does_not_duplicate_the_next_one(
         assistant_token=next_token,
         expected_assistant_bubbles=2,
         turn_timeout_ms=_RESUMED_TURN_TIMEOUT_MS,
+        queue_follow_up=True,
     )
     _log.info("turn 3 settled after the reconnect")
     # The reported symptom: the tab that lived through the reconnect must show
