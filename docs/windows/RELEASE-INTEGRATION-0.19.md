@@ -58,7 +58,7 @@ Earlier default-model attempts were interrupted before returning implementation
 results; they are not reported as Luna work.
 
 The [per-file ledger](RELEASE-INTEGRATION-0.19-ledger.csv) accounts for all 307
-original fork paths, four release-version conflicts and three additional
+original fork paths, four release-version conflicts and six additional
 integration-compatibility files. Raw command logs
 remain in the local session evidence directory, not in the repository.
 Each drop requires equivalent upstream behavior or an explicit obsolete-contract
@@ -207,6 +207,37 @@ creation and write. Round 3 publishes the fixture PID with write-then-rename
 and uses the same complete-file publication for the paste fixture's readiness
 and result data. No timeout is increased and production code remains unchanged.
 
+Round 3 passed every focused Windows gate, including real psmux, paste safety
+and argv parsing. The completed broader JUnit contains 4,424 entries (including
+subtests), 8 failures, 10 setup errors and 223 skips; the console log ended
+after collection, so the retained JUnit rather than its tail is authoritative.
+The last batch reconciles six test files:
+
+- ACP asserts the existing quoted/repr path diagnostic on either platform.
+- OpenAI gateway tests assert Windows' early missing-profile refusal and retain
+  the POSIX turn-time auth diagnostic, with HTTP resources closed in either path.
+- Launcher tests retain scratch-directory assertions on Windows and POSIX
+  permission-bit assertions on POSIX.
+- Runtime GC tests retain the real server interface and restore SIGBREAK;
+  independent side clients use the manager's actual TCP/UDS route and headers.
+- Git SSH parser fixtures use sandbox-POSIX paths rather than host-Windows
+  paths. Portable parser and containment/refusal cases remain active. Nine real
+  broker tests skip Windows because the production broker explicitly requires
+  Unix sandboxing and AF_UNIX; Windows gets an explicit unsupported-platform
+  assertion instead. The existing short Unix socket fixture is retained.
+
+These changes do not enable Git SSH, brokered signing, filesystem isolation or
+network isolation on unsupported Windows backends. They do not change production
+code, increase deadlines or make the required broader gate non-blocking.
+
+The final test-contract batch is code commit
+`603cd8194f78211351ccdcb2778b076d58d15824`. Its handover-only descendant is sent
+in the same fourth push, not a separate push/retry round. The ledger contains
+317 rows and retains 46 explicit bounded-review/live-acceptance limits.
+All 349 named fork-added tests remain in the textual inventory; that does not
+replace runtime coverage or decorator review. Production, web and SDK source
+trees remain identical to the fully linted `e5b3b81f6` application tree.
+
 Backend E2E run [39661930031](https://github.com/MusicPartner/omnigent/actions/runs/39661930031)
 passed all four shards at `008949b15688d19ab16213b606840935c4c65f6d`. UI run
 [39661934560](https://github.com/MusicPartner/omnigent/actions/runs/39661934560)
@@ -222,8 +253,15 @@ checks do not count; documentation-only pushes do. The first additional round
 carries the namespace-independent psmux fixture correction. The second
 reconciles its raw-reader expectation with the upstream focus probe. The third
 fixes complete-file publication in generated fixtures. Three rounds are used
-and one remains. Obtain explicit
+and the fourth batches the broader-suite contract corrections and this handover
+snapshot. After the fourth push/retry round, none remain. Obtain explicit
 user confirmation before a fifth additional round, including across handovers.
+
+This snapshot is committed before the final checks finish. Their durable result
+is the [branch's Actions history](https://github.com/MusicPartner/omnigent/actions?query=branch%3Awindows-parity%2Fv0.19-integration);
+do not infer a pass from an earlier run or from a pending snapshot. Any further
+code, documentation-only push or manual retry requires renewed confirmation
+once the four-round budget is exhausted.
 
 ## Acceptance limits and rollback
 
