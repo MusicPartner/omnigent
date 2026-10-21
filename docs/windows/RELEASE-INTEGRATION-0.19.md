@@ -201,6 +201,12 @@ reader records but Claude's editor clears. Round 2 updates the exact byte
 expectation to that upstream prelude; payload, Unicode/multiline/20,000-character,
 cross-session non-delivery and temporary-file cleanup assertions remain intact.
 
+Round 2 stopped earlier in the Windows portable family: 1,290 tests passed and
+170 skipped, but the gateway-helper test read an empty PID file between its
+creation and write. Round 3 publishes the fixture PID with write-then-rename
+and uses the same complete-file publication for the paste fixture's readiness
+and result data. No timeout is increased and production code remains unchanged.
+
 Backend E2E run [39661930031](https://github.com/MusicPartner/omnigent/actions/runs/39661930031)
 passed all four shards at `008949b15688d19ab16213b606840935c4c65f6d`. UI run
 [39661934560](https://github.com/MusicPartner/omnigent/actions/runs/39661934560)
@@ -214,7 +220,9 @@ At 21:40 on 2026-10-21, the user set a shared maximum of four additional
 push/retry rounds, replacing the preceding two-round cap. Already-running
 checks do not count; documentation-only pushes do. The first additional round
 carries the namespace-independent psmux fixture correction. The second
-reconciles its raw-reader expectation with the upstream focus probe. Obtain explicit
+reconciles its raw-reader expectation with the upstream focus probe. The third
+fixes complete-file publication in generated fixtures. Three rounds are used
+and one remains. Obtain explicit
 user confirmation before a fifth additional round, including across handovers.
 
 ## Acceptance limits and rollback

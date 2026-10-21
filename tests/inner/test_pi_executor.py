@@ -2262,7 +2262,10 @@ async def test_gateway_bridge_authenticates_and_cancels_helper_on_shutdown(tmp_p
     helper.write_text(
         "import os, sys, time\n"
         "from pathlib import Path\n"
-        "Path(sys.argv[1]).write_text(str(os.getpid()), encoding='utf-8')\n"
+        "destination = Path(sys.argv[1])\n"
+        "pending = destination.with_suffix('.tmp')\n"
+        "pending.write_text(str(os.getpid()), encoding='utf-8')\n"
+        "pending.replace(destination)\n"
         "time.sleep(30)\n",
         encoding="utf-8",
     )

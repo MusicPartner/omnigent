@@ -763,12 +763,16 @@ async def test_windows_claude_paste_targets_resumed_session(
         "assert kernel.SetConsoleMode(handle, 0x0200)\n"
         "output = pathlib.Path(sys.argv[1])\n"
         "sys.stdout.write('\\x1b[?2004hREADY\\n'); sys.stdout.flush()\n"
-        "output.with_suffix('.ready').write_text(os.environ['TMUX'], encoding='utf-8')\n"
+        "pending = output.with_suffix('.ready.tmp')\n"
+        "pending.write_text(os.environ['TMUX'], encoding='utf-8')\n"
+        "pending.replace(output.with_suffix('.ready'))\n"
         "received = b''\n"
         "while True:\n"
         "    received += sys.stdin.buffer.read(1)\n"
         "    if b'\\x1b[201~' in received and received.endswith(b'\\r'):\n"
-        "        output.write_text(json.dumps(received.decode('utf-8')), encoding='utf-8')\n"
+        "        pending = output.with_suffix('.json.tmp')\n"
+        "        pending.write_text(json.dumps(received.decode('utf-8')), encoding='utf-8')\n"
+        "        pending.replace(output)\n"
         "        break\n"
     )
     instances: list[PsmuxTerminalInstance] = []
