@@ -154,5 +154,5 @@ jobs:
             echo "- Deleted merged transient branches: ${deleted_branches}"
             echo "- Deleted completed transient-branch workflow runs: ${deleted_runs}"
             echo "- Branches skipped because Actions are still active: ${skipped_active}"
-            echo "- Protected by policy: main, windows-parity/v0.14-integration and windows-parity/v0.17-integration"
+            echo "- Protected by policy: main, windows-parity/v0.14-integration, windows-parity/v0.17-integration and windows-parity/v0.19-integration"
           } >> "${GITHUB_STEP_SUMMARY}"

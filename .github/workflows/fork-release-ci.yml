@@ -11,6 +11,7 @@ on:
       - main
       - windows-parity/v0.14-integration
       - windows-parity/v0.17-integration
+      - windows-parity/v0.19-integration
     paths-ignore:
       - "**/*.md"
       - "docs/**"

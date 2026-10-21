@@ -92,6 +92,23 @@ class PsmuxTerminalInstance(TerminalInstance):
 
         executable = prefer_native_claude_exe(shutil.which(self.command) or self.command)
         command_args = [executable, *self.args]
+        program_status_app = getattr(self, "program_status_app", None)
+        if program_status_app is not None:
+            from omnigent.terminals import program_status
+
+            status_path = self.private_dir / "program-status.json"
+            status_path.unlink(missing_ok=True)
+            self.program_status = program_status.ProgramStatusReader(status_path)
+            command_args = [
+                sys.executable,
+                str(Path(program_status.__file__)),
+                "--state-file",
+                str(status_path),
+                "--app",
+                program_status_app,
+                "--",
+                *command_args,
+            ]
         if self.env_unset:
             wrapper_path = (self.private_dir / "launch.py").resolve()
             wrapper_path.write_text(_PSMUX_CLEAN_ENV_SCRIPT, encoding="utf-8")

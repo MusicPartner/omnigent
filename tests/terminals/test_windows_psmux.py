@@ -474,13 +474,22 @@ def test_psmux_python_launcher_preserves_argv_environment_and_exit_status(
     assert os.environ["CLAUDE_CONFIG_DIR"] == "inherited-from-server"
 
 
+@pytest.mark.parametrize("program_status_app", [None, "claude"])
+@pytest.mark.parametrize("env_unset", [[], ["CLAUDE_CONFIG_DIR"]], ids=["inherit", "unset"])
 async def test_psmux_launch_uses_isolated_absolute_python_wrapper(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    program_status_app: str | None,
+    env_unset: list[str],
 ) -> None:
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
+    from omnigent.terminals import program_status
+
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", "inherited")
+    status_path = tmp_path / "program-status.json"
+    status_path.write_text("stale", encoding="utf-8")
     instance = PsmuxTerminalInstance(
         name="shell",
         session_key="s1",
@@ -488,7 +497,8 @@ async def test_psmux_launch_uses_isolated_absolute_python_wrapper(
         private_dir=tmp_path,
         command=sys.executable,
         args=['{"command":"echo Å & | ^ ! %PATH% 2>> \\\\"log file\\\\""}', ""],
-        env_unset=["CLAUDE_CONFIG_DIR"],
+        env_unset=env_unset,
+        program_status_app=program_status_app,
     )
     proc = AsyncMock()
     proc.returncode = 0
@@ -504,19 +514,41 @@ async def test_psmux_launch_uses_isolated_absolute_python_wrapper(
     call = spawn.call_args
     argv = call.args
     wrapper = argv[argv.index("--") + 1 :]
-    assert wrapper == (
-        sys.executable,
-        "-I",
-        str((tmp_path / "launch.py").resolve()),
-        "1",
-        "CLAUDE_CONFIG_DIR",
-        shutil.which(sys.executable) or sys.executable,
-        *instance.args,
-    )
-    assert "CLAUDE_CONFIG_DIR" not in call.kwargs["env"]
-    assert (tmp_path / "launch.py").read_text(
-        encoding="utf-8"
-    ) == psmux_module._PSMUX_CLEAN_ENV_SCRIPT
+    expected = [shutil.which(sys.executable) or sys.executable, *instance.args]
+    if program_status_app is not None:
+        expected = [
+            sys.executable,
+            str(Path(program_status.__file__)),
+            "--state-file",
+            str(status_path),
+            "--app",
+            program_status_app,
+            "--",
+            *expected,
+        ]
+        assert isinstance(instance.program_status, program_status.ProgramStatusReader)
+        assert instance.program_status.path == status_path
+        assert not status_path.exists()
+    else:
+        assert instance.program_status is None
+        assert status_path.read_text(encoding="utf-8") == "stale"
+    if env_unset:
+        expected = [
+            sys.executable,
+            "-I",
+            str((tmp_path / "launch.py").resolve()),
+            str(len(env_unset)),
+            *env_unset,
+            *expected,
+        ]
+        assert "CLAUDE_CONFIG_DIR" not in call.kwargs["env"]
+        assert (tmp_path / "launch.py").read_text(
+            encoding="utf-8"
+        ) == psmux_module._PSMUX_CLEAN_ENV_SCRIPT
+    else:
+        assert call.kwargs["env"]["CLAUDE_CONFIG_DIR"] == "inherited"
+        assert not (tmp_path / "launch.py").exists()
+    assert wrapper == tuple(expected)
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="native Windows psmux test")

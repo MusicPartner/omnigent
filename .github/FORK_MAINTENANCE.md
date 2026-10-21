@@ -26,9 +26,13 @@ The workflow always uses a PR; it does not push an upstream merge directly into 
 
 ## Release validation
 
-`Fork release validation` runs for non-documentation pull requests, for non-documentation pushes to `main` and the transitional `windows-parity/v0.14-integration` and `windows-parity/v0.17-integration` branches, and by manual dispatch.
+`Fork release validation` runs for non-documentation pull requests, for non-documentation pushes to `main` and the integration branches `windows-parity/v0.14-integration`, `windows-parity/v0.17-integration`, and `windows-parity/v0.19-integration`, and by manual dispatch.
 
 Compatibility validation always runs for a normal code PR. The downloadable Windows artifact is deliberately built only for a push/merge or a manual dispatch. This prevents every intermediate PR commit from consuming another Windows build runner while still validating the code before merge.
+
+For v0.19, push the validated integration branch to run focused Linux checks and the required native Windows gate. A successful branch push also builds the Windows CLI bundle and Electron desktop ZIP; manual dispatch on the selected branch runs the same validation and artifact jobs. The upstream `Windows (native)` workflow remains an optional signal and does not replace the required fork Windows gate.
+
+`Docker build` is separate and does not run on branch pushes. Dispatch it from the v0.19 branch for a server-image build and CLI smoke; `publish` defaults to `false` and must remain disabled unless image publication is explicitly authorized. See the [v0.19 integration record](../docs/windows/RELEASE-INTEGRATION-0.19.md) for pinned refs, reconciliation scope, current validation, and remaining acceptance limits.
 
 The three stages are:
 
@@ -45,7 +49,7 @@ Uploaded bundles are named `omnigent-windows-<commit-sha>` and are retained for 
 - Disable upstream-only automation that is not useful in this fork, such as publishing/release, benchmark, reviewer assignment, doc-sync, merge-monitoring, and mobile bundle workflows. Core CI, Lint, E2E, E2E UI, native Windows, security/Trivy, and the fork workflows remain enabled.
 - Delete same-repository branches matching `maintenance/*` or `upstream-sync/*` only after their PR has been merged and no Actions run is still active. Completed runs for those transient branches are also removed after the configured short retention window.
 
-`main`, `windows-parity/v0.14-integration`, and `windows-parity/v0.17-integration` are explicitly protected by the housekeeping policy.
+`main`, `windows-parity/v0.14-integration`, `windows-parity/v0.17-integration`, and `windows-parity/v0.19-integration` are explicitly protected by the housekeeping policy.
 
 ## Workflow ownership
 

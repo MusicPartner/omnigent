@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, field
 
 from omnigent.inner.sandbox_capabilities import (
+    egress_capable_backends,
     sandbox_egress_policy_error,
     sandbox_network_deny_error,
 )
@@ -278,11 +279,11 @@ def _validate_skills(spec: AgentSpec, result: ValidationResult) -> None:
     seen_names: set[str] = set()
     for i, skill in enumerate(spec.skills):
         prefix = f"skills[{i}]"
-        # Name format
+        # Name format (the directory name; the frontmatter label is free-form)
         if not _SKILL_NAME_PATTERN.match(skill.name):
             result.add(
                 f"{prefix}.name",
-                f"must match [a-z0-9-]+, got {skill.name!r}",
+                f"skill directory name must match [a-z0-9-]+, got {skill.name!r}",
             )
         # Name length
         if len(skill.name) > _SKILL_NAME_MAX_LEN:
@@ -339,6 +340,16 @@ def _validate_mcp_servers(spec: AgentSpec, result: ValidationResult) -> None:
                 result.add(f"{prefix}.args", "not allowed when transport is 'http'")
             if mcp.env:
                 result.add(f"{prefix}.env", "not allowed when transport is 'http'")
+        elif mcp.transport == "registry":
+            if (
+                mcp.url
+                or mcp.headers
+                or mcp.command
+                or mcp.args
+                or mcp.env
+                or mcp.databricks_profile
+            ):
+                result.add(prefix, "registry services cannot override server connection settings")
         elif mcp.transport == "stdio":
             if mcp.command is None:
                 result.add(f"{prefix}.command", "required when transport is 'stdio'")
@@ -537,6 +548,7 @@ def _validate_os_env(spec: AgentSpec, result: ValidationResult) -> None:
         list(getattr(sandbox, "egress_rules", None) or []) if sandbox is not None else []
     )
     allow_network = bool(getattr(sandbox, "allow_network", True)) if sandbox is not None else True
+    git_ssh = list(getattr(sandbox, "git_ssh", None) or []) if sandbox is not None else []
 
     if start_in_scratch and fork:
         result.add(
@@ -561,6 +573,11 @@ def _validate_os_env(spec: AgentSpec, result: ValidationResult) -> None:
         egress_error = sandbox_egress_policy_error(sandbox_type)
         if egress_error is not None:
             result.add("os_env.sandbox.egress_rules", egress_error)
+    if git_ssh and sandbox_type not in egress_capable_backends():
+        result.add(
+            "os_env.sandbox.git_ssh",
+            "git_ssh requires linux_bwrap or darwin_seatbelt for hard network enforcement",
+        )
 
 
 def _validate_agent_names(

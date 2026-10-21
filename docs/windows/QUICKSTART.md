@@ -3,7 +3,10 @@
 ## Install
 
 1. In GitHub, open **Actions -> Fork release validation**.
-2. Open the latest successful run for `windows-parity/v0.17-integration` (or `main` after the Windows branch is merged).
+2. For v0.19, open a successful run for `windows-parity/v0.19-integration`.
+   Verify the run's commit SHA matches the version you intend to install.
+   The `windows-parity/v0.17-integration` artifacts belong to the older release;
+   `main` is not necessarily the Windows integration.
 3. Download the `omnigent-windows-<commit-sha>` artifact and extract the ZIP.
 4. Double-click `INSTALL.cmd`, or run this from PowerShell in the extracted folder:
 
@@ -33,6 +36,10 @@ The real wheel-generated executables are installed under:
 ```
 
 The installer also attempts to install `psmux`, which is required for native managed terminal sessions.
+
+If the selected v0.19 commit has no successful validation run yet, do not treat
+an older v0.17 bundle as evidence that it is ready. See the
+[v0.19 integration record](RELEASE-INTEGRATION-0.19.md) for validation limits.
 
 ## Upgrade
 
