@@ -4,9 +4,9 @@ import asyncio
 import json
 import logging
 import os
-import shlex
 import shutil
 import socket
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 
 import pytest
 
+from omnigent.inner._proc import process_alive
 from omnigent.inner.databricks_executor import DatabricksCredentials
 from omnigent.inner.executor import (
     ExecutorConfig,
@@ -46,6 +47,7 @@ from omnigent.inner.pi_executor import (
 )
 from omnigent.models.model_catalog import ModelEntry
 from omnigent.models.model_metadata import ModelMetadata, ModelWireAPI
+from omnigent.native.shell import shell_join
 from omnigent.runtime.harnesses._scaffold import PolicyVerdictPayload
 
 
@@ -2233,18 +2235,22 @@ def test_gateway_rejects_invalid_refresh_interval(interval):
 
 
 @pytest.mark.parametrize(
-    ("command", "error"),
+    ("script", "error"),
     [
-        ("printf secret; printf secret >&2; exit 1", "command failed"),
-        ("printf '  '", "empty token"),
-        ("sleep 30 & wait", "timed out"),
+        (
+            "import sys; print('secret'); print('secret', file=sys.stderr); sys.exit(1)",
+            "command failed",
+        ),
+        ("print('  ')", "empty token"),
+        ("import time; time.sleep(30)", "timed out"),
     ],
 )
-async def test_gateway_helper_failure_is_bounded_and_redacted(monkeypatch, command, error):
+async def test_gateway_helper_failure_is_bounded_and_redacted(monkeypatch, script, error):
     from omnigent.inner import pi_executor
 
     if error == "timed out":
         monkeypatch.setattr(pi_executor, "_GATEWAY_AUTH_TIMEOUT_S", 0.05)
+    command = shell_join([sys.executable, "-c", script])
     with pytest.raises(OSError, match=error) as failure:
         await pi_executor._fetch_shell_command_token(command)
     assert "secret" not in str(failure.value)
@@ -2252,11 +2258,19 @@ async def test_gateway_helper_failure_is_bounded_and_redacted(monkeypatch, comma
 
 async def test_gateway_bridge_authenticates_and_cancels_helper_on_shutdown(tmp_path):
     pid_file = tmp_path / "helper pid"
+    helper = tmp_path / "gateway helper.py"
+    helper.write_text(
+        "import os, sys, time\n"
+        "from pathlib import Path\n"
+        "Path(sys.argv[1]).write_text(str(os.getpid()), encoding='utf-8')\n"
+        "time.sleep(30)\n",
+        encoding="utf-8",
+    )
     executor = PiExecutor(
         pi_path="/usr/bin/pi",
         gateway=True,
         gateway_host="https://example.test",
-        gateway_auth_command=f"echo $$ > {shlex.quote(str(pid_file))}; sleep 30 & wait",
+        gateway_auth_command=shell_join([sys.executable, str(helper), str(pid_file)]),
     )
     assert not pid_file.exists(), "construction must not run a blocking auth helper"
     port = await executor._ensure_tool_server([])
@@ -2283,8 +2297,7 @@ async def test_gateway_bridge_authenticates_and_cancels_helper_on_shutdown(tmp_p
     writer.close()
     await writer.wait_closed()
     assert not server._clients
-    with pytest.raises(ProcessLookupError):
-        os.kill(pid, 0)
+    assert not process_alive(pid)
 
 
 async def test_gateway_profile_timeout_does_not_publish_a_late_result(monkeypatch):

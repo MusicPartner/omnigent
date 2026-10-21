@@ -255,7 +255,7 @@ jobs:
           tests/inner/test_pi_executor.py::test_gateway_helper_failure_is_bounded_and_redacted
           tests/inner/test_pi_executor.py::test_gateway_bridge_authenticates_and_cancels_helper_on_shutdown
           tests/terminals/test_windows_psmux.py::test_psmux_launch_uses_isolated_absolute_python_wrapper
-          -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -q -ra
+          -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -x -vv --tb=short -ra
 
       - name: Portable Codex lifecycle and platform-scoped fixtures
         run: >-

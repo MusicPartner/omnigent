@@ -506,8 +506,8 @@ async def _drive_windows_folder_pick_enables_start_session(base_url: str, sessio
             await expect(target).to_be_visible(timeout=10_000)
             await target.dispatch_event("click")
             await commit_landing_workspace_picker(page)
-            await expect(page.get_by_test_id("new-chat-landing-workspace-chip")).to_contain_text(
-                "C:\\general_agent_temp"
+            await expect(page.get_by_test_id("new-chat-landing-workspace-chip")).to_have_attribute(
+                "title", "C:\\general_agent_temp"
             )
 
             await page.get_by_test_id("new-chat-landing-input").click()

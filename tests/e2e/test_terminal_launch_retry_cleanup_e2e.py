@@ -13,7 +13,7 @@ import pytest
 from omnigent.inner.datamodel import OSEnvSandboxSpec, OSEnvSpec, TerminalEnvSpec
 from omnigent.inner.terminal import TerminalCreateResult, TerminalInstance
 from omnigent.runner.resource_registry import SessionResourceRegistry
-from omnigent.terminals import TerminalRegistry, registry
+from omnigent.terminals import TerminalRegistry, backend
 
 
 @pytest.mark.asyncio
@@ -26,15 +26,15 @@ async def test_terminal_retry_after_spawn_failure_has_no_orphans(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, role: str | None
 ) -> None:
     instances: list[TerminalInstance] = []
-    original_create = registry.create_terminal_instance
+    original_create = backend.create_terminal_instance
 
     def create(*args: Any, **kwargs: Any) -> TerminalCreateResult:
         created = original_create(*args, **kwargs)
         instances.append(created.instance)
         return created
 
-    monkeypatch.setattr(registry, "create_terminal_instance", create)
-    terminals = TerminalRegistry()
+    monkeypatch.setattr(backend, "create_terminal_instance", create)
+    terminals = TerminalRegistry(backend=backend.TmuxTerminalMuxBackend())
     resources = SessionResourceRegistry(terminals, runner_workspace=tmp_path)
     launch = resources.launch_required_terminal if role else resources.launch_auxiliary_terminal
     empty_bin = tmp_path / "empty-bin"

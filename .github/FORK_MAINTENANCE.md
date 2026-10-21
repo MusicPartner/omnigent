@@ -2,6 +2,19 @@
 
 This fork keeps the native Windows changes while continuing to ingest stable releases from `omnigent-ai/omnigent`.
 
+## Current automation policy (2026-10-21)
+
+At the user's request, automatic triggers on `main` are disabled. The main-branch
+workflow definitions are manual-only; reusable workflow-call interfaces and
+existing manual inputs remain available. The workflow-only main commit is
+`d8a23edf8b2e3f9531cfc70177b6a255a9415dbd`.
+
+The v0.19 integration branch retains its own validation definitions. Its push
+gate and explicitly dispatched lint, integration, E2E, UI and nonpublishing
+Docker checks are separate from main automation. Do not re-enable main schedules
+or push triggers when eventually promoting this branch. The flows described
+below document the available maintenance design, not enabled main automation.
+
 ## Normal upstream release flow
 
 1. `Sync upstream release` runs daily on the default branch. It resolves the latest non-prerelease GitHub release from `omnigent-ai/omnigent`.

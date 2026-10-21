@@ -43,7 +43,6 @@ import os
 import pathlib
 import re
 import secrets
-import shlex
 import shutil
 import signal
 import tempfile
@@ -74,6 +73,7 @@ from omnigent.models.pi_model_compatibility import (
     pi_model_json_entry,
     unsupported_in_pi,
 )
+from omnigent.native.shell import shell_join
 from omnigent.onboarding.provider_config import CHAT_WIRE_API, RESPONSES_WIRE_API
 from omnigent.runner.identity import OMNIGENT_SESSION_ENV_VAR
 from omnigent.spec.types import RetryPolicy
@@ -87,7 +87,7 @@ from omnigent.util.reasoning_effort import (
     validate_effort,
 )
 
-from ._proc import kill_tree
+from ._proc import kill_tree, spawn_kwargs
 from ._subprocess_lifecycle import close_subprocess_transport
 from .async_utils import run_sync_on_thread
 from .databricks_executor import _read_databrickscfg
@@ -127,13 +127,11 @@ CodexEvent: TypeAlias = dict[str, Any]  # type: ignore[explicit-any]
 
 async def _fetch_shell_command_token(command: str) -> str:
     """Resolve a token with a deadline, without exposing helper output on failure."""
-    process = await asyncio.create_subprocess_exec(
-        "sh",
-        "-c",
+    process = await asyncio.create_subprocess_shell(
         command,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
-        start_new_session=True,
+        **spawn_kwargs(),
     )
     try:
         try:
@@ -2433,7 +2431,7 @@ class PiExecutor(Executor):
             assert models_json is not None
             auth_client = _write_gateway_auth_client(tmp_dir, tool_server_port, tool_server_token)
             for provider in models_json["providers"].values():
-                provider["apiKey"] = f"!node {shlex.quote(str(auth_client))}"
+                provider["apiKey"] = "!" + shell_join(["node", str(auth_client)])
             models_path = os.path.join(tmp_dir, "models.json")
             with open(models_path, "w") as f:
                 json.dump(models_json, f)
