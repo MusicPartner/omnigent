@@ -82,7 +82,9 @@ def test_exec_launcher_accepts_dedicated_scratch_directory(
     path = pathlib.Path(create_exec_launcher(sys.executable, policy, cwd=str(scratch)))
     try:
         assert path.parent == launcher_dir
-        assert path.stat().st_mode & 0o777 == 0o700
+        assert path.is_file()
+        if os.name != "nt":
+            assert path.stat().st_mode & 0o777 == 0o700
     finally:
         path.unlink()
 

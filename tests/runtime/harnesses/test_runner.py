@@ -10,6 +10,7 @@ ground here would just duplicate.
 from __future__ import annotations
 
 import logging
+import signal
 
 import httpx
 import pytest
@@ -308,25 +309,28 @@ def test_main_freezes_gc_and_arms_first_turn_freeze_before_serving(
     monkeypatch.setattr(_runner.gc, "freeze", lambda: calls.append("freeze"))
     monkeypatch.setattr(_scaffold, "_freeze_gc_after_first_turn", False)
 
-    class _Server:
-        def __init__(self, _config: object) -> None:
-            pass
-
+    class _Server(_runner._HardExitServer):
         def run(self) -> None:
             calls.append(f"serve armed={_scaffold._freeze_gc_after_first_turn}")
 
     monkeypatch.setattr(_runner, "_HardExitServer", _Server)
-    _runner.main(
-        [
-            "--harness",
-            "test",
-            "--module",
-            "tests.runtime.harnesses._test_harness",
-            "--socket",
-            "/tmp/example.sock",
-            "--conversation-id",
-            "conv_abc",
-        ]
-    )
+    ctrl_break = getattr(signal, "SIGBREAK", None)
+    previous_handler = signal.getsignal(ctrl_break) if ctrl_break is not None else None
+    try:
+        _runner.main(
+            [
+                "--harness",
+                "test",
+                "--module",
+                "tests.runtime.harnesses._test_harness",
+                "--socket",
+                "/tmp/example.sock",
+                "--conversation-id",
+                "conv_abc",
+            ]
+        )
+    finally:
+        if ctrl_break is not None:
+            signal.signal(ctrl_break, previous_handler)
 
     assert calls == ["freeze", "serve armed=True"]

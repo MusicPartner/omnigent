@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import os
 import sys
 import types
 import unittest
@@ -3623,7 +3624,8 @@ def test_gateway_turn_without_sh_reports_the_auth_failure(monkeypatch, tmp_path)
     The bearer-token hook launches the ucode auth command through ``sh``;
     native Windows has none, and the OpenAI SDK wraps the resulting
     ``FileNotFoundError`` into an opaque ``APIConnectionError``. The turn
-    may still fail, but not as "Connection error.".
+    may still fail, but not as "Connection error.". Windows refuses a missing
+    profile during construction, before a turn or HTTP request can start.
 
     :param monkeypatch: Pytest monkeypatch fixture.
     :param tmp_path: Empty directory used as the entire ``PATH``.
@@ -3653,27 +3655,37 @@ def test_gateway_turn_without_sh_reports_the_auth_failure(monkeypatch, tmp_path)
     with pytest.raises(FileNotFoundError):
         subprocess.run(["sh", "-c", "true"], check=False)
 
-    executor = OpenAIAgentsSDKExecutor(
-        model="databricks-gpt-6-astra",
-        gateway_host=f"http://127.0.0.1:{gateway.server_port}",
-        base_url_override=f"http://127.0.0.1:{gateway.server_port}/v1",
-        gateway_auth_command="printf %s mock-token",
-        retry_policy=RetryPolicy(max_retries=0),
-    )
+    def make_executor() -> OpenAIAgentsSDKExecutor:
+        return OpenAIAgentsSDKExecutor(
+            model="databricks-gpt-6-astra",
+            gateway_host=f"http://127.0.0.1:{gateway.server_port}",
+            base_url_override=f"http://127.0.0.1:{gateway.server_port}/v1",
+            gateway_auth_command="printf %s mock-token",
+            retry_policy=RetryPolicy(max_retries=0),
+        )
+
     try:
-        events = _run(
-            _collect(
-                executor.run_turn(
-                    messages=[{"role": "user", "content": "hi"}],
-                    tools=[],
-                    system_prompt="",
-                    config=ExecutorConfig(),
+        if os.name == "nt":
+            with pytest.raises(OSError, match=r"requires a Databricks profile.*no 'sh'"):
+                make_executor()
+            return
+        executor = make_executor()
+        try:
+            events = _run(
+                _collect(
+                    executor.run_turn(
+                        messages=[{"role": "user", "content": "hi"}],
+                        tools=[],
+                        system_prompt="",
+                        config=ExecutorConfig(),
+                    )
                 )
             )
-        )
-        _run(executor.close())
+        finally:
+            _run(executor.close())
     finally:
         gateway.shutdown()
+        gateway.server_close()
 
     errors = [e for e in events if isinstance(e, ExecutorError)]
     assert errors, f"expected the turn to report its failure, got {events!r}"

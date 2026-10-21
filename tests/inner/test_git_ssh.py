@@ -38,6 +38,13 @@ from omnigent.inner.terminal import build_terminal_os_env_spec
 from omnigent.spec.parser import _parse_git_ssh, _parse_os_env_sandbox
 from tests.inner.git_ssh_fixture import _nonloopback_ip, _run
 
+_POSIX_IDENTITY_FILE = "/sandbox/identity"
+_POSIX_KNOWN_HOSTS_FILE = "/sandbox/known_hosts"
+requires_unix_git_ssh = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Git SSH broker requires the Unix sandbox backend and AF_UNIX transport",
+)
+
 
 def _git_env(broker: GitSshBroker) -> dict[str, str]:
     env = os.environ.copy()
@@ -51,11 +58,27 @@ def broker_dir() -> Iterator[Path]:
         yield Path(folder)
 
 
-def test_git_ssh_empty_programmatic_bindings_fail_loudly(broker_dir: Path) -> None:
-    with pytest.raises(ValueError, match="at least one binding"):
-        start_git_ssh_broker([], broker_dir)
+def test_git_ssh_broker_rejects_unsupported_platform_or_empty_bindings(
+    tmp_path: Path,
+) -> None:
+    if sys.platform == "win32":
+        binding = GitSshBinding(
+            host="git.example.test",
+            port=22,
+            username="git",
+            repository="org/repo.git",
+            operations=frozenset({"fetch"}),
+            identity_file=_POSIX_IDENTITY_FILE,
+            known_hosts_file=_POSIX_KNOWN_HOSTS_FILE,
+        )
+        with pytest.raises(GitSshDenied, match="requires a Unix sandbox backend"):
+            start_git_ssh_broker([binding], tmp_path)
+    else:
+        with pytest.raises(ValueError, match="at least one binding"):
+            start_git_ssh_broker([], tmp_path)
 
 
+@requires_unix_git_ssh
 def test_git_ssh_transfer_limit_reports_denial(
     ssh_git_server: tuple[GitSshBinding, str, Path],
     broker_dir: Path,
@@ -78,6 +101,7 @@ def test_git_ssh_transfer_limit_reports_denial(
         broker.stop()
 
 
+@requires_unix_git_ssh
 def test_git_ssh_broker_fetch_and_denials(
     ssh_git_server: tuple[GitSshBinding, str, Path], tmp_path: Path, broker_dir: Path
 ) -> None:
@@ -145,6 +169,7 @@ def test_git_ssh_broker_fetch_and_denials(
         broker.stop()
 
 
+@requires_unix_git_ssh
 def test_git_ssh_broker_push_requires_write_binding(
     ssh_git_server: tuple[GitSshBinding, str, Path], broker_dir: Path
 ) -> None:
@@ -176,6 +201,7 @@ def test_git_ssh_broker_push_requires_write_binding(
         broker.stop()
 
 
+@requires_unix_git_ssh
 @pytest.mark.parametrize("ssh_git_server", ["nonloopback"], indirect=True)
 def test_git_ssh_broker_uses_dns_name_and_pinned_address(
     ssh_git_server: tuple[GitSshBinding, str, Path],
@@ -267,13 +293,13 @@ def test_git_ssh_rejects_mixed_dns_answers(
         _resolve_pinned_ip(binding)
 
 
-def test_git_ssh_parser_accepts_exact_dns_binding(tmp_path: Path) -> None:
+def test_git_ssh_parser_accepts_exact_dns_binding() -> None:
     binding = {
         "host": "Git.Example.Test",
         "username": "git",
         "repository": "org/repo.git",
-        "identity_file": str(tmp_path / "key"),
-        "known_hosts_file": str(tmp_path / "known_hosts"),
+        "identity_file": _POSIX_IDENTITY_FILE,
+        "known_hosts_file": _POSIX_KNOWN_HOSTS_FILE,
     }
     parsed = _parse_git_ssh([binding])
     assert parsed is not None
@@ -305,24 +331,24 @@ def test_git_ssh_parser_accepts_exact_dns_binding(tmp_path: Path) -> None:
         ("allow_loopback", "yes"),
     ],
 )
-def test_git_ssh_parser_rejects_unsafe_binding(tmp_path: Path, field: str, value: object) -> None:
+def test_git_ssh_parser_rejects_unsafe_binding(field: str, value: object) -> None:
     binding: dict[str, object] = {
         "host": "git.example.test",
         "repository": "org/repo.git",
-        "identity_file": str(tmp_path / "key"),
-        "known_hosts_file": str(tmp_path / "known_hosts"),
+        "identity_file": _POSIX_IDENTITY_FILE,
+        "known_hosts_file": _POSIX_KNOWN_HOSTS_FILE,
     }
     binding[field] = value
     with pytest.raises(OmnigentError):
         _parse_git_ssh([binding])
 
 
-def test_git_ssh_loopback_requires_exact_local_grant(tmp_path: Path) -> None:
+def test_git_ssh_loopback_requires_exact_local_grant() -> None:
     binding: dict[str, object] = {
         "host": "127.0.0.1",
         "repository": "org/repo.git",
-        "identity_file": str(tmp_path / "key"),
-        "known_hosts_file": str(tmp_path / "known_hosts"),
+        "identity_file": _POSIX_IDENTITY_FILE,
+        "known_hosts_file": _POSIX_KNOWN_HOSTS_FILE,
         "allow_loopback": True,
         "allowed_cidrs": ["127.0.0.1/32"],
     }
@@ -342,8 +368,8 @@ def test_git_ssh_programmatic_binding_cannot_disable_containment(tmp_path: Path)
         username="git",
         repository="org/repo.git",
         operations=frozenset({"fetch"}),
-        identity_file=str(tmp_path / "key"),
-        known_hosts_file=str(tmp_path / "known_hosts"),
+        identity_file=_POSIX_IDENTITY_FILE,
+        known_hosts_file=_POSIX_KNOWN_HOSTS_FILE,
     )
     with pytest.raises(ValueError, match="git_ssh requires"):
         resolve_sandbox(
@@ -410,15 +436,15 @@ def test_git_ssh_credential_files_cannot_enter_sandbox_grants(
         )
 
 
-def test_git_ssh_terminal_cannot_override_containment(tmp_path: Path) -> None:
+def test_git_ssh_terminal_cannot_override_containment() -> None:
     binding = GitSshBinding(
         host="git.example.test",
         port=22,
         username="git",
         repository="org/repo.git",
         operations=frozenset({"fetch"}),
-        identity_file=str(tmp_path / "key"),
-        known_hosts_file=str(tmp_path / "known_hosts"),
+        identity_file=_POSIX_IDENTITY_FILE,
+        known_hosts_file=_POSIX_KNOWN_HOSTS_FILE,
     )
     parent = OSEnvSpec(sandbox=OSEnvSandboxSpec(type="linux_bwrap", git_ssh=[binding]))
     terminal = TerminalEnvSpec(command="bash", os_env="inherit", allow_sandbox_override=True)
@@ -484,6 +510,7 @@ def test_git_ssh_rejects_non_exact_host_key_file(tmp_path: Path) -> None:
         _validate_pinned_host_key(binding)
 
 
+@requires_unix_git_ssh
 def test_git_ssh_revocation_terminates_active_connection(
     ssh_git_server: tuple[GitSshBinding, str, Path], broker_dir: Path
 ) -> None:
@@ -517,6 +544,7 @@ def test_git_ssh_revocation_terminates_active_connection(
         broker.stop()
 
 
+@requires_unix_git_ssh
 def test_git_ssh_socket_requires_its_own_capability(tmp_path: Path, broker_dir: Path) -> None:
     binding = GitSshBinding(
         host="git.example.test",
@@ -549,6 +577,7 @@ def test_git_ssh_socket_requires_its_own_capability(tmp_path: Path, broker_dir: 
         second.stop()
 
 
+@requires_unix_git_ssh
 def test_git_ssh_stop_closes_idle_handshake(tmp_path: Path, broker_dir: Path) -> None:
     binding = GitSshBinding(
         host="git.example.test",
@@ -573,6 +602,7 @@ def test_git_ssh_stop_closes_idle_handshake(tmp_path: Path, broker_dir: Path) ->
         assert sock.recv(1) == b""
 
 
+@requires_unix_git_ssh
 def test_git_ssh_stop_revokes_socket_during_stalled_dns(
     ssh_git_server: tuple[GitSshBinding, str, Path],
     broker_dir: Path,
@@ -611,6 +641,7 @@ def test_git_ssh_stop_revokes_socket_during_stalled_dns(
         broker.stop()
 
 
+@requires_unix_git_ssh
 def test_git_ssh_broker_rejects_wrong_host_key(
     ssh_git_server: tuple[GitSshBinding, str, Path], tmp_path: Path, broker_dir: Path
 ) -> None:

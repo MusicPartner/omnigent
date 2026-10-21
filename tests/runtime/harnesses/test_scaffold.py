@@ -111,26 +111,30 @@ async def _stream_iter(
             yield _ParsedSSEEvent(event=event_name, data=data_payload)
 
 
-def _make_side_client(socket_path: str) -> httpx.AsyncClient:
+def _make_side_client(manager: HarnessProcessManager, conversation_id: str) -> httpx.AsyncClient:
     """
-    Build a SEPARATE httpx client bound to the same Unix socket.
+    Build a SEPARATE httpx client bound to the manager's live endpoint.
 
     Tests that need to issue a ``tool_result`` / ``interrupt`` /
     ``approval`` event concurrently with an open streaming
-    response use this so the second request gets its own TCP
+    response use this so the second request gets its own transport
     connection — sharing one client across both ends of the
     simulated round-trip can block the second request behind the
     first's keepalive connection (the symptom is a httpx.ReadError
     on the streaming side mid-test).
 
-    :param socket_path: Absolute Unix socket path the harness
-        bound, fetched via :meth:`HarnessProcessManager.socket_path`.
-    :returns: An :class:`httpx.AsyncClient` ready to issue
-        side-channel requests.
+    The manager entry carries the platform-specific route and auth header:
+    Unix-domain socket on POSIX, or loopback TCP on Windows.
+
+    :param manager: The started process manager for this conversation.
+    :param conversation_id: The conversation whose harness is already running.
+    :returns: An :class:`httpx.AsyncClient` ready to issue side-channel requests.
     """
+    entry = manager._entries[conversation_id]
     return httpx.AsyncClient(
-        transport=httpx.AsyncHTTPTransport(uds=socket_path),
-        base_url="http://harness.local",
+        transport=entry.endpoint.make_transport(),
+        base_url=entry.endpoint.base_url,
+        headers=entry.client.headers,
     )
 
 
@@ -1160,7 +1164,7 @@ async def test_session_tool_result_event_resolves_parked_dispatch(
     """
     conv_id = "conv_session_tool"
     stream_client = await manager.get_client(conv_id, _TEST_HARNESS_NAME)
-    side_client = _make_side_client(str(manager.socket_path(conv_id)))
+    side_client = _make_side_client(manager, conv_id)
     events: list[_ParsedSSEEvent] = []
     start_body = {
         "type": "message",
@@ -1230,7 +1234,7 @@ async def test_session_tool_result_over_cap_streams_truncated_but_returns_full(
     """
     conv_id = "conv_session_tool_cap"
     stream_client = await manager.get_client(conv_id, _TEST_HARNESS_NAME)
-    side_client = _make_side_client(str(manager.socket_path(conv_id)))
+    side_client = _make_side_client(manager, conv_id)
     # 2 MiB — comfortably over the 1 MiB cap so truncation is unambiguous.
     big_output = "x" * (2 * 1024 * 1024)
     start_body = {"type": "message", "role": "user", "model": "test-agent", "content": []}
@@ -1310,7 +1314,7 @@ async def test_session_tool_result_event_404s_on_conversation_id_mismatch(
     """
     conv_id = "conv_session_patch_mismatch"
     stream_client = await manager.get_client(conv_id, _TEST_HARNESS_NAME)
-    side_client = _make_side_client(str(manager.socket_path(conv_id)))
+    side_client = _make_side_client(manager, conv_id)
     start_body = {
         "type": "message",
         "role": "user",
@@ -1369,7 +1373,7 @@ async def test_session_interrupt_event_cancels_in_flight_turn(
     """
     conv_id = "conv_session_cancel"
     stream_client = await manager.get_client(conv_id, _TEST_HARNESS_NAME)
-    side_client = _make_side_client(str(manager.socket_path(conv_id)))
+    side_client = _make_side_client(manager, conv_id)
     events: list[_ParsedSSEEvent] = []
     start_body = {
         "type": "message",
@@ -1456,7 +1460,7 @@ async def test_session_approval_event_resolves_elicitation(
     """
     conv_id = "conv_session_elicit"
     stream_client = await manager.get_client(conv_id, _TEST_HARNESS_NAME)
-    side_client = _make_side_client(str(manager.socket_path(conv_id)))
+    side_client = _make_side_client(manager, conv_id)
     events: list[_ParsedSSEEvent] = []
     start_body = {
         "type": "message",
@@ -1506,7 +1510,7 @@ async def test_session_approval_event_404s_on_conversation_id_mismatch(
     """
     conv_id = "conv_session_elicit_mismatch"
     stream_client = await manager.get_client(conv_id, _TEST_HARNESS_NAME)
-    side_client = _make_side_client(str(manager.socket_path(conv_id)))
+    side_client = _make_side_client(manager, conv_id)
     start_body = {
         "type": "message",
         "role": "user",
@@ -1565,7 +1569,7 @@ async def test_session_message_event_without_previous_response_id_injects_active
     """
     conv_id = "conv_session_native_inject"
     stream_client = await manager.get_client(conv_id, _TEST_HARNESS_NAME)
-    side_client = _make_side_client(str(manager.socket_path(conv_id)))
+    side_client = _make_side_client(manager, conv_id)
     events: list[_ParsedSSEEvent] = []
     start_body = {
         "type": "message",
@@ -1623,8 +1627,8 @@ async def test_interrupt_then_message_without_prev_id_starts_fresh_turn(
     """
     conv_id = "conv_interrupt_fresh"
     stream_client = await manager.get_client(conv_id, _TEST_HARNESS_NAME)
-    side_client = _make_side_client(str(manager.socket_path(conv_id)))
-    followup_client = _make_side_client(str(manager.socket_path(conv_id)))
+    side_client = _make_side_client(manager, conv_id)
+    followup_client = _make_side_client(manager, conv_id)
     start_body = {"type": "message", "role": "user", "model": "test-agent", "content": []}
     followup_body = {
         "type": "message",
@@ -1686,9 +1690,9 @@ async def test_steer_after_interrupt_does_not_start_a_stray_turn(
     """
     conv_id = "conv_steer_after_interrupt"
     stream_client = await manager.get_client(conv_id, _TEST_HARNESS_NAME)
-    side_client = _make_side_client(str(manager.socket_path(conv_id)))
-    steer_client = _make_side_client(str(manager.socket_path(conv_id)))
-    next_client = _make_side_client(str(manager.socket_path(conv_id)))
+    side_client = _make_side_client(manager, conv_id)
+    steer_client = _make_side_client(manager, conv_id)
+    next_client = _make_side_client(manager, conv_id)
     start_body = {"type": "message", "role": "user", "model": "test-agent", "content": []}
     followup = [{"type": "input_text", "text": "say hi"}]
     steer_body = {**start_body, "content": followup, "injection_id": "inj_after_interrupt"}
@@ -1736,7 +1740,7 @@ async def test_steer_with_injection_id_injects_live_turn(
     """A runner steer (``injection_id`` set) still injects into a live turn."""
     conv_id = "conv_steer_live_turn"
     stream_client = await manager.get_client(conv_id, _TEST_HARNESS_NAME)
-    side_client = _make_side_client(str(manager.socket_path(conv_id)))
+    side_client = _make_side_client(manager, conv_id)
     start_body = {"type": "message", "role": "user", "model": "test-agent", "content": []}
     steer_body = {
         **start_body,
@@ -1777,8 +1781,8 @@ async def test_interrupt_then_message_with_prev_id_starts_fresh_turn(
     """
     conv_id = "conv_interrupt_fresh_previd"
     stream_client = await manager.get_client(conv_id, _TEST_HARNESS_NAME)
-    side_client = _make_side_client(str(manager.socket_path(conv_id)))
-    followup_client = _make_side_client(str(manager.socket_path(conv_id)))
+    side_client = _make_side_client(manager, conv_id)
+    followup_client = _make_side_client(manager, conv_id)
     start_body = {"type": "message", "role": "user", "model": "test-agent", "content": []}
     followup_status: int | None = None
     followup_events: list[_ParsedSSEEvent] = []
@@ -1845,7 +1849,7 @@ async def test_session_message_event_in_band_injection(
     """
     conv_id = "conv_session_inject"
     stream_client = await manager.get_client(conv_id, _TEST_HARNESS_NAME)
-    side_client = _make_side_client(str(manager.socket_path(conv_id)))
+    side_client = _make_side_client(manager, conv_id)
     events: list[_ParsedSSEEvent] = []
     start_body = {
         "type": "message",

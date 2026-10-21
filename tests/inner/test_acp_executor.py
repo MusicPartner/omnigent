@@ -2734,7 +2734,7 @@ async def test_start_process_guard_raises_clear_error_on_deleted_cwd(
     assert error_events, f"expected ExecutorError, got: {[type(e).__name__ for e in events]}"
     msg = error_events[0].message
     assert "working directory" in msg, f"expected 'working directory' in: {msg!r}"
-    assert str(workspace) in msg, f"expected path in: {msg!r}"
+    assert repr(str(workspace)) in msg, f"expected path in: {msg!r}"
 
 
 @pytest.mark.asyncio
