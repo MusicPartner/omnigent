@@ -19,11 +19,12 @@ import shutil
 import threading
 from collections.abc import AsyncIterator
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from omnigent.inner.datamodel import OSEnvSandboxSpec, OSEnvSpec, TerminalEnvSpec
+from omnigent.inner.os_env import OSEnvironment
 from omnigent.inner.terminal import TerminalInstance
 from omnigent.terminals import TerminalRegistry
 from omnigent.terminals.registry import TerminalListEntry, conversation_link_for_id
@@ -301,6 +302,81 @@ async def test_launch_replaces_stale_running_entry(
     assert stale.closed is True
     assert reg.get("conv_x", "shell", "s1") is created
     assert created.lifecycle_trace.session_id == "conv_x"
+
+
+async def test_launch_forwards_backend_context_and_assigns_lifecycle_before_launch(
+    tmp_path: Path,
+) -> None:
+    """The registry resolves shared state and launch metadata before delegating."""
+    conversation_id = "conv_contract"
+    terminal_name = "shell"
+    session_key = "s1"
+    parent_os_env = OSEnvSpec(
+        cwd=str(tmp_path),
+        sandbox=OSEnvSandboxSpec(
+            type="linux_bwrap",
+            write_paths=[{"path": str(tmp_path), "copy_on_write": True}],
+        ),
+    )
+    parent_environment = Mock(spec=OSEnvironment)
+    spec = TerminalEnvSpec(command="bash")
+    instance = TerminalInstance(
+        name=terminal_name,
+        session_key=session_key,
+        socket_path=tmp_path / "shell.sock",
+        private_dir=tmp_path / "shell",
+    )
+    launch_cwd = tmp_path / "resolved-cwd"
+    backend = Mock()
+    backend.create.return_value = (instance, launch_cwd)
+    reg = TerminalRegistry(backend=backend)
+    resolver_calls: list[tuple[str, OSEnvSpec]] = []
+    launch_context: list[tuple[Path | None, str | None, str | None]] = []
+
+    def resolve_parent_environment(
+        resolved_conversation_id: str, resolved_os_env: OSEnvSpec
+    ) -> OSEnvironment:
+        resolver_calls.append((resolved_conversation_id, resolved_os_env))
+        return parent_environment
+
+    async def record_launch(*, cwd: Path | None = None) -> None:
+        launch_context.append(
+            (cwd, instance.program_status_app, instance.lifecycle_trace.session_id)
+        )
+        instance.running = True
+
+    reg.environment_resolver = resolve_parent_environment
+    instance.launch = AsyncMock(side_effect=record_launch)  # type: ignore[method-assign]
+    instance.is_alive = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+    result = await reg.launch(
+        conversation_id,
+        terminal_name,
+        session_key,
+        spec,
+        parent_os_env=parent_os_env,
+        cwd_override="child-cwd",
+        sandbox_override="none",
+        program_status_app="claude-code",
+    )
+
+    assert len(resolver_calls) == 1
+    assert resolver_calls[0][0] == conversation_id
+    assert resolver_calls[0][1] is parent_os_env
+    backend.create.assert_called_once_with(
+        terminal_name,
+        session_key,
+        spec,
+        parent_os_env=parent_os_env,
+        parent_environment=parent_environment,
+        cwd_override="child-cwd",
+        sandbox_override="none",
+        conversation_link="/c/conv_contract",
+    )
+    assert backend.create.call_args.kwargs["parent_environment"] is parent_environment
+    assert launch_context == [(launch_cwd, "claude-code", conversation_id)]
+    assert result is instance
+    assert reg.get(conversation_id, terminal_name, session_key) is instance
 
 
 def test_transfer_moves_terminal_without_closing_tmux(tmp_path: Path) -> None:

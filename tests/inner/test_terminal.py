@@ -6,6 +6,7 @@ import asyncio
 import errno
 import json
 import logging
+import shlex
 import shutil
 import subprocess
 import sys
@@ -36,8 +37,14 @@ from omnigent.inner.terminal_lifecycle import (
     TERMINAL_LAUNCH_SESSION_ID_ENV,
 )
 from omnigent.native import owner_claim
-from omnigent.runner.identity import RUNNER_TUNNEL_BINDING_TOKEN_ENV_VAR
+from omnigent.runner.identity import (
+    RUNNER_AUTH_SECRET_ENV_VARS,
+    RUNNER_TUNNEL_BINDING_TOKEN_ENV_VAR,
+)
 from omnigent.runner.resource_registry import trim_terminal_output
+from omnigent.terminals import program_status
+from omnigent.terminals import psmux as psmux_mod
+from omnigent.terminals.psmux import PsmuxTerminalInstance
 
 
 @dataclass
@@ -2200,10 +2207,16 @@ async def _capture_launch_argv(
 
 
 @pytest.mark.parametrize("launch_fails", [False, True])
+@pytest.mark.parametrize(
+    "instance_type", [TerminalInstance, PsmuxTerminalInstance], ids=["tmux", "psmux"]
+)
 async def test_launch_discards_previous_exit_diagnostics_before_starting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, launch_fails: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    launch_fails: bool,
+    instance_type: type[TerminalInstance],
 ) -> None:
-    instance = TerminalInstance(
+    instance = instance_type(
         name="codex",
         session_key="main",
         socket_path=tmp_path / "tmux.sock",
@@ -2220,12 +2233,13 @@ async def test_launch_discards_previous_exit_diagnostics_before_starting(
         return _ProcessWithStdout(returncode=1 if launch_fails else 0, stderr=b"launch failed")
 
     monkeypatch.setattr(
-        terminal_mod,
+        psmux_mod if instance_type is PsmuxTerminalInstance else terminal_mod,
         "asyncio",
         SimpleNamespace(create_subprocess_exec=spawn, subprocess=asyncio.subprocess),
     )
     if launch_fails:
-        with pytest.raises(RuntimeError, match="tmux launch failed"):
+        backend_name = "psmux" if instance_type is PsmuxTerminalInstance else "tmux"
+        with pytest.raises(RuntimeError, match=f"{backend_name} launch failed"):
             await instance.launch(cwd=tmp_path)
     else:
         await instance.launch(cwd=tmp_path)
@@ -2235,8 +2249,11 @@ async def test_launch_discards_previous_exit_diagnostics_before_starting(
     assert instance.last_exit_text() is None
 
 
+@pytest.mark.parametrize(
+    "instance_type", [TerminalInstance, PsmuxTerminalInstance], ids=["tmux", "psmux"]
+)
 async def test_launch_replaces_inherited_correlation_and_resets_only_for_new_launch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, instance_type: type[TerminalInstance]
 ) -> None:
     inherited = {
         TERMINAL_INSTANCE_ID_ENV: "a" * 32,
@@ -2245,7 +2262,7 @@ async def test_launch_replaces_inherited_correlation_and_resets_only_for_new_lau
     }
     for key, value in inherited.items():
         monkeypatch.setenv(key, value)
-    instance = TerminalInstance(
+    instance = instance_type(
         name="claude",
         session_key="main",
         socket_path=tmp_path / "tmux.sock",
@@ -2255,7 +2272,7 @@ async def test_launch_replaces_inherited_correlation_and_resets_only_for_new_lau
     instance.lifecycle_trace.session_id = "synthetic-owner"
     spawn = AsyncMock(return_value=_SuccessfulProcess())
     monkeypatch.setattr(
-        terminal_mod,
+        psmux_mod if instance_type is PsmuxTerminalInstance else terminal_mod,
         "asyncio",
         SimpleNamespace(create_subprocess_exec=spawn, subprocess=asyncio.subprocess),
     )
@@ -2285,10 +2302,13 @@ async def test_launch_replaces_inherited_correlation_and_resets_only_for_new_lau
     assert snapshot["terminal_cleanup_started_at"] is None
 
 
+@pytest.mark.parametrize(
+    "instance_type", [TerminalInstance, PsmuxTerminalInstance], ids=["tmux", "psmux"]
+)
 async def test_failed_launch_telemetry_does_not_block_or_reuse_parent_identity(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, instance_type: type[TerminalInstance]
 ) -> None:
-    instance = TerminalInstance(
+    instance = instance_type(
         name="claude",
         session_key="main",
         socket_path=tmp_path / "tmux.sock",
@@ -2303,7 +2323,7 @@ async def test_failed_launch_telemetry_does_not_block_or_reuse_parent_identity(
     monkeypatch.setattr(instance.lifecycle_trace, "launch_environment", fail)
     spawn = AsyncMock(return_value=_SuccessfulProcess())
     monkeypatch.setattr(
-        terminal_mod,
+        psmux_mod if instance_type is PsmuxTerminalInstance else terminal_mod,
         "asyncio",
         SimpleNamespace(create_subprocess_exec=spawn, subprocess=asyncio.subprocess),
     )
@@ -2314,6 +2334,144 @@ async def test_failed_launch_telemetry_does_not_block_or_reuse_parent_identity(
         TERMINAL_LAUNCH_ID_ENV,
         TERMINAL_LAUNCH_SESSION_ID_ENV,
     }.intersection(spawn.call_args.kwargs["env"])
+
+
+@pytest.mark.parametrize(
+    "instance_type", [TerminalInstance, PsmuxTerminalInstance], ids=["tmux", "psmux"]
+)
+@pytest.mark.parametrize("inherit_env", [False, True], ids=["isolated", "inherited"])
+async def test_launch_environment_preserves_windows_override_and_exclusion_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    instance_type: type[TerminalInstance],
+    inherit_env: bool,
+) -> None:
+    monkeypatch.setattr(terminal_mod, "IS_WINDOWS", True)
+    monkeypatch.setenv("OMNIGENT_TMUX_SOCK", "parent-control-socket")
+    monkeypatch.setenv("OMNIGENT_TEST_INHERITED", "ambient")
+    monkeypatch.setenv("OMNIGENT_TEST_EXCLUDED", "ambient-secret")
+    instance = instance_type(
+        name="shell",
+        session_key="main",
+        socket_path=tmp_path / "mux.sock",
+        private_dir=tmp_path,
+        inherit_env=inherit_env,
+        env={
+            "OMNIGENT_TEST_KEPT": "explicit",
+            "OMNIGENT_TEST_EXCLUDED": "override-secret",
+            "LC_ALL": "C",
+            "LANG": "operator-locale",
+            **dict.fromkeys(RUNNER_AUTH_SECRET_ENV_VARS, "override-runner-secret"),
+        },
+        env_unset=["OMNIGENT_TEST_EXCLUDED"],
+    )
+    spawn = AsyncMock(return_value=_SuccessfulProcess())
+    monkeypatch.setattr(
+        psmux_mod if instance_type is PsmuxTerminalInstance else terminal_mod,
+        "asyncio",
+        SimpleNamespace(create_subprocess_exec=spawn, subprocess=asyncio.subprocess),
+    )
+
+    await instance.launch()
+
+    environment = spawn.call_args.kwargs["env"]
+    assert environment["OMNIGENT_TEST_KEPT"] == "explicit"
+    assert ("OMNIGENT_TEST_INHERITED" in environment) is inherit_env
+    assert "OMNIGENT_TEST_EXCLUDED" not in environment
+    assert "OMNIGENT_TMUX_SOCK" not in environment
+    assert not RUNNER_AUTH_SECRET_ENV_VARS.intersection(environment)
+    assert environment["LC_ALL"] == "C"
+    assert environment["LANG"] == "operator-locale"
+    assert instance.env["OMNIGENT_TEST_EXCLUDED"] == "override-secret"
+
+
+@pytest.mark.parametrize(
+    "instance_type", [TerminalInstance, PsmuxTerminalInstance], ids=["tmux", "psmux"]
+)
+@pytest.mark.parametrize("status_app", [None, "claude-code"], ids=["plain", "status"])
+async def test_launch_status_wrapper_preserves_literal_inner_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    instance_type: type[TerminalInstance],
+    status_app: str | None,
+) -> None:
+    status_path = tmp_path / "program-status.json"
+    status_path.write_text("stale", encoding="utf-8")
+    instance = instance_type(
+        name="shell",
+        session_key="main",
+        socket_path=tmp_path / "mux.sock",
+        private_dir=tmp_path,
+        command=sys.executable,
+        args=['{"value":"space & | %PATH% Å"}', "", "trailing\\"],
+        program_status_app=status_app,
+    )
+    spawn = AsyncMock(return_value=_SuccessfulProcess())
+    monkeypatch.setattr(
+        psmux_mod if instance_type is PsmuxTerminalInstance else terminal_mod,
+        "asyncio",
+        SimpleNamespace(create_subprocess_exec=spawn, subprocess=asyncio.subprocess),
+    )
+
+    await instance.launch()
+
+    argv = spawn.call_args.args
+    if instance_type is PsmuxTerminalInstance:
+        command = list(argv[argv.index("--") + 1 :])
+        executable = shutil.which(sys.executable) or sys.executable
+    else:
+        command = shlex.split(argv[-1])
+        executable = sys.executable
+    expected = [executable, *instance.args]
+    if status_app is not None:
+        expected = [
+            sys.executable,
+            str(Path(program_status.__file__)),
+            "--state-file",
+            str(status_path),
+            "--app",
+            status_app,
+            "--",
+            *expected,
+        ]
+        assert isinstance(instance.program_status, program_status.ProgramStatusReader)
+        assert instance.program_status.path == status_path
+        assert not status_path.exists()
+    else:
+        assert instance.program_status is None
+        assert status_path.read_text(encoding="utf-8") == "stale"
+    assert command == expected
+
+
+@pytest.mark.parametrize(
+    "instance_type", [TerminalInstance, PsmuxTerminalInstance], ids=["tmux", "psmux"]
+)
+async def test_launch_status_preparation_failure_does_not_spawn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, instance_type: type[TerminalInstance]
+) -> None:
+    status_path = tmp_path / "program-status.json"
+    status_path.mkdir()
+    instance = instance_type(
+        name="shell",
+        session_key="main",
+        socket_path=tmp_path / "mux.sock",
+        private_dir=tmp_path,
+        program_status_app="claude-code",
+    )
+    spawn = AsyncMock()
+    monkeypatch.setattr(
+        psmux_mod if instance_type is PsmuxTerminalInstance else terminal_mod,
+        "asyncio",
+        SimpleNamespace(create_subprocess_exec=spawn, subprocess=asyncio.subprocess),
+    )
+
+    with pytest.raises(OSError):
+        await instance.launch()
+
+    spawn.assert_not_awaited()
+    assert not instance.running
+    assert instance.program_status is None
+    assert status_path.is_dir()
 
 
 @pytest.mark.parametrize("version", [(3, 3), (3, 10)])
