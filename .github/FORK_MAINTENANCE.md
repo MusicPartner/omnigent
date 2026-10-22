@@ -2,6 +2,12 @@
 
 This fork keeps the native Windows changes while continuing to ingest stable releases from `omnigent-ai/omnigent`.
 
+For release integration and historical-contract recovery, use the maintained
+[`omnigent-release-integration` skill](../.claude/skills/omnigent-release-integration/SKILL.md).
+The [post-v0.19 isolation plan](../docs/windows/ISOLATION-PLAN-0.19.md) prioritizes
+contract tests/primitives and shared terminal preparation before further
+extraction. It is a plan, not permission to refactor or publish.
+
 ## Current automation policy (2026-10-21)
 
 At the user's request, automatic triggers on `main` are disabled. The main-branch

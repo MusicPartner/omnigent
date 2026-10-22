@@ -7,6 +7,8 @@ record is [`../windows-first-class-support-adr.md`](../windows-first-class-suppo
 
 Use this folder as the product/engineering workspace for native Windows support:
 
+- [`ISOLATION-PLAN-0.19.md`](ISOLATION-PLAN-0.19.md) - v0.14 contract review mapped to the validated v0.19 baseline; contract tests/primitives first, shared terminal preparation second. Runtime work is not started.
+- [`RELEASE-INTEGRATION-0.19.md`](RELEASE-INTEGRATION-0.19.md) - integration decisions, immutable evidence links and support limits.
 - [`PARITY-NEXT-STEPS.md`](PARITY-NEXT-STEPS.md) — remaining launch fixes, evidence, options and decisions.
 - [`IMPLEMENTATION-PLAN-2026-10-09.md`](IMPLEMENTATION-PLAN-2026-10-09.md) — delegated implementation, verified outcomes and blocked adoption gates.
 - [`UPSTREAM-DIRECTION-2026-10-09.md`](UPSTREAM-DIRECTION-2026-10-09.md) — upstream evidence, revised decisions and future merge risks.

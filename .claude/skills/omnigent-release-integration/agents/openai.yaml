@@ -1,0 +1,4 @@
+interface:
+  display_name: "Omnigent release integration"
+  short_description: "Integrate stable releases and plan contained Windows parity"
+  default_prompt: "Use $omnigent-release-integration to establish the latest validated Windows source, choose merge or semantic replay, recover historical contracts, and plan or execute only the authorized release/isolation phases with bounded economical delegation."

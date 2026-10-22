@@ -12,6 +12,7 @@ on:
       - windows-parity/v0.14-integration
       - windows-parity/v0.17-integration
       - windows-parity/v0.19-integration
+      - windows-parity/v0.19-isolation-p1-p2
     paths-ignore:
       - "**/*.md"
       - "docs/**"
@@ -29,9 +30,111 @@ env:
   PIP_INDEX_URL: https://pypi.org/simple
 
 jobs:
+  terminal-preparation-contracts:
+    name: Terminal preparation contracts (${{ matrix.os }})
+    if: ${{ github.ref == 'refs/heads/windows-parity/v0.19-isolation-p1-p2' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      OMNIGENT_SKIP_WEB_UI: "true"
+      CHARACTERIZATION_SHA: a07520b5053e24ccbc399356296ad47842d6ed6d
+      VALIDATED_BASE_SHA: 6a7c711308587a2c39dd916c0820af71debfbb67
+      CONTRACT_TESTS: >-
+        tests/terminals/test_backend_release_contract.py
+        tests/terminals/test_registry.py::test_launch_forwards_backend_context_and_assigns_lifecycle_before_launch
+        tests/terminals/test_registry.py::test_launch_replaces_stale_running_entry
+        tests/terminals/test_registry.py::test_close_expected_leaves_a_successor_on_the_same_key_running
+        tests/terminals/test_registry.py::test_close_expected_closes_its_own_instance
+        tests/inner/test_terminal.py::test_launch_discards_previous_exit_diagnostics_before_starting
+        tests/inner/test_terminal.py::test_launch_replaces_inherited_correlation_and_resets_only_for_new_launch
+        tests/inner/test_terminal.py::test_failed_launch_telemetry_does_not_block_or_reuse_parent_identity
+        tests/inner/test_terminal.py::test_launch_environment_preserves_windows_override_and_exclusion_order
+        tests/inner/test_terminal.py::test_launch_status_wrapper_preserves_literal_inner_command
+        tests/inner/test_terminal.py::test_launch_status_preparation_failure_does_not_spawn
+        tests/inner/test_terminal.py::test_apply_utf8_locale_default_fixes_repro_config
+        tests/inner/test_terminal.py::test_apply_utf8_locale_default_preserves_operator_locale
+        tests/inner/test_terminal.py::test_apply_utf8_locale_default_corrects_pinned_non_utf8_lc_all
+        tests/inner/test_terminal.py::test_apply_utf8_locale_default_noop_on_windows
+        tests/terminals/test_windows_psmux.py::test_psmux_launch_uses_isolated_absolute_python_wrapper
+    steps:
+      - name: Check out isolation candidate
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version-file: ".python-version"
+
+      - name: Set up uv
+        uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: true
+
+      - name: Install contract dependencies
+        run: uv sync --locked --group test --extra tracing
+
+      - name: Verify package 1 is test-only and select its implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse "$CHARACTERIZATION_SHA^")" = "$VALIDATED_BASE_SHA"
+          git diff --exit-code "$VALIDATED_BASE_SHA" "$CHARACTERIZATION_SHA" -- omnigent pyproject.toml uv.lock
+          git switch --detach "$CHARACTERIZATION_SHA"
+          test "$(git rev-parse HEAD)" = "$CHARACTERIZATION_SHA"
+
+      - name: Characterize unchanged launch preparation on this platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --no-sync python -c "import omnigent; from pathlib import Path; assert Path(omnigent.__file__).resolve().is_relative_to(Path.cwd().resolve()); print(omnigent.__file__)"
+          read -r -a targets <<< "$CONTRACT_TESTS"
+          uv run --no-sync pytest "${targets[@]}" --collect-only -q --color=no > baseline-collection.log
+          grep '^tests/.*::' baseline-collection.log > baseline-nodes.txt
+          uv run --no-sync pytest "${targets[@]}" -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -q -ra --junitxml=isolation-baseline.xml
+
+      - name: Select package 2 and verify the same contract nodes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git switch --detach "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          read -r -a targets <<< "$CONTRACT_TESTS"
+          uv run --no-sync pytest "${targets[@]}" --collect-only -q --color=no > candidate-collection.log
+          grep '^tests/.*::' candidate-collection.log > candidate-nodes.txt
+          git diff --no-index --exit-code baseline-nodes.txt candidate-nodes.txt
+
+      - name: Verify shared launch preparation against the characterized contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          read -r -a targets <<< "$CONTRACT_TESTS"
+          uv run --no-sync pytest "${targets[@]}" -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -q -ra --junitxml=isolation-candidate.xml
+
+      - name: Upload baseline and candidate contract evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: terminal-preparation-${{ matrix.os }}-${{ github.sha }}
+          path: |
+            isolation-baseline.xml
+            isolation-candidate.xml
+            baseline-collection.log
+            candidate-collection.log
+            baseline-nodes.txt
+            candidate-nodes.txt
+          if-no-files-found: warn
+          retention-days: 30
+
   focused-linux:
     name: Focused Linux compatibility
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    needs: terminal-preparation-contracts
+    if: ${{ !cancelled() && (needs.terminal-preparation-contracts.result == 'success' || needs.terminal-preparation-contracts.result == 'skipped') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -221,7 +324,8 @@ jobs:
 
   windows-native:
     name: Native Windows compatibility
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    needs: terminal-preparation-contracts
+    if: ${{ !cancelled() && (needs.terminal-preparation-contracts.result == 'success' || needs.terminal-preparation-contracts.result == 'skipped') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     runs-on: windows-latest
     timeout-minutes: 35
     env:
