@@ -1587,6 +1587,26 @@ class TerminalInstance:
             conversation_link or "",
         )
 
+    def _wrap_program_status(self, command: list[str]) -> list[str]:
+        """Wrap the prepared command with the opt-in program-status observer."""
+        if self.program_status_app is None:
+            return command
+        from omnigent.terminals import program_status
+
+        status_path = self.private_dir / "program-status.json"
+        status_path.unlink(missing_ok=True)
+        self.program_status = program_status.ProgramStatusReader(status_path)
+        return [
+            sys.executable,
+            str(Path(program_status.__file__)),
+            "--state-file",
+            str(status_path),
+            "--app",
+            self.program_status_app,
+            "--",
+            *command,
+        ]
+
     async def launch(self, *, cwd: Path | None = None) -> None:
         """Start the tmux session."""
         try:
@@ -1596,8 +1616,6 @@ class TerminalInstance:
             raise
 
     async def _launch_impl(self, *, cwd: Path | None = None) -> None:
-        from omnigent.terminals import program_status
-
         if self.running:
             return
         self._last_exit_snapshot = None
@@ -1658,20 +1676,7 @@ class TerminalInstance:
             inner_cmd = [launcher_path, *self.args]
         else:
             inner_cmd = [self.command, *self.args]
-        if self.program_status_app is not None:
-            status_path = self.private_dir / "program-status.json"
-            status_path.unlink(missing_ok=True)
-            self.program_status = program_status.ProgramStatusReader(status_path)
-            inner_cmd = [
-                sys.executable,
-                str(Path(program_status.__file__)),
-                "--state-file",
-                str(status_path),
-                "--app",
-                self.program_status_app,
-                "--",
-                *inner_cmd,
-            ]
+        inner_cmd = self._wrap_program_status(inner_cmd)
         inner_str = shlex.join(inner_cmd)
         if self.tmux_start_on_attach:
             inner_str = f"tmux wait-for {_TMUX_START_ON_ATTACH_CHANNEL}; exec {inner_str}"

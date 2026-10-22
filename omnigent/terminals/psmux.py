@@ -20,13 +20,11 @@ from omnigent.inner.claude_windows import prefer_native_claude_exe
 from omnigent.inner.datamodel import OSEnvSpec, TerminalEnvSpec
 from omnigent.inner.os_env import OSEnvironment, create_os_environment
 from omnigent.inner.sandbox import with_additional_read_roots
-from omnigent.inner.terminal import TerminalInstance, build_terminal_os_env_spec
-from omnigent.inner.terminal_lifecycle import (
-    TERMINAL_INSTANCE_ID_ENV,
-    TERMINAL_LAUNCH_ID_ENV,
-    TERMINAL_LAUNCH_SESSION_ID_ENV,
+from omnigent.inner.terminal import (
+    TerminalInstance,
+    build_terminal_os_env_spec,
+    terminal_pane_environment,
 )
-from omnigent.runner.identity import strip_runner_auth_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -73,42 +71,20 @@ class PsmuxTerminalInstance(TerminalInstance):
         self._last_exit_status = None
         self._last_exit_signal = None
         effective_cwd = str(cwd or self.private_dir)
-        env: dict[str, str] = os.environ.copy() if self.inherit_env else {}
-        env.pop("OMNIGENT_TMUX_SOCK", None)
-        env.update(self.env)
-        for key in self.env_unset:
-            env.pop(key, None)
-        for key in (
-            TERMINAL_INSTANCE_ID_ENV,
-            TERMINAL_LAUNCH_ID_ENV,
-            TERMINAL_LAUNCH_SESSION_ID_ENV,
-        ):
-            env.pop(key, None)
         try:
-            env.update(self.lifecycle_trace.launch_environment(self.diagnostic_id))
+            launch_environment = self.lifecycle_trace.launch_environment(self.diagnostic_id)
         except Exception as exc:
             logger.debug("Terminal lifecycle correlation unavailable (%s)", type(exc).__name__)
-        env = strip_runner_auth_secrets(env)
+            launch_environment = {}
+        env = terminal_pane_environment(
+            inherit_env=self.inherit_env,
+            env=self.env,
+            env_unset=self.env_unset,
+            launch_environment=launch_environment,
+        )
 
         executable = prefer_native_claude_exe(shutil.which(self.command) or self.command)
-        command_args = [executable, *self.args]
-        program_status_app = getattr(self, "program_status_app", None)
-        if program_status_app is not None:
-            from omnigent.terminals import program_status
-
-            status_path = self.private_dir / "program-status.json"
-            status_path.unlink(missing_ok=True)
-            self.program_status = program_status.ProgramStatusReader(status_path)
-            command_args = [
-                sys.executable,
-                str(Path(program_status.__file__)),
-                "--state-file",
-                str(status_path),
-                "--app",
-                program_status_app,
-                "--",
-                *command_args,
-            ]
+        command_args = self._wrap_program_status([executable, *self.args])
         if self.env_unset:
             wrapper_path = (self.private_dir / "launch.py").resolve()
             wrapper_path.write_text(_PSMUX_CLEAN_ENV_SCRIPT, encoding="utf-8")
