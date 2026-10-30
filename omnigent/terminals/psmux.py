@@ -60,8 +60,13 @@ class PsmuxTerminalInstance(TerminalInstance):
     def _tmux_base_cmd(self) -> list[str]:
         return ["psmux", "-S", str(self.socket_path)]
 
+    def _remember_exit_status(self, fields: str) -> None:
+        """Ignore psmux's placeholder wait status on every pane-death path."""
+        del fields
+
     def _exit_status_is_pending(self, fields: str) -> bool:
         """psmux exposes placeholder status/signal fields, so leave both unknown."""
+        del fields
         return False
 
     async def launch(self, *, cwd: Path | None = None) -> None:
@@ -73,7 +78,7 @@ class PsmuxTerminalInstance(TerminalInstance):
         effective_cwd = str(cwd or self.private_dir)
         try:
             launch_environment = self.lifecycle_trace.launch_environment(self.diagnostic_id)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - diagnostics cannot prevent launch.
             logger.debug("Terminal lifecycle correlation unavailable (%s)", type(exc).__name__)
             launch_environment = {}
         env = terminal_pane_environment(

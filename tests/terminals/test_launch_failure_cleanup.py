@@ -11,29 +11,33 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 
 from omnigent.inner.datamodel import OSEnvSandboxSpec, OSEnvSpec, TerminalEnvSpec
-from omnigent.inner.terminal import TerminalCreateResult, TerminalInstance
+from omnigent.inner.terminal import TerminalInstance
 from omnigent.terminals import TerminalRegistry, registry
+from omnigent.terminals.backend import TmuxTerminalMuxBackend
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(20)]
 requires_tmux = pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is required")
 
 
-def _capture_instances(monkeypatch: pytest.MonkeyPatch) -> list[TerminalInstance]:
+def _capture_instances(
+    monkeypatch: pytest.MonkeyPatch, backend: TmuxTerminalMuxBackend
+) -> list[TerminalInstance]:
     created: list[TerminalInstance] = []
-    original = registry.create_terminal_instance
+    original = backend.create
 
-    def create(*args: Any, **kwargs: Any) -> TerminalCreateResult:
-        result = original(*args, **kwargs)
-        created.append(result.instance)
-        return result
+    def create(*args: Any, **kwargs: Any) -> tuple[TerminalInstance, Path]:
+        instance, cwd = original(*args, **kwargs)
+        created.append(instance)
+        return instance, cwd
 
-    monkeypatch.setattr(registry, "create_terminal_instance", create)
+    monkeypatch.setattr(backend, "create", create)
     return created
 
 
@@ -68,8 +72,9 @@ def _launch_failed_event(caplog: pytest.LogCaptureFixture) -> logging.LogRecord:
 async def test_missing_tmux_during_spawn_releases_private_resources(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    created = _capture_instances(monkeypatch)
-    terminal_registry = TerminalRegistry()
+    backend = TmuxTerminalMuxBackend()
+    created = _capture_instances(monkeypatch, backend)
+    terminal_registry = TerminalRegistry(backend=backend)
     empty_bin = tmp_path / "empty-bin"
     empty_bin.mkdir()
     caplog.set_level(logging.WARNING, logger=registry.__name__)
@@ -120,16 +125,14 @@ async def test_cleanup_failure_keeps_original_launch_error(
             raise RuntimeError("synthetic-private-cleanup-error")
 
     monkeypatch.setattr(instance, "close", close)
-    monkeypatch.setattr(
-        registry,
-        "create_terminal_instance",
-        lambda *_a, **_k: TerminalCreateResult(instance, tmp_path),
-    )
+    backend = SimpleNamespace(create=lambda *_a, **_k: (instance, tmp_path))
     monkeypatch.setattr(registry, "_CLOSE_TIMEOUT_S", 0.02)
     caplog.set_level(logging.WARNING, logger=registry.__name__)
 
     with pytest.raises(FileNotFoundError) as raised:
-        await TerminalRegistry().launch("owned-session", "shell", "main", _spec(tmp_path))
+        await TerminalRegistry(backend=backend).launch(
+            "owned-session", "shell", "main", _spec(tmp_path)
+        )
 
     assert raised.value is original
     record = _launch_failed_event(caplog)
@@ -162,17 +165,15 @@ async def test_close_outliving_its_grace_is_retained_and_logged(
         raise RuntimeError("synthetic-private-cleanup-error")
 
     monkeypatch.setattr(instance, "close", close)
-    monkeypatch.setattr(
-        registry,
-        "create_terminal_instance",
-        lambda *_a, **_k: TerminalCreateResult(instance, tmp_path),
-    )
+    backend = SimpleNamespace(create=lambda *_a, **_k: (instance, tmp_path))
     monkeypatch.setattr(registry, "_CLOSE_TIMEOUT_S", 0.02)
     caplog.set_level(logging.WARNING, logger=registry.__name__)
 
     preexisting_closes = set(registry._ABANDONED_CLOSES)
     with pytest.raises(FileNotFoundError) as raised:
-        await TerminalRegistry().launch("owned-session", "shell", "main", _spec(tmp_path))
+        await TerminalRegistry(backend=backend).launch(
+            "owned-session", "shell", "main", _spec(tmp_path)
+        )
 
     try:
         assert raised.value is original
@@ -214,15 +215,11 @@ async def test_caller_cancellation_during_cleanup_finishes_close_then_propagates
         closed = True
 
     monkeypatch.setattr(instance, "close", close)
-    monkeypatch.setattr(
-        registry,
-        "create_terminal_instance",
-        lambda *_a, **_k: TerminalCreateResult(instance, tmp_path),
-    )
+    backend = SimpleNamespace(create=lambda *_a, **_k: (instance, tmp_path))
     caplog.set_level(logging.WARNING, logger=registry.__name__)
 
     task = asyncio.create_task(
-        TerminalRegistry().launch("owned-session", "shell", "main", _spec(tmp_path))
+        TerminalRegistry(backend=backend).launch("owned-session", "shell", "main", _spec(tmp_path))
     )
     try:
         await asyncio.wait_for(close_started.wait(), timeout=5)
@@ -252,13 +249,9 @@ async def test_immediate_exit_closes_once_and_keeps_exit_evidence(
     monkeypatch.setattr(instance, "is_alive", AsyncMock(return_value=False))
     close = AsyncMock()
     monkeypatch.setattr(instance, "close", close)
-    monkeypatch.setattr(
-        registry,
-        "create_terminal_instance",
-        lambda *_a, **_k: TerminalCreateResult(instance, tmp_path),
-    )
+    backend = SimpleNamespace(create=lambda *_a, **_k: (instance, tmp_path))
     caplog.set_level(logging.WARNING, logger=registry.__name__)
-    terminal_registry = TerminalRegistry()
+    terminal_registry = TerminalRegistry(backend=backend)
 
     with pytest.raises(registry.TerminalExitedDuringLaunch) as raised:
         await terminal_registry.launch("owned-session", "shell", "main", _spec(tmp_path))
@@ -282,7 +275,8 @@ async def test_cancelled_launch_reaps_real_tmux(
     cancel_stage: str,
     program_status_app: str | None,
 ) -> None:
-    created = _capture_instances(monkeypatch)
+    backend = TmuxTerminalMuxBackend()
+    created = _capture_instances(monkeypatch, backend)
     caplog.set_level(logging.INFO, logger=registry.__name__)
     reached = asyncio.Event()
     release = asyncio.Event()
@@ -310,7 +304,7 @@ async def test_cancelled_launch_reaps_real_tmux(
 
     monkeypatch.setattr(TerminalInstance, "launch", launch)
     monkeypatch.setattr(TerminalInstance, "is_alive", alive)
-    terminal_registry = TerminalRegistry()
+    terminal_registry = TerminalRegistry(backend=backend)
     task = asyncio.create_task(
         terminal_registry.launch(
             "owned-session",

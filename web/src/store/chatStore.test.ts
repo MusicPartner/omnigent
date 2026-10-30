@@ -171,6 +171,7 @@ function nativeToolItem(responseId: string): ConversationItem {
 // read forever and the pump outlives the test — `conversationRegistry.clear()`
 // aborts the controller, which is not enough.
 const openEmptyStreams = new Set<ReadableStreamDefaultController<Uint8Array>>();
+const openHeartbeatIntervals = new Set<ReturnType<typeof setInterval>>();
 
 // A stream that delivers no semantic events and stays open, like a real idle session
 // stream between turns (the server holds it and emits heartbeats). Never
@@ -200,6 +201,8 @@ function emptyStream(opts: { ready?: boolean } = {}): ReadableStream<Uint8Array>
 
 /** Close every open `emptyStream` so parked readers settle. */
 function closeOpenEmptyStreams(): void {
+  for (const interval of openHeartbeatIntervals) clearInterval(interval);
+  openHeartbeatIntervals.clear();
   for (const controller of openEmptyStreams) {
     try {
       controller.close();
@@ -4652,12 +4655,17 @@ describe("chatStore — first message during native model startup", () => {
   }
 
   /**
-   * Start the session, then switch away with its stream unopened, so only the
-   * model-wait deadline can read its snapshot.
+   * Start the session with a ready, heartbeat-only stream, then switch away.
+   * The stream never reports a model, so the model-wait deadline must read the
+   * snapshot without timing out the independent stream-readiness handshake.
    */
   async function beginInBackground(): Promise<void> {
     vi.useFakeTimers();
-    parkRequests((url) => url === `/v1/sessions/${sessionId}/stream`);
+    const heartbeat = new TextEncoder().encode("event: session.heartbeat\ndata: {}\n\n");
+    const interval = setInterval(() => {
+      for (const stream of openEmptyStreams) stream.enqueue(heartbeat);
+    }, 15_000);
+    openHeartbeatIntervals.add(interval);
     begin();
     await vi.advanceTimersByTimeAsync(0);
     seedSession("conv_other");

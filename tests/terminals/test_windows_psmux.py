@@ -731,9 +731,77 @@ def test_psmux_does_not_infer_exit_status_or_signal_from_placeholders(
     instance = PsmuxTerminalInstance(
         name="probe", session_key="s", socket_path=tmp_path / "sock", private_dir=tmp_path
     )
+    instance._remember_exit_status(fields.replace("|", " "))
     assert instance._exit_status_is_pending(fields) is False
     assert instance.last_exit_status() is None
     assert instance.last_exit_signal() is None
+
+
+@pytest.mark.parametrize("detection", ["is_alive", "async_watcher", "threaded_watcher"])
+async def test_psmux_dead_pane_keeps_exit_status_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, detection: str
+) -> None:
+    from threading import Event
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from omnigent.inner import terminal as terminal_module
+
+    instance = PsmuxTerminalInstance(
+        name="probe",
+        session_key="s",
+        socket_path=tmp_path / "sock",
+        private_dir=tmp_path,
+        running=True,
+        keep_alive_after_exit=True,
+    )
+
+    def output(*args: str) -> str:
+        if args[0] == "list-panes":
+            return "1|0|0\n" if args[-1] == terminal_module._PANE_EXIT_STATUS_FORMAT else "1 0\n"
+        if args[0] == "display-message":
+            return "0 10000\nretained final output\n"
+        if args[0] == "capture-pane":
+            return "retained final output\n"
+        assert args[0] == "detach-client"
+        return ""
+
+    monkeypatch.setattr(instance, "_tmux_output", AsyncMock(side_effect=output))
+    monkeypatch.setattr(instance, "_tmux_output_sync", output)
+    process = SimpleNamespace(returncode=0, communicate=AsyncMock(return_value=(b"1 0\n", b"")))
+    monkeypatch.setattr(
+        terminal_module.asyncio, "create_subprocess_exec", AsyncMock(return_value=process)
+    )
+    monkeypatch.setattr(terminal_module, "_IDLE_POLL_INTERVAL_SECONDS", 0)
+    exits: list[tuple[int | None, str | None]] = []
+
+    def on_exit() -> None:
+        exits.append((instance.last_exit_status(), instance.last_exit_signal()))
+
+    stop_event = Event()
+    try:
+        if detection == "threaded_watcher":
+            await asyncio.wait_for(
+                asyncio.to_thread(
+                    instance._idle_watch_loop_threaded,
+                    stop_event,
+                    on_exit=on_exit,
+                    poll_interval_s=0,
+                ),
+                timeout=1,
+            )
+        elif detection == "async_watcher":
+            await asyncio.wait_for(instance._idle_watch_loop(lambda: None, on_exit=on_exit), 1)
+        else:
+            assert await asyncio.wait_for(instance.is_alive(), timeout=1) is False
+    finally:
+        stop_event.set()
+
+    assert instance.running is False
+    assert instance.last_exit_status() is None
+    assert instance.last_exit_signal() is None
+    assert instance.last_exit_text() == "retained final output"
+    assert exits == ([] if detection == "is_alive" else [(None, None)])
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="native Windows psmux test")
