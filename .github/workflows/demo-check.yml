@@ -21,8 +21,6 @@ name: PR Hygiene
 # on the schedule, so cron behaviour is unchanged.
 
 on:
-  schedule:
-    - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       scan_hours:

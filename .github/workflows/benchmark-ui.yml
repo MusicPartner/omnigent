@@ -3,8 +3,6 @@ name: Benchmark (UI)
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  schedule:
-    - cron: "19 8 * * *"
   workflow_dispatch:
     inputs:
       compare_same_build:

@@ -9,8 +9,6 @@ name: Duplicate PRs
 # or runs PR code -- it reads PR metadata via the default-branch script.
 
 on:
-  schedule:
-    - cron: "0 */4 * * *"
   workflow_dispatch:
 
 defaults:
