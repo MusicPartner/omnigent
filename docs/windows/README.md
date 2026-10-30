@@ -7,6 +7,7 @@ record is [`../windows-first-class-support-adr.md`](../windows-first-class-suppo
 
 Use this folder as the product/engineering workspace for native Windows support:
 
+- [`UPSTREAM-DIRECTION-0.20.md`](UPSTREAM-DIRECTION-0.20.md) - exact-stable rationale, dated upstream PR states, scoped security backports and next-release Windows acceptance gates; not candidate validation.
 - [`ISOLATION-PLAN-0.19.md`](ISOLATION-PLAN-0.19.md) - v0.14 contract review mapped to the validated v0.19 baseline; contract tests/primitives first, shared terminal preparation second. Runtime work is not started.
 - [`RELEASE-INTEGRATION-0.19.md`](RELEASE-INTEGRATION-0.19.md) - integration decisions, immutable evidence links and support limits.
 - [`PARITY-NEXT-STEPS.md`](PARITY-NEXT-STEPS.md) — remaining launch fixes, evidence, options and decisions.
