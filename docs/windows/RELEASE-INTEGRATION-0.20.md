@@ -1,5 +1,32 @@
 # Windows integration: upstream v0.20.0 — candidate ledger
 
+## Round 2 outcome and round 3 scope
+
+At `c0821a838732fd7ac8834342f819414369fec602`, lint run
+[41070123358](https://github.com/MusicPartner/omnigent/actions/runs/41070123358)
+passed every job, including the complete pinned pre-commit suite and version
+lockstep. The content-search import, redundant directive, CSV EOF and YAML
+repairs therefore passed that gate; focused runtime execution is still pending.
+
+Fork run
+[41070125122](https://github.com/MusicPartner/omnigent/actions/runs/41070125122)
+ran on both platforms. Each source-matched baseline at `430ea3ca…` passed all
+37 contract tests using its own locked environment. The new AST audit then
+rejected the Pi gateway test's intentional portability parameterization before
+candidate contract execution; downstream Linux/Windows/artifact jobs skipped.
+It compared POSIX `printf`/`sleep` commands with native Python scripts as though
+the decorator had simply disappeared. All three failure, empty-token and timeout
+cases and their redaction assertions remain present.
+
+Round 3 changes only this record and that audit. It recognizes the exact old and
+new parameter matrices for this one named test; every other target decorator
+must remain, and precisely the four reviewed POSIX markers must be added.
+No production code, runtime assertion or gate is relaxed. Final strict YAML
+checking is repeated before committing. The fork gate alone will run on push;
+the passing lint result remains evidence for `c0821a838…`, not a new whole-SHA
+pass. The original UI run continues untouched. **2/6 rounds used, 4 remain before
+the round-3 push; 3 remain afterward.**
+
 Date: 2026-10-30. **The integration branch is at verified HEAD
 `9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`; source-matched validation and
 acceptance remain in progress.** The stable merge is

@@ -149,6 +149,19 @@ jobs:
               "test_claude_native_first_prompt_survives_slow_terminal_boot",
             },
           }
+          gateway_target = ast.dump(ast.parse('''pytest.mark.parametrize(
+            ("command", "error"), [
+              ("printf secret; printf secret >&2; exit 1", "command failed"),
+              ("printf '  '", "empty token"),
+              ("sleep 30 & wait", "timed out"),
+            ])''', mode="eval").body)
+          gateway_portable = ast.dump(ast.parse('''pytest.mark.parametrize(
+            ("script", "error"), [
+              ("import sys; print('secret'); print('secret', file=sys.stderr); sys.exit(1)", "command failed"),
+              ("print('  ')", "empty token"),
+              ("import time; time.sleep(30)", "timed out"),
+            ])''', mode="eval").body)
+          posix_mark = ast.dump(ast.parse("pytest.mark.posix_only", mode="eval").body)
           for path in paths:
             original = ast.parse(subprocess.check_output(["git", "show", f"{target}:{path}"]))
             candidate = ast.parse(Path(path).read_text(encoding="utf-8"))
@@ -163,9 +176,13 @@ jobs:
             for name in before:
               baseline_marks = {ast.dump(mark) for mark in before[name].decorator_list}
               result_marks = {ast.dump(mark) for mark in after[name].decorator_list}
+              if path == paths[3] and name == "test_gateway_helper_failure_is_bounded_and_redacted":
+                assert gateway_target in baseline_marks, (path, name, "target parameterization changed")
+                assert gateway_portable in result_marks, (path, name, "portable cases changed")
+                baseline_marks = (baseline_marks - {gateway_target}) | {gateway_portable}
               assert baseline_marks <= result_marks, (path, name, "lost decorator")
-              new_posix = "Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='posix_only', ctx=Load())" in result_marks - baseline_marks
-              assert not new_posix or name in expected_posix.get(path, set()), (path, name)
+              expected_additions = {posix_mark} if name in expected_posix.get(path, set()) else set()
+              assert result_marks - baseline_marks == expected_additions, (path, name, "unexpected decorators")
             print(f"{path}: {len(before)} target tests retained; marker owners audited")
           PY
 
