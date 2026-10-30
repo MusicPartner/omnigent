@@ -257,7 +257,7 @@ jobs:
       - name: Install Linux sandbox and terminal test prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y bubblewrap tmux
+          sudo apt-get install -y bubblewrap tmux ripgrep
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Install focused test and lint dependencies

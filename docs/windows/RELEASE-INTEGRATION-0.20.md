@@ -1,13 +1,60 @@
 # Windows integration: upstream v0.20.0 — candidate ledger
 
-## Round 3 outcome and round 4 scope
+## Current status (verified 2026-10-30)
+
+The integration branch `windows-parity/v0.20-integration` has verified snapshot
+**`dfcf012803e7045cd25b29bee60f6184c9fac482`**, before the planned, unpushed
+round-5 repairs; do not infer a future repair SHA. Round 4 is consumed; the
+shared budget is **4/6 rounds used, 2 remaining before round 5**. Current
+source-matched results and limits are:
+
+- Full pinned lint **41078692483** and Integration **41078793722** succeeded on
+   `dfcf012…`.
+- UI **41078697033** succeeded with 15 jobs, including all 10 shards; backend
+   **41078798047** succeeded with 10 jobs. Round-4 pinned lint and Integration
+   remain successful.
+- Fork validation **41078693057** completed but failed. Its source and
+   candidate contract runs each had 37 tests, zero failures/errors/skips,
+   identical node IDs, and passing exact decorator audits. Linux content search
+   failed because `ripgrep` was missing (19 failures, 5 passes, 1 macOS skip);
+   the raw log confirms the prerequisite failure.
+- Windows reached the pinned psmux 3.4.0 validation. Focused checks: 21 passed.
+   Portable suite: 1,327 passed, 170 skipped, 11 subtests. Attachment checks:
+   127 + 45 passed. Shutdown: 150 passed, 1 skipped. Hard pair: 50 passed, 12
+   skipped. Launcher: 88 passed. Windows subset: 275 passed, 28 skipped, 2
+   deselected. The psmux tests had 8 passes and 3 failures: the raw-stdin fixture
+   reports READY without the framed empty-composer input now required by v0.20
+   `_clear_composer`. The local fixture repair advertises an empty framed
+   composer and exact clear-key prelude, retaining real two-pane bracketed paste
+   and short/Unicode/20-KB target assertions; it bypasses no guard. Workflow and
+   fixture repairs are prepared locally, not pushed or validated. The blocking
+   broad Windows gate is not accepted; these passing subsets do not change that.
+- No candidate artifacts have been built. Runtime acceptance remains pending.
+   The old Docker success is scoped to its unchanged input closure, not a
+   current-HEAD overall pass.
+- Local psmux **3.4.0** was verified without stopping existing sessions; the
+   CI pin is committed at this `HEAD`. This does not establish runtime acceptance.
+- Round-1 UI **41067501570** finished with three failed shards: shards 0 and 1
+   expected missing `requestedModel`/request-transcript fields, and shard 8
+   incorrectly expected a user bubble for the server's HTTP 400 `/login`
+   refusal. The `dfcf012…` changes capture the actual beta header while retaining
+   model assertions, and test that the refusal is not forwarded and surfaces an
+   actionable UI error.
+
+Round 4's passing source-matched contract checks do not override the failed
+Linux content-search and Windows psmux checks or establish acceptance of the
+broader Windows gate, artifacts, runtime, or human checks. The 328-row semantic
+ledger remains unchanged: **282 pending, 45 review-pending, 1 excluded**; all 46
+REVIEW paths remain unresolved.
+
+## Historical round 3 outcome and round 4 scope
 
 Round-3 fork run [41070986497](https://github.com/MusicPartner/omnigent/actions/runs/41070986497)
 at `249ac5393fe0ba71d5587e1cda5513ec317928f5` failed the strict decorator
 audit on an intentional Claude tmux/psmux parameter matrix. The next batch
 allows that exact matrix on its two reviewed owners, retaining all target
 decorators, the exact Pi portability mapping and the four required POSIX markers.
-Candidate execution and artifact jobs have not yet passed.
+At that round-3 snapshot, candidate execution and artifact jobs had not passed.
 
 The original UI run [41067501570](https://github.com/MusicPartner/omnigent/actions/runs/41067501570)
 completed with three failed shards. Two model-picker scenarios expected absent
@@ -25,14 +72,11 @@ The user upgraded local psmux; a read-only version check confirmed **3.4.0
 pins and verifies 3.4.0; this is not yet a runtime pass. Its status/signal/cursor
 placeholders still require the existing compatibility safeguards.
 
-Round 4 batches the fork gate, pinned lint and a UI rerun at the new source SHA.
-The request-capture regression is included in focused Linux validation. Earlier
-integration/backend/Docker results remain source-qualified evidence at `9ba784ca…`.
-**3/6 rounds used before this push; 2 remain after round 4.** Local Python and
-full hooks remain unrun under the inherited restriction; standalone Ruff,
-strict YAML and whitespace checks are repeated before pushing.
+Round 4's completed and outstanding checks are recorded in the current-status
+section and shared round ledger below. The earlier integration/backend/Docker
+results remain historical, source-qualified evidence at `9ba784ca…`.
 
-## Round 2 outcome and round 3 scope
+## Historical round 2 outcome and round-3 audit adjustment
 
 At `c0821a838732fd7ac8834342f819414369fec602`, lint run
 [41070123358](https://github.com/MusicPartner/omnigent/actions/runs/41070123358)
@@ -50,27 +94,27 @@ It compared POSIX `printf`/`sleep` commands with native Python scripts as though
 the decorator had simply disappeared. All three failure, empty-token and timeout
 cases and their redaction assertions remain present.
 
-Round 3 changes only this record and that audit. It recognizes the exact old and
-new parameter matrices for this one named test; every other target decorator
-must remain, and precisely the four reviewed POSIX markers must be added.
-No production code, runtime assertion or gate is relaxed. Final strict YAML
-checking is repeated before committing. The fork gate alone will run on push;
-the passing lint result remains evidence for `c0821a838…`, not a new whole-SHA
-pass. The original UI run continues untouched. **2/6 rounds used, 4 remain before
-the round-3 push; 3 remain afterward.**
+The round-3 audit adjustment recognized the exact old and new parameter matrices
+for this one named test; every other target decorator remained required, and
+the four reviewed POSIX markers remained the only permitted additions. No
+production code, runtime assertion or gate was relaxed. At the end of round 2,
+the budget snapshot was **2/6 used, 4 remaining**; round 3 later consumed one
+round and round 4 brought the total to **4/6 used, 2 remaining**. The round-2
+lint result remains evidence for `c0821a838…`, not a whole-SHA pass for later
+commits.
 
-Date: 2026-10-30. **The integration branch is at verified HEAD
-`9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`; source-matched validation and
-acceptance remain in progress.** The stable merge is
+Historical round-1 snapshot (2026-10-30): the branch then stood at
+`9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`; this is not the current `HEAD`.
+The stable merge is
 `abbb5e598ad989e0268c1d577a38da5dbca758c5`, followed by the Windows terminal
 fix `806c7ce308dbfe970ebc402dcac59db9c18cf652`. The previously recorded CI
-snapshot `eabd86b032ad12e80131b12e2b3b91f9e099e72b` is historical, not current
+snapshot `eabd86b032ad12e80131b2e3b2b3b91f9e099e72b` is historical, not current
 HEAD. The merge has parents `430ea3caabec09ff894e92c0c03bfe029361418e` and
-`bfd8ab5624e34aa72c01fb451e11c2a0e1aae3ee`. The checkout has coordinator
-repair edits in progress; this record describes the verified branch HEAD and
-must not be read as final validation of later edits.
+`bfd8ab5624e34aa72c01fb451e11c2a0e1aae3ee`. That snapshot had coordinator
+repair edits in progress; later source and validation states are recorded
+separately below.
 
-Current round-1 evidence snapshot (source SHA
+Historical round-1 evidence snapshot (source SHA
 `9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`):
 
 - Fork run **41067491820** completed with failure: an extra-indented AST audit
@@ -96,15 +140,15 @@ Current round-1 evidence snapshot (source SHA
    lock/version guards passed.
 - Integration **41067497520** and nonpublishing Docker **41067511450** passed
    on exact SHA `9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`. Backend E2E
-   **41067506812** also passed. UI **41067501570** remained in progress in the
-   latest Actions snapshot, with no failed jobs reported; do not stop or
-   duplicate it. No runtime test was performed locally.
+   **41067506812** also passed. UI **41067501570** was still in progress at this
+   historical snapshot; it later completed with three failed shards, as
+   summarized above. No runtime test was performed locally.
 - Later source changes require validation at their own SHA. Evidence for an
    unchanged input closure may be reused only with its scope stated explicitly.
    Runtime, installer, artifact, and human acceptance remain pending.
 
 Earlier implementation/evidence snapshot (historical; superseded by the
-current snapshot above):
+round-4 current status above):
 
 - The release workflow has a new integration-branch gate and removes 20
    scheduled declarations, preserving the no-schedule policy evidenced by the
@@ -396,8 +440,8 @@ The report's 19 dependency static checks passed and were rerun by the
 coordinator. Frozen pnpm installation with lifecycle scripts disabled also
 passed. The initial Node test attempt failed at module loading because
 `typescript` was missing; this was superseded by the successful bounded Node
-lint/Vitest results in the current snapshot above. None of these observations
-is resolver, Python, or hook acceptance. Full lock consistency, applicable
+lint/Vitest checks recorded in the historical implementation snapshot. None of
+these observations is resolver, Python, or hook acceptance. Full lock consistency, applicable
 resolver checks, broader tests and hooks remain pending. Associated CSV gates
 therefore stay pending.
 
@@ -415,9 +459,10 @@ are not completed stable fixes. Research snapshot
 | Historical exact source `430ea3caabec09ff894e92c0c03bfe029361418e` | Previously source-matched fork CI run **39752878340**: Linux/Windows contracts and release/artifact checks; historical source evidence only |
 | Same historical source | Lint/version run **39752878264**; not candidate lint/version evidence |
 | Earlier v0.19 baseline `6a7c711308587a2c39dd916c0820af71debfbb67` | Historical final release/lint evidence indexed by the maintained skill; not validation of source430 or this merge |
-| Verified branch HEAD | `9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`; round-1 results and in-progress checks are summarized above; runtime acceptance remains pending |
+| Current verified branch snapshot (2026-10-30) | `dfcf012803e7045cd25b29bee60f6184c9fac482`, before planned round-5 repairs; lint, Integration, UI and backend succeeded; fork validation failed on missing `ripgrep` and three psmux fixture failures; no artifacts or runtime acceptance |
+| Historical round-1 SHA | `9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`; integration, backend and nonpublishing Docker passed on that SHA only |
 | Baseline/candidate comparison | Baseline source-matched to `430ea3caabec09ff894e92c0c03bfe029361418e`; baseline and candidate use independently locked environments; historical baseline-first pair is unchanged |
-| Documentation scope | This record and its current-status paragraph only; coordinator code/test/workflow repairs are separate in-progress work |
+| Documentation scope | This record and the maintenance status summary; the existing coordinator workflow edit remains outside this documentation update |
 | Dependency worker/coordinator | Nineteen static checks passed and were rerun; frozen pnpm install passed; resolver/Python/hooks remain unverified |
 
 Historical CI identifiers were recovered from the source-matched handover;
@@ -430,30 +475,35 @@ No new CLI/desktop bundle, clean-wheel import, source metadata, core/client/UI
 version import, signing or architecture check has been accepted. An old bundle
 with a release-like filename is not a current candidate artifact.
 
-Remaining coordinator gates and limits at verified HEAD
-`9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`:
+Remaining validation gates and limits at verified snapshot
+`dfcf012803e7045cd25b29bee60f6184c9fac482` (before the planned round-5
+repairs):
 
 1. Review combined conflict resolutions and all clean-merge contracts, including
    factory kwargs, copy-on-write identity, correlation resets, runner-secret
    exclusion, wrapper order and failed/unregistered launch cleanup.
-2. In an explicitly authorized source-matched environment, check lock consistency
-   (`uv lock --check` and frozen pnpm consistency) before locked installation.
-   Investigate rejection rather than silently regenerating or upgrading locks.
-3. Use current dependency groups, not obsolete `--extra dev`. The dependency
-   worker proposes `uv sync --locked --group dev`; verify actual target groups
-   and import identity in the permitted environment. Never retry denied local
-   Python through another command, tool or replacement environment.
-4. Run vulnerability guards, version/resources and focused backend/Windows
-   contracts with retries disabled; real psmux serially with private state.
-   Audit collected nodes/markers and preserve the historical baseline pair.
-5. Let the already-running backend and UI checks finish; do not stop them or
-   dispatch duplicate E2E. Integration and nonpublishing Docker already passed
-   on `9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`. After the repair and docs are
-   committed, the planned next round pushes the branch (triggering fork
-   validation) and dispatches **lint only**. Record the resulting exact SHA and
-   raw summaries; do not treat earlier runs as proof for changed source.
-6. Only after matching gates pass, inspect SHA-matched CLI/desktop artifacts and
-   perform disposable packaging/install checks and the human acceptance below.
+2. The fork run's Linux content-search step failed on missing `ripgrep`; its
+   workflow prerequisite repair is prepared locally, not pushed. Round 5 is
+   planned to push it with the fixture repair and run fork validation plus lint.
+3. Fork Windows psmux tests had 8 passes and 3 failures because the raw-stdin
+   fixture omitted the framed empty-composer readiness input required by
+   `_clear_composer`. The prepared fixture repair retains the real two-pane
+   bracketed-paste and short/Unicode/20-KB target assertions without bypassing
+   guards; it has not yet been pushed or validated. Other passing/skipped
+   Windows results are listed above and do not satisfy the blocking broad gate.
+4. Do not rerun UI **41078697033**, backend **41078798047**, or Integration
+   **41078793722** for unchanged input closures. The historical Docker
+   **41067511450** success is on `9ba784ca…`; reuse only for its unchanged
+   closure, never as a whole-current-SHA pass.
+5. No candidate artifacts have been built. After source-matched gates complete,
+   inspect any resulting CLI/desktop artifacts and perform the outstanding
+   packaging checks and human acceptance below.
+6. Runtime acceptance remains pending, including serial real-psmux checks with
+   private state. Local psmux 3.4.0 and the committed CI pin do not substitute
+   for that runtime evidence.
+7. Preserve the existing resolver/install, vulnerability, semantic-review and
+   human acceptance gaps. Do not clear any pending or review-pending CSV status
+   on the basis of the bounded round-4 results.
 
 No local Python, pre-commit, hook bypass, replacement environment, WSL,
 publication, main-branch change, or installer action is authorized or attempted.
@@ -463,7 +513,7 @@ or demo captures.
 
 ## Shared permission and attempt ledger
 
-The integration's shared budget is **six push/retry rounds; 1 used, 5 remain**.
+The integration's shared budget is **six push/retry rounds; 4 used, 2 remain**.
 It is shared across coordinator, workers and handovers. Documentation-only
 pushes count; checks dispatched together for one SHA count as one round. Record
 the exact candidate SHA and round before any later authorized push/dispatch.
@@ -472,12 +522,14 @@ budget reset on model/session change. Old v0.19 four-round limits are history.
 
 | Round | SHA | Push / Actions | Outcome | Remaining |
 | --- | --- | --- | --- | ---: |
-| Round 1 | `9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c` | Push and source-matched Actions | Fork **41067491820** failed at YAML/AST before jobs; lint **41067493114** completed with the findings listed above; integration **41067497520** and nonpublishing Docker **41067511450** passed. Backend **41067506812** and UI **41067501570** remained in progress at the latest snapshot. | 5 |
-| Round 2 planned (not consumed) | Repair-and-docs commit SHA pending | Commit repairs and this documentation, push for automatic fork validation, and dispatch **lint only** | Await coordinator action; do not stop the running backend/UI checks or duplicate E2E. | 5 |
+| Round 1 | `9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c` | Push and source-matched Actions | Fork **41067491820** failed before jobs on invalid workflow YAML; lint **41067493114** reported repairable findings; Integration **41067497520**, backend **41067506812**, and nonpublishing Docker **41067511450** passed. UI **41067501570** later completed with three failed shards (0, 1, and 8); see the current-status summary for causes and the `dfcf012…` test repairs. | 5 |
+| Round 2 | `c0821a838732fd7ac8834342f819414369fec602` | Push and source-matched Actions | Lint **41070123358** passed the complete pinned suite. Fork **41070125122** passed all 37 baseline contract tests, then failed the candidate AST audit on the intentional Pi portability matrix; candidate contract and downstream jobs did not run. | 4 |
+| Round 3 | `249ac5393fe0ba71d5587e1cda5513ec317928f5` | Push and source-matched fork validation | Fork **41070986497** failed the strict decorator audit on the intentional Windows Claude tmux/psmux matrix. The exact matrix was corrected at the round-4 candidate; do not relabel the round-3 run as passing. | 3 |
+| Round 4 | `dfcf012803e7045cd25b29bee60f6184c9fac482` | Push and source-matched Actions | Lint **41078692483**, Integration **41078793722**, UI **41078697033** (15 jobs/10 shards), and backend **41078798047** (10 jobs) succeeded. Fork **41078693057** completed but failed: contract runs/decorator audits passed; Linux content search failed for missing `ripgrep`; Windows psmux had 8 passes/3 fixture failures. Other Windows result counts and limits are in Current status. No artifacts built. | 2 |
+| Round 5 (planned; not consumed) | SHA pending; current verified snapshot remains `dfcf012803e7045cd25b29bee60f6184c9fac482` | Planned push of docs + prepared workflow prerequisite + fixture repair; then fork validation and lint | Not yet pushed or dispatched. Do not duplicate successful UI/backend/Integration checks or the historical Docker run for unchanged input closures. Budget: 2 remain before push; 1 after. | 2 before / 1 after |
 
-The coordinator handles the planned repair-and-docs commit, branch push,
-automatic fork validation, and lint-only dispatch within this shared budget.
-No publication/image push, main PR/promotion or main-branch mutation,
+The two remaining rounds are the only remaining shared push/retry budget. No
+publication/image push, main PR/promotion or main-branch mutation,
 force/history rewrite, schedule activation, real installation mutation, global
 setting change, WSL, local Python, pre-commit, replacement environment or
 excluded-content read is permitted.
@@ -530,9 +582,16 @@ alter main or the installed application, or terminate unowned sessions. The
 stable merge is already committed; do not reset or rewrite it as a rollback.
 Coordinate preservation before any separately authorized rollback.
 
-Next handover: coordinator commits the code repair and documentation, then
-pushes for automatic fork validation and dispatches lint only (round 2; not yet
-consumed). Let the existing backend/UI runs finish; do not duplicate E2E.
-Record the resulting commit SHA and source-matched results when available. The
-322-path accounting is complete; **candidate validation and runtime/live
-acceptance remain pending**.
+Next handover: Round 4 is complete. For planned round 5, commit the two
+documentation updates together with the already prepared `ripgrep` workflow
+prerequisite and psmux fixture readiness correction, then push once and batch
+fork validation with lint. Do not edit the existing E2E UI workflow or the
+psmux runtime implementation; do not rerun successful UI, backend or
+Integration checks, and reuse the old Docker result only for its unchanged
+input closure. The current snapshot is `dfcf012803e7045cd25b29bee60f6184c9fac482`;
+the future repair SHA is not yet known. This leaves **1/6 round** for the
+reserved final source-matched handover. The Linux prerequisite and Windows
+fixture failures remain unresolved until the pushed round-5 result; the
+blocking broader Windows gate, artifacts, runtime/live acceptance, and the
+existing pending/review-pending CSV counts remain open. The 322-path accounting
+is complete.

@@ -814,7 +814,11 @@ async def test_psmux_dead_pane_keeps_exit_status_unknown(
 async def test_windows_claude_paste_targets_resumed_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: str
 ) -> None:
-    """A different pane's TMUX context cannot steal a resumed chat's buffer."""
+    """A different pane's TMUX context cannot steal a resumed chat's buffer.
+
+    The raw-stdin child advertises a Claude-shaped empty composer so the
+    production clear-state guard can proceed; it does not emulate Claude.
+    """
     from omnigent.harnesses.claude_native import bridge
 
     data_dir = tmp_path / "psmux-data"
@@ -830,7 +834,13 @@ async def test_windows_claude_paste_targets_resumed_session(
         "handle = kernel.GetStdHandle(-10)\n"
         "assert kernel.SetConsoleMode(handle, 0x0200)\n"
         "output = pathlib.Path(sys.argv[1])\n"
-        "sys.stdout.write('\\x1b[?2004hREADY\\n'); sys.stdout.flush()\n"
+        "rule = '\\u2500' * 30\n"
+        "sys.stdout.write('\\x1b[?2004hREADY\\n')\n"
+        "sys.stdout.write(rule + '\\n')\n"
+        "sys.stdout.write('❯ \\n')\n"
+        "sys.stdout.write(rule + '\\n')\n"
+        "sys.stdout.write('  ? for shortcuts\\n')\n"
+        "sys.stdout.flush()\n"
         "pending = output.with_suffix('.ready.tmp')\n"
         "pending.write_text(os.environ['TMUX'], encoding='utf-8')\n"
         "pending.replace(output.with_suffix('.ready'))\n"
@@ -897,8 +907,9 @@ async def test_windows_claude_paste_targets_resumed_session(
             await asyncio.sleep(0.1)
         received = json.loads(output_path.read_text(encoding="utf-8"))
         payload = bridge._paste_payload_bytes(content + "\n").decode("utf-8")
-        # The raw reader includes the focus probe that Claude's clear-line keys remove.
-        assert received == " \x1b[97;5u\x1b[107;5u\x1b[200~" + payload + "\x1b[201~\r"
+        clear_keys = "\x1b[107;5u" * 2 + "\x1b[117;5u" * 2
+        # Raw stdin records keys that Claude would consume while clearing its composer.
+        assert received == " " + clear_keys + "\x1b[200~" + payload + "\x1b[201~\r"
         assert not (other.private_dir / "received.json").exists()
         assert list(resumed.private_dir.glob("paste_*.bin")) == []
     finally:
