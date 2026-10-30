@@ -2442,6 +2442,8 @@ def test_claude_user_settings_env_reads_home_settings(
 
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
+    # pathlib.Path.home() uses USERPROFILE on Windows and HOME on POSIX.
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     if settings_text is not None:
         (tmp_path / ".claude").mkdir()
         (tmp_path / ".claude" / "settings.json").write_text(settings_text)

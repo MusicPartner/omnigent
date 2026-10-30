@@ -10,35 +10,34 @@ extraction. It is a plan, not permission to refactor or publish.
 
 ## Current automation policy (2026-10-30)
 
-The v0.20 integration branch's verified snapshot is
-`dfcf012803e7045cd25b29bee60f6184c9fac482`, before the planned, unpushed
-round-5 repairs. Round 4 pinned lint **41078692483**, Integration
-**41078793722**, UI **41078697033** (15 jobs, including 10 shards), and backend
-**41078798047** (10 jobs) succeeded. Fork validation **41078693057** completed
-but failed: both 37-test source/candidate contract runs had identical node IDs
-and passed the exact decorator audit, while Linux content search failed because
-`ripgrep` was missing (19 failures, 5 passes, 1 macOS skip). Windows reached
-the pinned psmux 3.4.0 checks: focused tests had 21 passes; the portable suite
-had 1,327 passes, 170 skips and 11 subtests; attachment checks had 127 + 45
-passes; shutdown 150 passes/1 skip; hard pair 50 passes/12 skips; launcher 88
-passes; and the Windows subset 275 passes/28 skips/2 deselections. The psmux
-tests themselves had 8 passes and 3 failures: a raw-stdin fixture reports
-READY without the framed empty-composer input now required by v0.20
-`_clear_composer`. A local, unpushed fixture repair models that input and the
-exact clear-key prelude while retaining real two-pane bracketed-paste and
-short/Unicode/20-KB target assertions; it bypasses no guard. The blocking broad
-Windows gate is not accepted; no candidate artifacts were built and runtime
-acceptance remains pending. Round 5 is planned to batch the documentation,
-workflow `ripgrep` prerequisite and fixture repair, then run fork validation
-and lint only. Do not duplicate successful UI, backend or Integration runs;
-the old Docker success remains scoped to its unchanged input closure. The shared
-attempt budget is **4/6 rounds used, 2 remaining before round 5** (then 1,
-with round 6 reserved). See the
-[integration record](../docs/windows/RELEASE-INTEGRATION-0.20.md),
+The v0.20 integration branch's round-5 snapshot is
+`5bb6bfceda028cc4e6914493bc43470178f0bdcf`. Lint **41083128167** succeeded;
+fork validation **41083128407** completed with both 37-test source/candidate
+contract runs passing and focused Linux checks passing (content search: 24
+passed, 1 macOS skip, 125 deselected; capture: 5 passed). Windows psmux 3.4.0
+checks passed (real psmux 11, chat paste 16, parsing 1). The portable Windows
+suite had 1,327 passes, 170 skips and 11 subtests; focused Windows regressions
+had 21 passes. Linux portable/focused suites had 1,450/1,295 passes respectively.
+Only the blocking broad Windows gate failed: JUnit
+reports 4,576 suite-attributed tests but 4,552 testcase records (subtest
+accounting), with 1 failure, 0 errors and 233 skips. Its fixture sets `HOME`
+but not `USERPROFILE`; Windows `pathlib` therefore reads no gateway environment.
+A final test-only fixture repair sets both independently and keeps the cases;
+production code is unchanged. Artifacts were skipped pending this gate.
+
+Round 6 is planned as the final authorized push (5/6 used, 1 remaining before
+push; 6/6 afterward). Its SHA and result are not yet known. Do not spend a
+seventh round or push another status-only update; place final exact-SHA results
+in the external evidence record at
+`D:\Develop\Source\OpenSource\_AI\Omnigent\_evidence\v020-integration-20261030\FINAL-VALIDATION.md`.
+Earlier UI, backend and Integration successes remain scoped to
+`dfcf012803e7045cd25b29bee60f6184c9fac482`; the nonpublishing Docker success is
+scoped to `9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`. Runtime/artifact/human
+acceptance remains pending. See the [integration record](../docs/windows/RELEASE-INTEGRATION-0.20.md),
 [semantic ledger](../docs/windows/RELEASE-INTEGRATION-0.20-ledger.csv), and
 [upstream direction review](../docs/windows/UPSTREAM-DIRECTION-0.20.md).
-Acceptance still requires the fork's **blocking broader native Windows gate**;
-the optional upstream nonblocking sweep is not a substitute.
+The optional upstream nonblocking Windows sweep is not a substitute for the
+fork's blocking broader native Windows gate.
 
 Preserve the workflow-only schedule removal at
 `f9c0b39e004ffbe1261565d371866259716d0281` (19 paths) and the earlier

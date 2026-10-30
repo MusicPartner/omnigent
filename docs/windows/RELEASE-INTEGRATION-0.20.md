@@ -2,50 +2,42 @@
 
 ## Current status (verified 2026-10-30)
 
-The integration branch `windows-parity/v0.20-integration` has verified snapshot
-**`dfcf012803e7045cd25b29bee60f6184c9fac482`**, before the planned, unpushed
-round-5 repairs; do not infer a future repair SHA. Round 4 is consumed; the
-shared budget is **4/6 rounds used, 2 remaining before round 5**. Current
-source-matched results and limits are:
+The integration branch `windows-parity/v0.20-integration` has round-5 snapshot
+**`5bb6bfceda028cc4e6914493bc43470178f0bdcf`**. This document records that
+snapshot; it cannot include the SHA/result of a future commit containing itself.
+Round 5 is consumed; the shared budget is **5/6 used, 1 remaining before the
+final round-6 push**. Round 6 is planned, not pushed or validated; its SHA and
+outcome are unknown. No seventh round is authorized.
 
-- Full pinned lint **41078692483** and Integration **41078793722** succeeded on
-   `dfcf012…`.
-- UI **41078697033** succeeded with 15 jobs, including all 10 shards; backend
-   **41078798047** succeeded with 10 jobs. Round-4 pinned lint and Integration
-   remain successful.
-- Fork validation **41078693057** completed but failed. Its source and
-   candidate contract runs each had 37 tests, zero failures/errors/skips,
-   identical node IDs, and passing exact decorator audits. Linux content search
-   failed because `ripgrep` was missing (19 failures, 5 passes, 1 macOS skip);
-   the raw log confirms the prerequisite failure.
-- Windows reached the pinned psmux 3.4.0 validation. Focused checks: 21 passed.
-   Portable suite: 1,327 passed, 170 skipped, 11 subtests. Attachment checks:
-   127 + 45 passed. Shutdown: 150 passed, 1 skipped. Hard pair: 50 passed, 12
-   skipped. Launcher: 88 passed. Windows subset: 275 passed, 28 skipped, 2
-   deselected. The psmux tests had 8 passes and 3 failures: the raw-stdin fixture
-   reports READY without the framed empty-composer input now required by v0.20
-   `_clear_composer`. The local fixture repair advertises an empty framed
-   composer and exact clear-key prelude, retaining real two-pane bracketed paste
-   and short/Unicode/20-KB target assertions; it bypasses no guard. Workflow and
-   fixture repairs are prepared locally, not pushed or validated. The blocking
-   broad Windows gate is not accepted; these passing subsets do not change that.
-- No candidate artifacts have been built. Runtime acceptance remains pending.
-   The old Docker success is scoped to its unchanged input closure, not a
-   current-HEAD overall pass.
-- Local psmux **3.4.0** was verified without stopping existing sessions; the
-   CI pin is committed at this `HEAD`. This does not establish runtime acceptance.
-- Round-1 UI **41067501570** finished with three failed shards: shards 0 and 1
-   expected missing `requestedModel`/request-transcript fields, and shard 8
-   incorrectly expected a user bubble for the server's HTTP 400 `/login`
-   refusal. The `dfcf012…` changes capture the actual beta header while retaining
-   model assertions, and test that the refusal is not forwarded and surfaces an
-   actionable UI error.
+- Pinned lint **41083128167** succeeded. Fork validation **41083128407**
+   completed with both 37-test source/candidate contract runs passing. Focused
+   Linux checks passed: content search 24 passed, 1 macOS skip, 125 deselected;
+   capture 5 passed; portable 1,450 passed, 47 skipped and 11 subtests; focused
+   integration 1,295 passed, 16 skipped. These are not whole-suite results.
+- Windows psmux **3.4.0** checks passed: real psmux 11, chat paste 16, parsing
+   1. Portable Windows suite: 1,327 passed, 170 skipped, 11 subtests. Focused
+   Windows regressions: 21 passed. Only the blocking broad Windows gate failed.
+   Its JUnit suite attributes 4,576 tests, while the XML has 4,552 actual
+   testcase records because of subtest accounting: 1 failure, 0 errors, 233
+   skipped. `test_claude_user_settings_env_reads_home_settings[string-entries]`
+   expected the gateway environment but got `{}`: the fixture sets only `HOME`,
+   while Windows `pathlib` uses `USERPROFILE`. The final coordinator repair
+   sets both independently and preserves the test cases; no production code
+   changed. Artifacts were skipped pending this gate.
+- Successful UI **41078697033** (15 jobs, including 10 shards), backend
+   **41078798047** (10 jobs), and Integration **41078793722** are exact to
+   `dfcf012803e7045cd25b29bee60f6184c9fac482`, not the round-5 snapshot. The
+   nonpublishing Docker run **41067511450** passed at
+   `9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c` only; it is not current-HEAD
+   evidence. These runs are not repeated for unchanged input closures.
+- No artifacts have passed acceptance. Runtime, installer, human checks, and
+   the broader Windows gate remain pending. The 328-row semantic ledger is
+   unchanged: **282 pending, 45 review-pending, 1 excluded**; all 46 REVIEW
+   paths remain unresolved.
 
-Round 4's passing source-matched contract checks do not override the failed
-Linux content-search and Windows psmux checks or establish acceptance of the
-broader Windows gate, artifacts, runtime, or human checks. The 328-row semantic
-ledger remains unchanged: **282 pending, 45 review-pending, 1 excluded**; all 46
-REVIEW paths remain unresolved.
+Final exact-SHA results are to be stored externally at
+`D:\Develop\Source\OpenSource\_AI\Omnigent\_evidence\v020-integration-20261030\FINAL-VALIDATION.md`;
+do not make an additional documentation-only push after round 6.
 
 ## Historical round 3 outcome and round 4 scope
 
@@ -72,9 +64,19 @@ The user upgraded local psmux; a read-only version check confirmed **3.4.0
 pins and verifies 3.4.0; this is not yet a runtime pass. Its status/signal/cursor
 placeholders still require the existing compatibility safeguards.
 
-Round 4's completed and outstanding checks are recorded in the current-status
-section and shared round ledger below. The earlier integration/backend/Docker
-results remain historical, source-qualified evidence at `9ba784ca…`.
+Round-4 snapshot `dfcf012803e7045cd25b29bee60f6184c9fac482` is historical;
+its outcomes are preserved here and in the shared round ledger. Lint
+**41078692483**, Integration **41078793722**, UI **41078697033** (15 jobs,
+including 10 shards), and backend **41078798047** (10 jobs) passed on that SHA.
+Fork validation **41078693057** completed but failed: both 37-test contract
+runs and decorator audits passed, Linux content search failed because
+`ripgrep` was missing, and Windows psmux had 8 passes and 3 fixture failures.
+Other Windows results were: focused checks 21 passed; portable suite 1,327
+passed, 170 skipped and 11 subtests; attachment checks 127 + 45 passed;
+shutdown 150 passed/1 skipped; hard pair 50 passed/12 skipped; launcher 88
+passed; Windows subset 275 passed/28 skipped/2 deselected. No artifacts were
+built for that snapshot. Earlier Integration, backend and nonpublishing Docker
+results remain source-qualified to `9ba784ca…`.
 
 ## Historical round 2 outcome and round-3 audit adjustment
 
@@ -148,7 +150,7 @@ Historical round-1 evidence snapshot (source SHA
    Runtime, installer, artifact, and human acceptance remain pending.
 
 Earlier implementation/evidence snapshot (historical; superseded by the
-round-4 current status above):
+round-5 current status above):
 
 - The release workflow has a new integration-branch gate and removes 20
    scheduled declarations, preserving the no-schedule policy evidenced by the
@@ -459,7 +461,7 @@ are not completed stable fixes. Research snapshot
 | Historical exact source `430ea3caabec09ff894e92c0c03bfe029361418e` | Previously source-matched fork CI run **39752878340**: Linux/Windows contracts and release/artifact checks; historical source evidence only |
 | Same historical source | Lint/version run **39752878264**; not candidate lint/version evidence |
 | Earlier v0.19 baseline `6a7c711308587a2c39dd916c0820af71debfbb67` | Historical final release/lint evidence indexed by the maintained skill; not validation of source430 or this merge |
-| Current verified branch snapshot (2026-10-30) | `dfcf012803e7045cd25b29bee60f6184c9fac482`, before planned round-5 repairs; lint, Integration, UI and backend succeeded; fork validation failed on missing `ripgrep` and three psmux fixture failures; no artifacts or runtime acceptance |
+| Round-5 snapshot (2026-10-30) | `5bb6bfceda028cc4e6914493bc43470178f0bdcf`; lint passed; fork validation passed both contract runs and focused Linux checks, but failed only the blocking broad Windows suite (1 fixture failure); artifacts skipped pending that gate |
 | Historical round-1 SHA | `9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`; integration, backend and nonpublishing Docker passed on that SHA only |
 | Baseline/candidate comparison | Baseline source-matched to `430ea3caabec09ff894e92c0c03bfe029361418e`; baseline and candidate use independently locked environments; historical baseline-first pair is unchanged |
 | Documentation scope | This record and the maintenance status summary; the existing coordinator workflow edit remains outside this documentation update |
@@ -475,35 +477,31 @@ No new CLI/desktop bundle, clean-wheel import, source metadata, core/client/UI
 version import, signing or architecture check has been accepted. An old bundle
 with a release-like filename is not a current candidate artifact.
 
-Remaining validation gates and limits at verified snapshot
-`dfcf012803e7045cd25b29bee60f6184c9fac482` (before the planned round-5
-repairs):
+Remaining validation gates and limits at round-5 snapshot
+`5bb6bfceda028cc4e6914493bc43470178f0bdcf`:
 
 1. Review combined conflict resolutions and all clean-merge contracts, including
    factory kwargs, copy-on-write identity, correlation resets, runner-secret
    exclusion, wrapper order and failed/unregistered launch cleanup.
-2. The fork run's Linux content-search step failed on missing `ripgrep`; its
-   workflow prerequisite repair is prepared locally, not pushed. Round 5 is
-   planned to push it with the fixture repair and run fork validation plus lint.
-3. Fork Windows psmux tests had 8 passes and 3 failures because the raw-stdin
-   fixture omitted the framed empty-composer readiness input required by
-   `_clear_composer`. The prepared fixture repair retains the real two-pane
-   bracketed-paste and short/Unicode/20-KB target assertions without bypassing
-   guards; it has not yet been pushed or validated. Other passing/skipped
-   Windows results are listed above and do not satisfy the blocking broad gate.
-4. Do not rerun UI **41078697033**, backend **41078798047**, or Integration
+2. The final round-6 coordinator repair is test-only: set `HOME` and
+   `USERPROFILE` independently in the Windows fixture, retaining the test cases
+   and leaving production code unchanged. It is not yet pushed or validated.
+3. Do not rerun UI **41078697033**, backend **41078798047**, or Integration
    **41078793722** for unchanged input closures. The historical Docker
-   **41067511450** success is on `9ba784ca…`; reuse only for its unchanged
-   closure, never as a whole-current-SHA pass.
-5. No candidate artifacts have been built. After source-matched gates complete,
-   inspect any resulting CLI/desktop artifacts and perform the outstanding
-   packaging checks and human acceptance below.
-6. Runtime acceptance remains pending, including serial real-psmux checks with
+   **41067511450** success is on `9ba784ca…`; it is not a whole-current-SHA pass.
+4. Artifacts were skipped because the blocking broad Windows gate failed. Even
+   if the final source-matched gate passes, artifact and packaging acceptance
+   remain distinct and pending.
+5. Runtime acceptance remains pending, including serial real-psmux checks with
    private state. Local psmux 3.4.0 and the committed CI pin do not substitute
    for that runtime evidence.
-7. Preserve the existing resolver/install, vulnerability, semantic-review and
-   human acceptance gaps. Do not clear any pending or review-pending CSV status
-   on the basis of the bounded round-4 results.
+6. Preserve the existing resolver/install, vulnerability, semantic-review and
+   human acceptance gaps. Do not bulk-promote CSV statuses: 282 remain pending,
+   45 review-pending, and 1 excluded; all 46 REVIEW paths remain unresolved.
+7. Round 6 is the last authorized push (6/6 after it). Record final exact-SHA
+   results externally at
+   `D:\Develop\Source\OpenSource\_AI\Omnigent\_evidence\v020-integration-20261030\FINAL-VALIDATION.md`;
+   no seventh documentation/status push is authorized.
 
 No local Python, pre-commit, hook bypass, replacement environment, WSL,
 publication, main-branch change, or installer action is authorized or attempted.
@@ -513,7 +511,7 @@ or demo captures.
 
 ## Shared permission and attempt ledger
 
-The integration's shared budget is **six push/retry rounds; 4 used, 2 remain**.
+The integration's shared budget is **six push/retry rounds; 5 used, 1 remains**.
 It is shared across coordinator, workers and handovers. Documentation-only
 pushes count; checks dispatched together for one SHA count as one round. Record
 the exact candidate SHA and round before any later authorized push/dispatch.
@@ -526,9 +524,10 @@ budget reset on model/session change. Old v0.19 four-round limits are history.
 | Round 2 | `c0821a838732fd7ac8834342f819414369fec602` | Push and source-matched Actions | Lint **41070123358** passed the complete pinned suite. Fork **41070125122** passed all 37 baseline contract tests, then failed the candidate AST audit on the intentional Pi portability matrix; candidate contract and downstream jobs did not run. | 4 |
 | Round 3 | `249ac5393fe0ba71d5587e1cda5513ec317928f5` | Push and source-matched fork validation | Fork **41070986497** failed the strict decorator audit on the intentional Windows Claude tmux/psmux matrix. The exact matrix was corrected at the round-4 candidate; do not relabel the round-3 run as passing. | 3 |
 | Round 4 | `dfcf012803e7045cd25b29bee60f6184c9fac482` | Push and source-matched Actions | Lint **41078692483**, Integration **41078793722**, UI **41078697033** (15 jobs/10 shards), and backend **41078798047** (10 jobs) succeeded. Fork **41078693057** completed but failed: contract runs/decorator audits passed; Linux content search failed for missing `ripgrep`; Windows psmux had 8 passes/3 fixture failures. Other Windows result counts and limits are in Current status. No artifacts built. | 2 |
-| Round 5 (planned; not consumed) | SHA pending; current verified snapshot remains `dfcf012803e7045cd25b29bee60f6184c9fac482` | Planned push of docs + prepared workflow prerequisite + fixture repair; then fork validation and lint | Not yet pushed or dispatched. Do not duplicate successful UI/backend/Integration checks or the historical Docker run for unchanged input closures. Budget: 2 remain before push; 1 after. | 2 before / 1 after |
+| Round 5 | `5bb6bfceda028cc4e6914493bc43470178f0bdcf` | Push and source-matched fork validation + lint | Lint **41083128167** passed. Fork **41083128407** completed: both 37-test contract runs and focused Linux checks passed; only the blocking broad Windows suite failed with one `HOME`/`USERPROFILE` fixture failure (4,552 testcase records, 0 errors, 233 skipped). Artifacts skipped. | 1 |
+| Round 6 (planned; final) | SHA unknown; round-5 snapshot is `5bb6bfceda028cc4e6914493bc43470178f0bdcf` | One final push with the test-only fixture repair; source-matched final validation | Not yet pushed or dispatched. Record exact SHA/results in external `FINAL-VALIDATION.md`; no seventh push/status update. | 1 before / 0 after |
 
-The two remaining rounds are the only remaining shared push/retry budget. No
+The single remaining round is the only remaining shared push/retry budget. No
 publication/image push, main PR/promotion or main-branch mutation,
 force/history rewrite, schedule activation, real installation mutation, global
 setting change, WSL, local Python, pre-commit, replacement environment or
@@ -582,16 +581,13 @@ alter main or the installed application, or terminate unowned sessions. The
 stable merge is already committed; do not reset or rewrite it as a rollback.
 Coordinate preservation before any separately authorized rollback.
 
-Next handover: Round 4 is complete. For planned round 5, commit the two
-documentation updates together with the already prepared `ripgrep` workflow
-prerequisite and psmux fixture readiness correction, then push once and batch
-fork validation with lint. Do not edit the existing E2E UI workflow or the
-psmux runtime implementation; do not rerun successful UI, backend or
-Integration checks, and reuse the old Docker result only for its unchanged
-input closure. The current snapshot is `dfcf012803e7045cd25b29bee60f6184c9fac482`;
-the future repair SHA is not yet known. This leaves **1/6 round** for the
-reserved final source-matched handover. The Linux prerequisite and Windows
-fixture failures remain unresolved until the pushed round-5 result; the
-blocking broader Windows gate, artifacts, runtime/live acceptance, and the
-existing pending/review-pending CSV counts remain open. The 322-path accounting
-is complete.
+Next handover: Round 5 is complete at `5bb6bfceda028cc4e6914493bc43470178f0bdcf`.
+Round 6 is the final planned push, with one round remaining before it and none
+after. It should contain only the final test-fixture correction and the
+corresponding round-6 documentation update; the new SHA is not yet known. Do
+not rerun successful UI, backend or Integration checks, do not treat the old
+Docker result as current-HEAD evidence, and do not spend a seventh round. The
+broad Windows gate failed once; artifacts, runtime/live acceptance, and the
+existing pending/review-pending CSV counts remain open. Store final exact-SHA
+results in the external `FINAL-VALIDATION.md` path above instead of pushing
+another status update. The 322-path accounting is complete.
