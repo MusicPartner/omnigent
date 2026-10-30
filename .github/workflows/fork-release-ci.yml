@@ -162,6 +162,14 @@ jobs:
               ("import time; time.sleep(30)", "timed out"),
             ])''', mode="eval").body)
           posix_mark = ast.dump(ast.parse("pytest.mark.posix_only", mode="eval").body)
+          windows_matrix = ast.dump(ast.parse(
+            'pytest.mark.parametrize("windows", [False, True], ids=["tmux", "psmux"])',
+            mode="eval",
+          ).body)
+          backend_matrix_tests = {
+            "test_inject_user_message_pastes_content_then_submits",
+            "test_usable_composer_height_restores_size_after_delivery",
+          }
           for path in paths:
             original = ast.parse(subprocess.check_output(["git", "show", f"{target}:{path}"]))
             candidate = ast.parse(Path(path).read_text(encoding="utf-8"))
@@ -182,6 +190,8 @@ jobs:
                 baseline_marks = (baseline_marks - {gateway_target}) | {gateway_portable}
               assert baseline_marks <= result_marks, (path, name, "lost decorator")
               expected_additions = {posix_mark} if name in expected_posix.get(path, set()) else set()
+              if path == paths[0] and name in backend_matrix_tests:
+                expected_additions.add(windows_matrix)
               assert result_marks - baseline_marks == expected_additions, (path, name, "unexpected decorators")
             print(f"{path}: {len(before)} target tests retained; marker owners audited")
           PY
@@ -259,6 +269,12 @@ jobs:
           tests/runner/test_environment_filesystem.py
           -k content_search -n 0 --reruns 0 --timeout=30
           -p no:cacheprovider -q -ra
+
+      - name: Anthropic request-capture contract
+        run: >-
+          uv run --no-sync pytest
+          tests/server/integration/test_mock_anthropic_messages.py
+          -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -q -ra
 
       - name: Portable Codex lifecycle and platform-scoped fixtures
         run: >-
@@ -583,10 +599,13 @@ jobs:
       - name: Install psmux
         shell: pwsh
         run: |
-          winget install --id marlocarlo.psmux -e --accept-package-agreements --accept-source-agreements --disable-interactivity
+          winget install --id marlocarlo.psmux --version 3.4.0 -e --accept-package-agreements --accept-source-agreements --disable-interactivity
+          if ($LASTEXITCODE -ne 0) { throw 'psmux installation failed' }
           "$env:LOCALAPPDATA\Microsoft\WinGet\Links" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           $env:PATH = "$env:LOCALAPPDATA\Microsoft\WinGet\Links;$env:PATH"
-          psmux --version
+          $version = psmux --version
+          if ($LASTEXITCODE -ne 0 -or ($version -join "`n") -notmatch 'psmux 3\.4\.0(?:\s|$)') { throw "Unexpected psmux version: $version" }
+          $version
 
       - name: Windows hook and shell consumer tests
         run: >-

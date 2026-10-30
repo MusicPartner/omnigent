@@ -1205,7 +1205,12 @@ async def create_message(
     async with _state._lock:
         accepted_at_ns = _time_mod.time_ns()
         _state.request_count += 1
-        _state.captured_requests.append(parsed)
+        captured = dict(parsed)
+        captured.pop("_mock_headers", None)
+        anthropic_beta = request.headers.get("anthropic-beta")
+        if anthropic_beta:
+            captured["_mock_headers"] = {"anthropic-beta": anthropic_beta}
+        _state.captured_requests.append(captured)
         queue = _state.resolve_queue_for_request(parsed)
         qr = queue.next()
 

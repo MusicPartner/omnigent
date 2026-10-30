@@ -1,5 +1,37 @@
 # Windows integration: upstream v0.20.0 — candidate ledger
 
+## Round 3 outcome and round 4 scope
+
+Round-3 fork run [41070986497](https://github.com/MusicPartner/omnigent/actions/runs/41070986497)
+at `249ac5393fe0ba71d5587e1cda5513ec317928f5` failed the strict decorator
+audit on an intentional Claude tmux/psmux parameter matrix. The next batch
+allows that exact matrix on its two reviewed owners, retaining all target
+decorators, the exact Pi portability mapping and the four required POSIX markers.
+Candidate execution and artifact jobs have not yet passed.
+
+The original UI run [41067501570](https://github.com/MusicPartner/omnigent/actions/runs/41067501570)
+completed with three failed shards. Two model-picker scenarios expected absent
+Claude transcript fields (`requestedModel`, `requestRef`, `api-request`). Their
+replacement evidence keeps the full pinned model/status and assistant model
+checks, while correlating the real HTTP request by user marker and checking its
+actual context-beta header. The mock records only that allowlisted header, with
+focused regression coverage. The login journey incorrectly required a user bubble
+after the server's terminal-only HTTP 400 refusal. It now checks the actionable
+refusal, restored draft and absence of plain or escaped `/login` from transcript
+and model user input. Neither server policy nor production UI is changed.
+
+The user upgraded local psmux; a read-only version check confirmed **3.4.0
+(`20aa1d7`, 2026-10-13)**. No running sessions were stopped or restarted. CI now
+pins and verifies 3.4.0; this is not yet a runtime pass. Its status/signal/cursor
+placeholders still require the existing compatibility safeguards.
+
+Round 4 batches the fork gate, pinned lint and a UI rerun at the new source SHA.
+The request-capture regression is included in focused Linux validation. Earlier
+integration/backend/Docker results remain source-qualified evidence at `9ba784ca…`.
+**3/6 rounds used before this push; 2 remain after round 4.** Local Python and
+full hooks remain unrun under the inherited restriction; standalone Ruff,
+strict YAML and whitespace checks are repeated before pushing.
+
 ## Round 2 outcome and round 3 scope
 
 At `c0821a838732fd7ac8834342f819414369fec602`, lint run

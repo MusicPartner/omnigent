@@ -43,6 +43,27 @@ async def test_model_validation_gets_json_message(stream: bool | None) -> None:
         assert requests.json()["requests"] == [payload]
 
 
+async def test_request_capture_records_only_the_actual_anthropic_beta_header() -> None:
+    beta = "context-1m-2025-08-07,interleaved-thinking-2025-05-14"
+    payload = {
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 8,
+        "messages": [{"role": "user", "content": "capture-header-marker"}],
+    }
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=mock_llm_server.app), base_url="http://mock"
+    ) as client:
+        response = await client.post(
+            "/v1/messages",
+            json=payload,
+            headers={"anthropic-beta": beta, "x-test-private": "not-captured"},
+        )
+        assert response.status_code == 200
+        requests = await client.get("/mock/requests")
+
+    assert requests.json()["requests"] == [{**payload, "_mock_headers": {"anthropic-beta": beta}}]
+
+
 async def test_streamed_message_keeps_anthropic_sse_events() -> None:
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=mock_llm_server.app), base_url="http://mock"

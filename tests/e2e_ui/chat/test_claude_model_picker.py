@@ -1080,16 +1080,28 @@ def _open_live_claude_model_menu(page: Page, entry: str = "gear") -> None:
 def _assert_mock_claude_turn(mock_url: str, marker: str, model: str) -> None:
     wire_model = model.removesuffix("[1m]")
     requests = get_mock_requests(mock_url, key=wire_model)
-    assert any(
-        marker in json.dumps(message.get("content"))
+    correlated = [
+        request
         for request in requests
         for message in request.get("messages", [])
         if message.get("role") == "user"
-    ), f"The mock received no {wire_model!r} request containing {marker!r}: {requests!r}"
+        if marker in json.dumps(message.get("content"))
+    ]
+    assert correlated, (
+        f"The mock received no {wire_model!r} request containing {marker!r}: {requests!r}"
+    )
+    if model.endswith("[1m]"):
+        assert any(
+            any(
+                beta.strip().startswith("context-1m-")
+                for beta in request.get("_mock_headers", {}).get("anthropic-beta", "").split(",")
+            )
+            for request in correlated
+        ), f"The correlated HTTP request had no 1M context beta header: {correlated!r}"
 
 
 def _assert_native_claude_turn(base_url: str, session_id: str, reply: str, model: str) -> None:
-    """Read Claude's own correlated request and reply, including the context beta."""
+    """Read Claude's reported pinned model and the model on its assistant reply."""
     snapshot = _live_claude_snapshot(base_url, session_id)
     bridge_id = snapshot["labels"].get(BRIDGE_ID_LABEL_KEY) or session_id
     bridge_dir = bridge_dir_for_bridge_id(bridge_id)
@@ -1104,16 +1116,7 @@ def _assert_native_claude_turn(base_url: str, session_id: str, reply: str, model
         and reply in json.dumps(record.get("message", {}).get("content"))
     )
     wire_model = model.removesuffix("[1m]")
-    assert assistant["requestedModel"] == model
     assert assistant["message"]["model"] == wire_model
-    request = next(
-        record
-        for record in records
-        if record.get("type") == "api-request" and record.get("id") == assistant["requestRef"]
-    )
-    assert request["params"]["model"] == wire_model
-    if model.endswith("[1m]"):
-        assert any(beta.startswith("context-1m-") for beta in request["params"]["betas"])
 
 
 @pytest.mark.nightly
