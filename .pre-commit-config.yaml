@@ -4,25 +4,30 @@
 # A built web-UI bundle may be committed at this path (vendored, minified
 # JS/CSS) — never lint or "fix" it.
 exclude: ^omnigent/server/static/web-ui/
+# `pre-commit install` (run by `just ensure`) wires both stages: the hooks run on
+# each commit, and again on push over the commits being pushed, so a commit made
+# with --no-verify or before the hooks were installed still cannot leave the
+# machine unchecked.
+default_install_hook_types: [pre-commit, pre-push]
 repos:
   - repo: local
     hooks:
-      - id: ruff-format
-        name: ruff format
-        language: system
-        entry: uv run ruff format --force-exclude
-        types: [python]
-
       - id: ruff-check
         name: ruff check
         language: system
         entry: uv run ruff check --fix --force-exclude
         types: [python]
 
+      - id: ruff-format
+        name: ruff format
+        language: system
+        entry: uv run ruff format --force-exclude
+        types: [python]
+
       - id: pyrefly
         name: pyrefly
         language: system
-        entry: .venv/bin/pyrefly check
+        entry: uv run pyrefly check
         pass_filenames: false
         files: ^(omnigent/.*\.pyi?|sdks/python-client/.*\.py|pyproject\.toml|pyrefly\.toml|uv\.lock)$
 
@@ -45,7 +50,7 @@ repos:
       - id: no-hardcoded-models
         name: no new hardcoded LLM model ids
         language: system
-        entry: .venv/bin/python dev/lint/lint_no_hardcoded_models.py
+        entry: uv run python dev/lint/lint_no_hardcoded_models.py
         pass_filenames: false
         files: \.(py|ya?ml|json|toml|sh)$
         exclude: (^|/)tests/|^openapi\.json$
@@ -56,10 +61,10 @@ repos:
         name: custom project lint rules
         language: system
         entry: >-
-          bash -c '.venv/bin/python -m dev.lint.custom_lint &&
+          bash -c 'uv run python -m dev.lint.custom_lint &&
           node --test dev/lint/session_list_visibility.test.mjs'
         pass_filenames: false
-        files: \.(py|[cm]?[jt]sx?|sh)$|^(\.pre-commit-config\.yaml|\.github/workflows/lint\.yml)$
+        files: \.(py|[cm]?[jt]sx?|sh)$|^(\.pre-commit-config\.yaml|\.github/workflows/lint\.yml|pyproject\.toml|uv\.lock)$
 
       - id: web-prettier
         name: web prettier
@@ -185,7 +190,7 @@ repos:
       - id: routing-pb2-fresh
         name: routing protobuf bindings are up to date
         language: system
-        entry: .venv/bin/python scripts/gen_routing_pb2.py --check
+        entry: uv run python scripts/gen_routing_pb2.py --check
         files: ^omnigent/api/routing/v1/routing(\.proto|_pb2\.pyi?)$
         pass_filenames: false
 

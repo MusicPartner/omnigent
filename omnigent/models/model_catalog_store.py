@@ -260,7 +260,7 @@ def _refresh_in_background(
             if rows is not None:
                 await asyncio.to_thread(write_catalog, harness, fingerprint, rows)
             return rows
-        except Exception:  # noqa: BLE001 — stale rows keep serving
+        except Exception:  # stale rows keep serving
             _logger.warning("background %s catalog refresh failed", harness, exc_info=True)
             return None
         finally:
@@ -294,7 +294,7 @@ async def reprobe_catalog(
         task = _inflight[key]
     try:
         return await asyncio.shield(task)
-    except Exception:  # noqa: BLE001 — a joined miss probe may raise; stored rows keep serving
+    except Exception:  # a joined miss probe may raise; stored rows keep serving
         _logger.warning("%s catalog refresh failed", harness, exc_info=True)
         return None
 
