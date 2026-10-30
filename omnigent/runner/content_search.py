@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from omnigent.runner.environment_filesystem import _python_script_command, split_glob_list
+from omnigent.runner.environment_filesystem import _python_shell_command, split_glob_list
 
 if TYPE_CHECKING:
     from omnigent.inner.os_env import OSEnvironment
@@ -164,7 +164,7 @@ async def search_content(
     )
     # ponytail: one capped response; stream batches if large-workspace latency warrants it.
     result = await environment.shell(
-        _python_script_command(parameters + _SEARCH_SCRIPT),
+        _python_shell_command(parameters + _SEARCH_SCRIPT),
         timeout=20,
         max_output=4 * 1024 * 1024,
     )

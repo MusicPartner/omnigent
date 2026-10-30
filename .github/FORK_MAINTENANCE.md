@@ -10,8 +10,12 @@ extraction. It is a plan, not permission to refactor or publish.
 
 ## Current automation policy (2026-10-30)
 
-The v0.20 candidate is a working-tree integration, **not validated or published**.
-See the [integration record](../docs/windows/RELEASE-INTEGRATION-0.20.md),
+The v0.20 integration branch is at verified HEAD
+`9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`. Round-1 integration and
+nonpublishing Docker checks passed; fork validation and lint reported repairable
+findings, while backend/UI checks were still running in the latest snapshot.
+The candidate is not fully validated or published, and runtime acceptance is
+pending. See the [integration record](../docs/windows/RELEASE-INTEGRATION-0.20.md),
 [semantic ledger](../docs/windows/RELEASE-INTEGRATION-0.20-ledger.csv), and
 [upstream direction review](../docs/windows/UPSTREAM-DIRECTION-0.20.md).
 Acceptance requires the fork's **blocking broader native Windows gate**;

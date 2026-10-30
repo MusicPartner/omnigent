@@ -709,7 +709,7 @@ class NativeInterruptRunner:
         try:
             await teardown_codex_native_app_server(conv_id)
             await self._teardown_session_terminals(conv_id, strict=True)
-        except Exception as exc:  # noqa: BLE001 - surface owned-process teardown failures.
+        except Exception as exc:
             self._logger.warning("Codex-native stop failed for %s", conv_id, exc_info=True)
             return JSONResponse(
                 status_code=503,

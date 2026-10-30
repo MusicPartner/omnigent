@@ -1,15 +1,51 @@
 # Windows integration: upstream v0.20.0 — candidate ledger
 
-Date: 2026-10-30. **The integration is committed; candidate validation and
-acceptance remain in progress.** On `windows-parity/v0.20-integration`, the
-stable merge is `abbb5e598ad989e0268c1d577a38da5dbca758c5`, followed by the
-Windows terminal fix `806c7ce308dbfe970ebc402dcac59db9c18cf652` and CI commit
-`eabd86b032ad12e80131b12e2b3b91f9e099e72b` (current HEAD). The merge has
-parents `430ea3caabec09ff894e92c0c03bfe029361418e` and
-`bfd8ab5624e34aa72c01fb451e11c2a0e1aae3ee`. There is no `MERGE_HEAD` or
-unmerged index state.
+Date: 2026-10-30. **The integration branch is at verified HEAD
+`9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`; source-matched validation and
+acceptance remain in progress.** The stable merge is
+`abbb5e598ad989e0268c1d577a38da5dbca758c5`, followed by the Windows terminal
+fix `806c7ce308dbfe970ebc402dcac59db9c18cf652`. The previously recorded CI
+snapshot `eabd86b032ad12e80131b12e2b3b91f9e099e72b` is historical, not current
+HEAD. The merge has parents `430ea3caabec09ff894e92c0c03bfe029361418e` and
+`bfd8ab5624e34aa72c01fb451e11c2a0e1aae3ee`. The checkout has coordinator
+repair edits in progress; this record describes the verified branch HEAD and
+must not be read as final validation of later edits.
 
-Current implementation/evidence snapshot:
+Current round-1 evidence snapshot (source SHA
+`9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`):
+
+- Fork run **41067491820** completed with failure: an extra-indented AST audit
+   step made the workflow invalid before any jobs ran. Strict parsing after all
+   workflow repairs found zero document errors across 95 workflows. Remote AST
+   execution remains pending; the earlier pre-insertion parse did not validate
+   the rejected definition.
+- Lint run **41067493114** completed with findings for an unused `noqa` at
+   `omnigent/runner/native/interrupt.py:709`, missing CSV EOF newline,
+   CheckYAML indentation, and Pyrefly's missing `_python_script_command` import
+   from `environment_filesystem` in `omnigent/runner/content_search.py`. The
+   coordinator repaired the content-search import/call to use the existing
+   `_python_shell_command` (same POSIX
+   sandbox `python3 -I -c`; Windows probe leaf unchanged) and extended
+   `test_content_search_rejects_invalid_helper_output` with shell-command and
+   kwargs assertions. The new focused Linux step runs
+   `test_environment_filesystem -k content_search` with retries set to **0**.
+- Pinned Ruff removed the unused `noqa`; that modification failed its hook and
+   is included in the repair. Separate invalid-`noqa` warnings at upstream
+   bridge/orchestration lines were warnings, not the blocking diagnostic.
+- The 39 older BLE001 findings were not actual pinned-Ruff errors. Remote Ruff
+   formatting, web Prettier/oxlint/TypeScript, native Android/iOS checks, and
+   lock/version guards passed.
+- Integration **41067497520** and nonpublishing Docker **41067511450** passed
+   on exact SHA `9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`. Backend E2E
+   **41067506812** also passed. UI **41067501570** remained in progress in the
+   latest Actions snapshot, with no failed jobs reported; do not stop or
+   duplicate it. No runtime test was performed locally.
+- Later source changes require validation at their own SHA. Evidence for an
+   unchanged input closure may be reused only with its scope stated explicitly.
+   Runtime, installer, artifact, and human acceptance remain pending.
+
+Earlier implementation/evidence snapshot (historical; superseded by the
+current snapshot above):
 
 - The release workflow has a new integration-branch gate and removes 20
    scheduled declarations, preserving the no-schedule policy evidenced by the
@@ -39,12 +75,6 @@ resolver/install validation, runtime, installer, artifact, and human checks are
 still pending. The historical baseline pair remains intact. Candidate commit
 references are recorded per path in the ledger; none closes a validation gate.
 
-This worker edits only this record and its companion CSV and does not stage,
-commit, push, or dispatch. The integration coordinator is separately
-authorized to stage/commit, push, and run Actions within the shared six-round
-budget. That authorization does not include publication, main-branch changes,
-WSL, local Python, pre-commit execution, a replacement environment, or reading
-`.gitignore` contents.
 
 ## Scope, immutable refs and provenance
 
@@ -61,7 +91,7 @@ checkout, not the editor's older checkout.
 | Exact stable target | v0.20.0, `bfd8ab5624e34aa72c01fb451e11c2a0e1aae3ee` |
 | Stable integration merge | `abbb5e598ad989e0268c1d577a38da5dbca758c5` (parents: source and exact stable target) |
 | Follow-up terminal/test fix | `806c7ce308dbfe970ebc402dcac59db9c18cf652` |
-| CI follow-up / current candidate HEAD | `eabd86b032ad12e80131b12e2b3b91f9e099e72b` |
+| Earlier CI follow-up (historical snapshot; not current HEAD) | `eabd86b032ad12e80131b12e2b3b91f9e099e72b` |
 | Actual Git merge base of source and target | `71fb9694ecf4b54b37919fbb1acd575dfd28243f` |
 | Recoverable backup branch | `backup/windows-v019-isolation-before-v020-20261030`, resolving to `430ea3caabec09ff894e92c0c03bfe029361418e` |
 | Fork remote | `https://github.com/MusicPartner/omnigent.git` |
@@ -326,19 +356,23 @@ are not completed stable fixes. Research snapshot
 | Historical exact source `430ea3caabec09ff894e92c0c03bfe029361418e` | Previously source-matched fork CI run **39752878340**: Linux/Windows contracts and release/artifact checks; historical source evidence only |
 | Same historical source | Lint/version run **39752878264**; not candidate lint/version evidence |
 | Earlier v0.19 baseline `6a7c711308587a2c39dd916c0820af71debfbb67` | Historical final release/lint evidence indexed by the maintained skill; not validation of source430 or this merge |
-| Current candidate | `eabd86b032ad12e80131b12e2b3b91f9e099e72b`; bounded Node/Vitest, YAML, Ruff, dependency-static and frozen-pnpm results are listed above; candidate Actions and runtime acceptance remain pending |
+| Verified branch HEAD | `9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`; round-1 results and in-progress checks are summarized above; runtime acceptance remains pending |
 | Baseline/candidate comparison | Baseline source-matched to `430ea3caabec09ff894e92c0c03bfe029361418e`; baseline and candidate use independently locked environments; historical baseline-first pair is unchanged |
-| This documentation task | Documentation-only edits; no application code, hooks, Python, staging, commit, push or dispatch |
+| Documentation scope | This record and its current-status paragraph only; coordinator code/test/workflow repairs are separate in-progress work |
 | Dependency worker/coordinator | Nineteen static checks passed and were rerun; frozen pnpm install passed; resolver/Python/hooks remain unverified |
 
 Historical CI identifiers were recovered from the source-matched handover;
 they were not refreshed online in this task. No historical run is relabeled as
-candidate evidence, and no unchanged-input-closure claim is made for v0.20.
+current-HEAD evidence. Integration and Docker passed on exact SHA
+`9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`; later source changes are not
+covered by those runs. Evidence for unchanged input closures may be reused
+only when its scope is explicitly recorded.
 No new CLI/desktop bundle, clean-wheel import, source metadata, core/client/UI
 version import, signing or architecture check has been accepted. An old bundle
 with a release-like filename is not a current candidate artifact.
 
-The release coordinator's next gates, **not run here**, are:
+Remaining coordinator gates and limits at verified HEAD
+`9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`:
 
 1. Review combined conflict resolutions and all clean-merge contracts, including
    factory kwargs, copy-on-write identity, correlation resets, runner-secret
@@ -353,10 +387,12 @@ The release coordinator's next gates, **not run here**, are:
 4. Run vulnerability guards, version/resources and focused backend/Windows
    contracts with retries disabled; real psmux serially with private state.
    Audit collected nodes/markers and preserve the historical baseline pair.
-5. Run required blocking broader Windows, full remote hooks/lint/types/version,
-   Linux, affected E2E, UI/Browser Contract, integration and nonpublishing Docker
-   checks as appropriate. Record exact head SHA and raw summaries/JUnit. A
-   passing family, nonblocking green job, timeout or retry is not a whole pass.
+5. Let the already-running backend and UI checks finish; do not stop them or
+   dispatch duplicate E2E. Integration and nonpublishing Docker already passed
+   on `9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`. After the repair and docs are
+   committed, the planned next round pushes the branch (triggering fork
+   validation) and dispatches **lint only**. Record the resulting exact SHA and
+   raw summaries; do not treat earlier runs as proof for changed source.
 6. Only after matching gates pass, inspect SHA-matched CLI/desktop artifacts and
    perform disposable packaging/install checks and the human acceptance below.
 
@@ -368,7 +404,7 @@ or demo captures.
 
 ## Shared permission and attempt ledger
 
-The integration's shared budget is **six push/retry rounds; 0 used, 6 remain**.
+The integration's shared budget is **six push/retry rounds; 1 used, 5 remain**.
 It is shared across coordinator, workers and handovers. Documentation-only
 pushes count; checks dispatched together for one SHA count as one round. Record
 the exact candidate SHA and round before any later authorized push/dispatch.
@@ -377,12 +413,12 @@ budget reset on model/session change. Old v0.19 four-round limits are history.
 
 | Round | SHA | Push / Actions | Outcome | Remaining |
 | --- | --- | --- | --- | ---: |
-| Round 1 planned | Documentation commit SHA pending coordinator commit | Integration-branch push and source-matched checks planned; not started | Current candidate is `eabd86b032ad12e80131b12e2b3b91f9e099e72b`; round is not consumed until an actual push | 6 |
+| Round 1 | `9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c` | Push and source-matched Actions | Fork **41067491820** failed at YAML/AST before jobs; lint **41067493114** completed with the findings listed above; integration **41067497520** and nonpublishing Docker **41067511450** passed. Backend **41067506812** and UI **41067501570** remained in progress at the latest snapshot. | 5 |
+| Round 2 planned (not consumed) | Repair-and-docs commit SHA pending | Commit repairs and this documentation, push for automatic fork validation, and dispatch **lint only** | Await coordinator action; do not stop the running backend/UI checks or duplicate E2E. | 5 |
 
-This documentation-only assignment authorizes no staging, commit, push or
-dispatch by this worker. The coordinator's separate authorization covers
-staging/commit, push and Actions within this shared budget only. No
-publication/image push, main PR/promotion or main-branch mutation,
+The coordinator handles the planned repair-and-docs commit, branch push,
+automatic fork validation, and lint-only dispatch within this shared budget.
+No publication/image push, main PR/promotion or main-branch mutation,
 force/history rewrite, schedule activation, real installation mutation, global
 setting change, WSL, local Python, pre-commit, replacement environment or
 excluded-content read is permitted.
@@ -435,8 +471,9 @@ alter main or the installed application, or terminate unowned sessions. The
 stable merge is already committed; do not reset or rewrite it as a rollback.
 Coordinate preservation before any separately authorized rollback.
 
-Next handover step: coordinator commits this documentation update, then pushes
-the integration branch and runs the planned source-matched checks within the
-shared budget. The documentation commit SHA is not known until it is created.
-Update evidence and the round ledger as results arrive. The 322-path accounting
-is complete; **candidate validation and runtime/live acceptance are not**.
+Next handover: coordinator commits the code repair and documentation, then
+pushes for automatic fork validation and dispatches lint only (round 2; not yet
+consumed). Let the existing backend/UI runs finish; do not duplicate E2E.
+Record the resulting commit SHA and source-matched results when available. The
+322-path accounting is complete; **candidate validation and runtime/live
+acceptance remain pending**.

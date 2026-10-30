@@ -121,7 +121,7 @@ jobs:
       - name: Install candidate dependencies from its own lock
         run: uv sync --locked --group test --extra tracing
 
-        - name: Audit reconciled test symbols and platform marker owners
+      - name: Audit reconciled test symbols and platform marker owners
         if: ${{ github.ref == 'refs/heads/windows-parity/v0.20-integration' }}
         shell: bash
         run: |
@@ -235,6 +235,13 @@ jobs:
 
       - name: Install focused test and lint dependencies
         run: uv sync --locked --group dev --extra tracing
+
+      - name: Content search shell-helper integration regressions
+        run: >-
+          uv run --no-sync pytest
+          tests/runner/test_environment_filesystem.py
+          -k content_search -n 0 --reruns 0 --timeout=30
+          -p no:cacheprovider -q -ra
 
       - name: Portable Codex lifecycle and platform-scoped fixtures
         run: >-

@@ -1991,15 +1991,26 @@ def test_content_search_process_boundaries(tmp_path: Path, mode: str) -> None:
 async def test_content_search_rejects_invalid_helper_output(
     registry: SessionResourceRegistry, monkeypatch: pytest.MonkeyPatch, stdout: str
 ) -> None:
+    import shlex
     from unittest.mock import AsyncMock
 
-    from omnigent.runner.content_search import search_content
+    from omnigent.runner.content_search import _SEARCH_SCRIPT, search_content
 
     environment = registry._primary_envs["conv_test"]
-    monkeypatch.setattr(environment, "shell", AsyncMock(return_value={"stdout": stdout}))
+    shell = AsyncMock(return_value={"stdout": stdout})
+    monkeypatch.setattr(environment, "shell", shell)
     assert await search_content(environment, "needle") == {
         "error": "Content search could not run in this workspace. Try again."
     }
+    shell.assert_awaited_once()
+    args, kwargs = shell.await_args
+    command = shlex.split(args[0])
+    assert command[:3] == ["python3", "-I", "-c"]
+    assert command[3] == (
+        "query = 'needle'\ncase_sensitive = False\n"
+        "regex = False\nlimit = 500\nglob_args = []\n" + _SEARCH_SCRIPT
+    )
+    assert kwargs == {"timeout": 20, "max_output": 4 * 1024 * 1024}
 
 
 @pytest.mark.asyncio
