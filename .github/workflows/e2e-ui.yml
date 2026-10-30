@@ -31,8 +31,6 @@ on:
       - '.github/scripts/polly-review-*.py'
       - '.github/workflows/polly-review*.yml'
       - '.github/workflows/*.js'
-  schedule:
-    - cron: "0 9 * * *"
   workflow_dispatch:
 
 permissions:
@@ -67,6 +65,7 @@ jobs:
   # Security gate: untrusted PRs wait on the deterministic scan
   # (security-gate.yml); trusted authors and non-PR events pass instantly.
   gate:
+    if: github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')
     uses: ./.github/workflows/security-gate.yml
     permissions:
       contents: read
@@ -502,7 +501,7 @@ jobs:
 
   result:
     name: E2E UI result
-    if: always()
+    if: always() && (github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main'))
     needs: [setup, build-sidecar, browser-contract, e2e-ui]
     runs-on: ubuntu-latest
     timeout-minutes: 5

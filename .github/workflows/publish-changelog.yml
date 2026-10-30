@@ -49,6 +49,7 @@ concurrency:
 
 jobs:
   resolve:
+    if: github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')
     name: Resolve release tag
     runs-on: ubuntu-latest
     outputs:

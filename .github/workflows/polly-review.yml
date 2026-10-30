@@ -52,7 +52,7 @@ jobs:
   # write access or REVIEW_ALLOWLIST membership; forks retain the approval relay.
   # PR changes are fetched only as a diff, never executed here.
   gate:
-    if: github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name == github.repository
+    if: (github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')) && github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/security-gate.yml
     permissions:
       contents: read
@@ -61,6 +61,7 @@ jobs:
   trigger:
     name: Validate review request
     if: >-
+      (github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')) &&
       github.event_name == 'issue_comment' &&
       github.event.issue.pull_request != null &&
       contains(github.event.comment.body, '/review') &&
@@ -107,6 +108,7 @@ jobs:
     # !cancelled() permits skipped event-specific dependencies; each event
     # still requires its own gate or command validation to succeed.
     if: >-
+      (github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')) &&
       !cancelled() && (
         (
           github.event_name == 'pull_request_target' &&

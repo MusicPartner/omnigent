@@ -1,8 +1,6 @@
 name: Sync upstream release
 
 on:
-  schedule:
-    - cron: "23 6 * * *"
   workflow_dispatch:
     inputs:
       upstream_ref:

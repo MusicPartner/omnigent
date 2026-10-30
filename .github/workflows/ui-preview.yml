@@ -93,6 +93,8 @@ permissions: {}
 jobs:
   notify:
     if: >-
+      (github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main'))
+      &&
       github.event_name != 'push'
       && github.event.action != 'closed'
       && contains(github.event.pull_request.labels.*.name, 'ui-preview')
@@ -131,11 +133,14 @@ jobs:
 
   build:
     if: >-
-      github.event_name == 'push'
-      || (
-        github.event.action != 'closed'
-        && contains(github.event.pull_request.labels.*.name, 'ui-preview')
-        && github.event.pull_request.draft == false
+      (github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main'))
+      && (
+        github.event_name == 'push'
+        || (
+          github.event.action != 'closed'
+          && contains(github.event.pull_request.labels.*.name, 'ui-preview')
+          && github.event.pull_request.draft == false
+        )
       )
     runs-on: ubuntu-latest
     permissions:
@@ -578,6 +583,8 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch'
       || (
+        github.ref != 'refs/heads/main' && github.base_ref != 'main'
+        &&
         github.event_name != 'push'
         && github.event.action == 'closed'
       )

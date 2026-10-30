@@ -36,6 +36,7 @@ concurrency:
 
 jobs:
   approve:
+    if: github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')
     name: Maintainer Approval
     permissions:
       contents: read

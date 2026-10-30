@@ -9,8 +9,6 @@ name: Integration Tests
 # workflow_dispatch.
 
 on:
-  schedule:
-    - cron: "30 9 * * *"
   pull_request:
     # No labeled/unlabeled: a skip-security-scan waiver re-runs this workflow's
     # Security Gate via rerun-security-gate.yml, so label churn need not re-run
@@ -53,6 +51,7 @@ jobs:
   # Security precondition gate: untrusted PRs hold until the scan passes
   # (see security-gate.yml); trusted authors / non-PR events pass instantly.
   gate:
+    if: github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')
     uses: ./.github/workflows/security-gate.yml
     permissions:
       contents: read

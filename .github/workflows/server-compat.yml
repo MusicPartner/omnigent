@@ -27,9 +27,6 @@ on:
         description: "Comma-separated version set for BOTH axes (e.g. 'main,v0.2.0'). Empty = main + all final (non-prerelease) tags."
         required: false
         default: ""
-  schedule:
-    # Every 12 hours (00:00 and 12:00 UTC).
-    - cron: "0 */12 * * *"
   # Fast smoke on PRs that touch the server↔runner contract surface.
   # Runs both Config 1 (new server, old runner) and Config 2 (new runner,
   # old server) against the latest stable release so protocol regressions
@@ -64,6 +61,7 @@ jobs:
   # The full pairwise matrix (backcompat-e2e / backcompat-integration) still
   # runs on schedule/dispatch and covers the broader version history.
   resolve-latest:
+    if: github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')
     name: Resolve latest stable tag
     # PRs: always. Schedule/dispatch: always.
     runs-on: ubuntu-latest
@@ -164,7 +162,7 @@ jobs:
     name: setup
     # The full pairwise matrix is expensive — skip it on PR triggers (the
     # fast smoke jobs above cover the PR case).
-    if: github.event_name != 'pull_request'
+    if: (github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')) && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -257,7 +255,7 @@ jobs:
   # tests/e2e_ui for every old server tag × shard (server axis only).
   setup-ui:
     name: setup-ui
-    if: github.event_name != 'pull_request'
+    if: (github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')) && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:

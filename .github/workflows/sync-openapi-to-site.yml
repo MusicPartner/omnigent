@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     # Skip cleanly on forks / installs where the App isn't configured,
     # rather than failing the token step with a confusing error.
-    if: ${{ vars.OMNIGENT_BOT_APP_ID != '' }}
+    if: ${{ (github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')) && vars.OMNIGENT_BOT_APP_ID != '' }}
     env:
       SYNC_BRANCH: auto/openapi-sync
       TARGET_REPO: ${{ github.repository_owner }}/omnigent-site

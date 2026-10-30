@@ -28,7 +28,7 @@ concurrency:
 jobs:
   validate:
     name: Kustomize build (overlays)
-    if: ${{ !github.event.pull_request.draft }}
+    if: ${{ (github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')) && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

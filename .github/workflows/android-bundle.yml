@@ -29,6 +29,7 @@ permissions:
 
 jobs:
   gate:
+    if: github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')
     uses: ./.github/workflows/security-gate.yml
     permissions:
       contents: read

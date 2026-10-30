@@ -22,6 +22,7 @@ jobs:
   autoformat:
     name: PR Autoformat
     if: >-
+      (github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')) &&
       !endsWith(github.actor, '[bot]') &&
       github.event.issue.pull_request != null &&
       contains(github.event.comment.body, '/autoformat')

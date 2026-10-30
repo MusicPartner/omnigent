@@ -14,8 +14,6 @@ on:
     types: [synchronize, labeled]
   issue_comment:
     types: [created]
-  schedule:
-    - cron: "0 */12 * * *"
   workflow_dispatch:
 
 permissions:

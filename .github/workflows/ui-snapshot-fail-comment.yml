@@ -31,6 +31,7 @@ jobs:
     name: Upsert baseline-update instructions
     # Only failed compare runs that came from a PR (push/dispatch have no PR).
     if: >-
+      (github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')) &&
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'failure'
     runs-on: ubuntu-latest

@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   retry:
+    if: github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')
     name: Retry (${{ matrix.name }})
     runs-on: ubuntu-latest
     strategy:
@@ -83,6 +84,7 @@ jobs:
           NODE
 
   cache-authentication:
+    if: github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')
     name: Cache authentication
     runs-on: ubuntu-latest
     steps:

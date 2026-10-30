@@ -13,6 +13,7 @@ on:
       - windows-parity/v0.17-integration
       - windows-parity/v0.19-integration
       - windows-parity/v0.19-isolation-p1-p2
+      - windows-parity/v0.20-integration
     paths-ignore:
       - "**/*.md"
       - "docs/**"
@@ -32,7 +33,7 @@ env:
 jobs:
   terminal-preparation-contracts:
     name: Terminal preparation contracts (${{ matrix.os }})
-    if: ${{ github.ref == 'refs/heads/windows-parity/v0.19-isolation-p1-p2' }}
+    if: ${{ github.ref == 'refs/heads/windows-parity/v0.19-isolation-p1-p2' || github.ref == 'refs/heads/windows-parity/v0.20-integration' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -43,6 +44,7 @@ jobs:
       OMNIGENT_SKIP_WEB_UI: "true"
       CHARACTERIZATION_SHA: a07520b5053e24ccbc399356296ad47842d6ed6d
       VALIDATED_BASE_SHA: 6a7c711308587a2c39dd916c0820af71debfbb67
+      RELEASE_SOURCE_SHA: 430ea3caabec09ff894e92c0c03bfe029361418e
       CONTRACT_TESTS: >-
         tests/terminals/test_backend_release_contract.py
         tests/terminals/test_registry.py::test_launch_forwards_backend_context_and_assigns_lifecycle_before_launch
@@ -76,20 +78,31 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Install contract dependencies
-        run: uv sync --locked --group test --extra tracing
-
-      - name: Verify package 1 is test-only and select its implementation
+      - name: Select the source-matched baseline implementation
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse "$CHARACTERIZATION_SHA^")" = "$VALIDATED_BASE_SHA"
-          git diff --exit-code "$VALIDATED_BASE_SHA" "$CHARACTERIZATION_SHA" -- omnigent pyproject.toml uv.lock
-          git switch --detach "$CHARACTERIZATION_SHA"
-          test "$(git rev-parse HEAD)" = "$CHARACTERIZATION_SHA"
+          baseline="$CHARACTERIZATION_SHA"
+          if [[ "$GITHUB_REF" == refs/heads/windows-parity/v0.20-integration ]]; then
+            baseline="$RELEASE_SOURCE_SHA"
+            git merge-base --is-ancestor "$baseline" "$GITHUB_SHA"
+          else
+            test "$(git rev-parse "$CHARACTERIZATION_SHA^")" = "$VALIDATED_BASE_SHA"
+            git diff --exit-code "$VALIDATED_BASE_SHA" "$CHARACTERIZATION_SHA" -- omnigent pyproject.toml uv.lock
+          fi
+          git switch --detach "$baseline"
+          test "$(git rev-parse HEAD)" = "$baseline"
+          echo "Baseline source: $baseline"
+
+      - name: Install baseline dependencies from its own lock
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/terminal-baseline-venv
+        run: uv sync --locked --group test --extra tracing
 
       - name: Characterize unchanged launch preparation on this platform
         shell: bash
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/terminal-baseline-venv
         run: |
           set -euo pipefail
           uv run --no-sync python -c "import omnigent; from pathlib import Path; assert Path(omnigent.__file__).resolve().is_relative_to(Path.cwd().resolve()); print(omnigent.__file__)"
@@ -98,12 +111,69 @@ jobs:
           grep '^tests/.*::' baseline-collection.log > baseline-nodes.txt
           uv run --no-sync pytest "${targets[@]}" -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -q -ra --junitxml=isolation-baseline.xml
 
-      - name: Select package 2 and verify the same contract nodes
+      - name: Select the candidate implementation
         shell: bash
         run: |
           set -euo pipefail
           git switch --detach "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Install candidate dependencies from its own lock
+        run: uv sync --locked --group test --extra tracing
+
+        - name: Audit reconciled test symbols and platform marker owners
+        if: ${{ github.ref == 'refs/heads/windows-parity/v0.20-integration' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --no-sync python - <<'PY'
+          import ast
+          import subprocess
+          from pathlib import Path
+
+          target = "bfd8ab5624e34aa72c01fb451e11c2a0e1aae3ee"
+          paths = [
+            "tests/harnesses/claude_native/test_claude_native_bridge.py",
+            "tests/harnesses/claude_native/test_claude_native_slow_ready.py",
+            "tests/e2e_ui/chat/test_claude_native_slow_ready_first_prompt.py",
+            "tests/inner/test_pi_executor.py",
+            "tests/e2e/test_repl_approval_e2e.py",
+          ]
+          expected_posix = {
+            paths[1]: {
+              "test_first_message_survives_slow_terminal_startup",
+              "test_slash_command_waits_for_a_silently_booting_terminal",
+            },
+            paths[2]: {
+              "test_slow_ready_wrapper_waits_for_delivery",
+              "test_claude_native_first_prompt_survives_slow_terminal_boot",
+            },
+          }
+          for path in paths:
+            original = ast.parse(subprocess.check_output(["git", "show", f"{target}:{path}"]))
+            candidate = ast.parse(Path(path).read_text(encoding="utf-8"))
+            def tests(tree):
+              return {
+                node.name: node for node in ast.walk(tree)
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name.startswith("test_")
+              }
+            before, after = tests(original), tests(candidate)
+            assert not (before.keys() - after.keys()), (path, before.keys() - after.keys())
+            for name in before:
+              baseline_marks = {ast.dump(mark) for mark in before[name].decorator_list}
+              result_marks = {ast.dump(mark) for mark in after[name].decorator_list}
+              assert baseline_marks <= result_marks, (path, name, "lost decorator")
+              new_posix = "Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='posix_only', ctx=Load())" in result_marks - baseline_marks
+              assert not new_posix or name in expected_posix.get(path, set()), (path, name)
+            print(f"{path}: {len(before)} target tests retained; marker owners audited")
+          PY
+
+      - name: Verify the same contract nodes
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --no-sync python -c "import omnigent; from pathlib import Path; assert Path(omnigent.__file__).resolve().is_relative_to(Path.cwd().resolve()); print(omnigent.__file__)"
           read -r -a targets <<< "$CONTRACT_TESTS"
           uv run --no-sync pytest "${targets[@]}" --collect-only -q --color=no > candidate-collection.log
           grep '^tests/.*::' candidate-collection.log > candidate-nodes.txt
@@ -115,6 +185,15 @@ jobs:
           set -euo pipefail
           read -r -a targets <<< "$CONTRACT_TESTS"
           uv run --no-sync pytest "${targets[@]}" -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -q -ra --junitxml=isolation-candidate.xml
+
+      - name: Verify candidate launch failure and placeholder status regressions
+        if: ${{ github.ref == 'refs/heads/windows-parity/v0.20-integration' }}
+        run: >-
+          uv run --no-sync pytest
+          tests/terminals/test_launch_failure_cleanup.py
+          tests/terminals/test_windows_psmux.py::test_psmux_does_not_infer_exit_status_or_signal_from_placeholders
+          tests/terminals/test_windows_psmux.py::test_psmux_dead_pane_keeps_exit_status_unknown
+          -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -q -ra
 
       - name: Upload baseline and candidate contract evidence
         if: always()

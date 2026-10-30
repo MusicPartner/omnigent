@@ -8,7 +8,21 @@ The [post-v0.19 isolation plan](../docs/windows/ISOLATION-PLAN-0.19.md) prioriti
 contract tests/primitives and shared terminal preparation before further
 extraction. It is a plan, not permission to refactor or publish.
 
-## Current automation policy (2026-10-21)
+## Current automation policy (2026-10-30)
+
+The v0.20 candidate is a working-tree integration, **not validated or published**.
+See the [integration record](../docs/windows/RELEASE-INTEGRATION-0.20.md),
+[semantic ledger](../docs/windows/RELEASE-INTEGRATION-0.20-ledger.csv), and
+[upstream direction review](../docs/windows/UPSTREAM-DIRECTION-0.20.md).
+Acceptance requires the fork's **blocking broader native Windows gate**;
+the optional upstream nonblocking sweep is not a substitute.
+
+Preserve the workflow-only schedule removal at
+`f9c0b39e004ffbe1261565d371866259716d0281` (19 paths) and the earlier
+manual-only main policy below. The candidate removes all schedule declarations;
+main-side automatic jobs are guarded without dropping non-main event interfaces
+or changing existing dispatch inputs, reusable interfaces, or publication guards.
+This does not authorize dispatch, publication, workflow reactivation, or promotion.
 
 At the user's request, automatic triggers on `main` are disabled. The main-branch
 workflow definitions are manual-only; reusable workflow-call interfaces and
@@ -21,14 +35,14 @@ Docker checks are separate from main automation. Do not re-enable main schedules
 or push triggers when eventually promoting this branch. The flows described
 below document the available maintenance design, not enabled main automation.
 
-## Normal upstream release flow
+## Historical upstream release design (automatic main flow disabled)
 
-1. `Sync upstream release` runs daily on the default branch. It resolves the latest non-prerelease GitHub release from `omnigent-ai/omnigent`.
+1. `Sync upstream release` can be dispatched manually; its former daily schedule is disabled. It resolves the latest non-prerelease GitHub release from `omnigent-ai/omnigent`.
 2. If that upstream release commit is already an ancestor of this fork's `main`, the workflow exits without changes.
 3. Otherwise it creates `upstream-sync/<ref>-<run>`, merges the upstream release commit into that branch, and opens a PR to `main`.
 4. The sync workflow explicitly dispatches `Fork release validation` on the sync branch. This is necessary because PRs created by the repository `GITHUB_TOKEN` do not themselves start ordinary PR-triggered workflows.
 5. Review the upstream diff and merge the PR only after validation passes.
-6. The push to `main` runs `Fork release validation` again and produces a fresh Windows artifact from the merged commit.
+6. Automatic main validation remains disabled; a main merge is not permission to reactivate it or publish artifacts.
 
 A merge conflict stops the sync workflow before it pushes a branch. The workflow summary lists the conflicted files so the integration can be resolved deliberately instead of silently preferring either side.
 
@@ -45,9 +59,9 @@ The workflow always uses a PR; it does not push an upstream merge directly into 
 
 ## Release validation
 
-`Fork release validation` runs for non-documentation pull requests, for non-documentation pushes to `main` and the integration branches `windows-parity/v0.14-integration`, `windows-parity/v0.17-integration`, and `windows-parity/v0.19-integration`, and by manual dispatch.
+`Fork release validation` supports manual dispatch and selected integration-branch validation. Automatic main validation remains disabled. See the current v0.20 integration record and workflow for the candidate branch selection and pending acceptance gates.
 
-Compatibility validation always runs for a normal code PR. The downloadable Windows artifact is deliberately built only for a push/merge or a manual dispatch. This prevents every intermediate PR commit from consuming another Windows build runner while still validating the code before merge.
+On enabled integration validation events, compatibility checks run before artifact builds. The downloadable Windows artifact is deliberately built only for an allowed integration push or a manual dispatch, not every intermediate PR commit.
 
 For v0.19, push the validated integration branch to run focused Linux checks and the required native Windows gate. A successful branch push also builds the Windows CLI bundle and Electron desktop ZIP; manual dispatch on the selected branch runs the same validation and artifact jobs. The upstream `Windows (native)` workflow remains an optional signal and does not replace the required fork Windows gate.
 
@@ -56,14 +70,14 @@ For v0.19, push the validated integration branch to run focused Linux checks and
 The three stages are:
 
 1. **Focused Linux compatibility**: Ruff plus the Windows integration surfaces and focused tests.
-2. **Native Windows compatibility**: import/CLI smoke, upstream's hard Windows pair, the Windows-safe test subset, psmux installation/lifecycle tests, and a non-blocking broader Windows unit sweep.
+2. **Native Windows compatibility**: import/CLI smoke, upstream's hard Windows pair, the Windows-safe test subset, psmux installation/lifecycle tests, and the fork's required blocking broader Windows unit sweep. Only the separate upstream Windows sweep is optional and nonblocking.
 3. **Windows artifact build**: production web UI build, core + lockstep SDK distributions, Twine metadata checks, bundled web UI and `omni`/`omnigent` entry-point assertions, clean wheel install, artifact-installer/uninstaller round-trip, checksums, and artifact upload.
 
 Uploaded bundles are named `omnigent-windows-<commit-sha>` and are retained for 30 days. See `docs/windows/QUICKSTART.md` for installation, upgrades, local connection, and smoke testing.
 
 ## Housekeeping
 
-`Fork housekeeping` lives on the default branch and runs weekly or manually. It has two responsibilities:
+`Fork housekeeping` has no weekly schedule and does not run automatically on main. Its manual interface describes two historical responsibilities; neither is authorized by this integration task:
 
 - Disable upstream-only automation that is not useful in this fork, such as publishing/release, benchmark, reviewer assignment, doc-sync, merge-monitoring, and mobile bundle workflows. Core CI, Lint, E2E, E2E UI, native Windows, security/Trivy, and the fork workflows remain enabled.
 - Delete same-repository branches matching `maintenance/*` or `upstream-sync/*` only after their PR has been merged and no Actions run is still active. Completed runs for those transient branches are also removed after the configured short retention window.
@@ -78,7 +92,7 @@ The permanent fork-specific layer is intentionally small:
 - `.github/workflows/fork-release-ci.yml` — focused Linux/Windows validation and the installable Windows artifact.
 - `.github/workflows/fork-housekeeping.yml` — keep transient branches/runs and fork-irrelevant upstream automation under control.
 
-Upstream's core test workflows stay available instead of being forked into custom copies. Fork-only policy is concentrated in these files to minimize merge conflicts during future upstream releases.
+Upstream's core test workflows stay available instead of being forked into custom copies. Integration logic is concentrated in these files; additive main guards in the other workflows preserve the fork's manual-only default-branch policy.
 
 ## Windows isolation topic map (v0.17)
 

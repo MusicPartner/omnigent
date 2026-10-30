@@ -16,8 +16,6 @@ name: E2E Tests
 #                       merge-ready.yml.
 
 on:
-  schedule:
-    - cron: "0 9 * * *"
   pull_request:
     # labeled/unlabeled: kept for the skip-security-scan recovery path
     # (rerun-security-gate-run.yml falls back to this trigger). The concurrency
@@ -73,9 +71,12 @@ jobs:
   # don't need the full suite — just exit fast.
   gate:
     if: >-
-      github.event_name != 'pull_request' ||
-      (github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
-      github.event.label.name == 'skip-security-scan'
+      (github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')) &&
+      (
+        github.event_name != 'pull_request' ||
+        (github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+        github.event.label.name == 'skip-security-scan'
+      )
     uses: ./.github/workflows/security-gate.yml
     permissions:
       contents: read

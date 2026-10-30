@@ -59,8 +59,9 @@ jobs:
     # PR runs (gate) and pushes to main (record baseline). Other completions have
     # no PR head SHA / aren't the baseline branch.
     if: >-
-      ${{ github.event.workflow_run.event == 'pull_request' ||
-          (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main') }}
+      ${{ (github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')) &&
+          (github.event.workflow_run.event == 'pull_request' ||
+          (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:

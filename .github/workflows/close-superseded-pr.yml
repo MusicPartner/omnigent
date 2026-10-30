@@ -8,7 +8,7 @@ permissions: {}
 
 jobs:
   close-superseded:
-    if: github.event.pull_request.merged == true
+    if: (github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')) && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     permissions:
       contents: read

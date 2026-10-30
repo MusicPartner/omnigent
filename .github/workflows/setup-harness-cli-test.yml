@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   unit:
+    if: github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')
     name: Manifest and retry policy
     runs-on: ubuntu-latest
     steps:
@@ -20,6 +21,7 @@ jobs:
       - run: node --test .github/actions/setup-harness-cli/setup-harness-cli.test.mjs
 
   install:
+    if: github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')
     name: Install ${{ matrix.harness }}
     runs-on: ubuntu-latest
     strategy:

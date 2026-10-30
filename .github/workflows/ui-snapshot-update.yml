@@ -49,6 +49,7 @@ jobs:
       contents: read
     # Same-repo only: a fork's read-only token can't push to the fork branch.
     if: >-
+      (github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')) &&
       github.event.label.name == 'update-ui-snapshot' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04

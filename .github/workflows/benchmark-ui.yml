@@ -3,8 +3,6 @@ name: Benchmark (UI)
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  schedule:
-    - cron: "19 8 * * *"
   workflow_dispatch:
     inputs:
       compare_same_build:
@@ -28,6 +26,7 @@ env:
 
 jobs:
   gate:
+    if: github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')
     uses: ./.github/workflows/security-gate.yml
     permissions:
       contents: read

@@ -32,7 +32,7 @@ on:
         description: "Version tag to publish when publish=true"
         required: false
         type: string
-        default: "0.19.0.mp"
+        default: "0.20.0.mp"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     # Only build when something that lands in the image changes. Mirrors the

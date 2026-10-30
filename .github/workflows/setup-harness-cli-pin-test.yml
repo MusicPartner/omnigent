@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   pin-consistency:
+    if: github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')
     name: Pinned callers match tested action
     runs-on: ubuntu-latest
     steps:

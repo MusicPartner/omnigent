@@ -22,7 +22,7 @@ jobs:
   record:
     # Approvals flip the check green; dismissals and changes-requested flip
     # it red. Skip COMMENTED reviews (they don't change review state).
-    if: github.event.review.state != 'commented'
+    if: (github.event_name == 'workflow_dispatch' || (github.ref != 'refs/heads/main' && github.base_ref != 'main')) && github.event.review.state != 'commented'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

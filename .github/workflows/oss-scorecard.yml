@@ -10,8 +10,6 @@ name: OSS Scorecard
 on:
   # Re-score on branch-protection changes, weekly, and on push to main.
   branch_protection_rule:
-  schedule:
-    - cron: '37 4 * * 1'  # Mondays 04:37 UTC
   push:
     branches: [main]
 
