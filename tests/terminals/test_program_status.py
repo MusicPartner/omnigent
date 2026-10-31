@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import subprocess
 import sys
@@ -11,7 +12,67 @@ from pathlib import Path
 
 import pytest
 
+from omnigent.inner import _proc
+from omnigent.terminals import program_status
 from omnigent.terminals.program_status import ProgramStatus, ProgramStatusParser, parse_report
+
+
+@pytest.mark.parametrize("windows", [True, False])
+def test_relay_capability_requires_posix(monkeypatch: pytest.MonkeyPatch, windows: bool) -> None:
+    monkeypatch.setattr(program_status, "IS_WINDOWS", windows)
+    assert program_status.program_status_relay_supported() is not windows
+
+
+@pytest.mark.parametrize("alive", [True, False])
+def test_windows_reader_uses_non_signalling_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, alive: bool
+) -> None:
+    path = tmp_path / "status.json"
+    path.write_text(json.dumps({"relay_pid": 123, "pid": 456, "status": {"state": "working"}}))
+    seen: list[int] = []
+
+    def process_alive(pid: int) -> bool:
+        seen.append(pid)
+        return alive
+
+    def kill(*args: object) -> None:
+        pytest.fail("Windows reader must never signal a process")
+
+    monkeypatch.setattr(program_status, "IS_WINDOWS", True)
+    monkeypatch.setattr(_proc, "process_alive", process_alive)
+    monkeypatch.setattr(program_status.os, "kill", kill)
+    reader = program_status.ProgramStatusReader(path)
+    assert reader.child_pid == (456 if alive else None)
+    assert reader.status == (ProgramStatus("working") if alive else None)
+    assert seen == [123, 123]
+
+
+def test_reader_observes_owned_process_exit(tmp_path: Path) -> None:
+    """Reading a live child's snapshot must not terminate it."""
+    child = subprocess.Popen(
+        [sys.executable, "-c", "import sys; print('ready', flush=True); sys.stdin.read()"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert child.stdout is not None and child.stdout.readline().strip() == "ready"
+        path = tmp_path / "status.json"
+        path.write_text(
+            json.dumps({"relay_pid": child.pid, "pid": child.pid, "status": {"state": "idle"}})
+        )
+        reader = program_status.ProgramStatusReader(path)
+        assert reader.child_pid == child.pid
+        assert reader.status == ProgramStatus("idle")
+        assert child.poll() is None
+        child.communicate("", timeout=5)
+        assert child.returncode == 0
+        assert reader.child_pid is None
+        assert reader.status is None
+    finally:
+        if child.poll() is None:
+            child.kill()
+        child.wait(timeout=5)
 
 
 @pytest.mark.parametrize("ending", [b"\x07", b"\x1b\\"])

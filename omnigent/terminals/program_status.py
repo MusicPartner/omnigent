@@ -16,6 +16,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from omnigent._platform import IS_WINDOWS
+
 _STATES = {"idle", "working", "done", "blocked", "error", "clear"}
 _KINDS = {"permission", "question", "auth"}
 _VALUE = re.compile(r"[A-Za-z0-9_.,+/=-]*")
@@ -187,6 +189,11 @@ class ProgramStatusParser:
         return False
 
 
+def program_status_relay_supported() -> bool:
+    """The observer transport requires a POSIX PTY, not a captured Windows grid."""
+    return not IS_WINDOWS
+
+
 class ProgramStatusReader:
     """Read the runner-owned root snapshot written by a terminal's PTY relay."""
 
@@ -198,7 +205,13 @@ class ProgramStatusReader:
             record = json.loads(self.path.read_text())
             if not isinstance(record, dict) or not isinstance(record.get("relay_pid"), int):
                 return {}
-            os.kill(record["relay_pid"], 0)
+            if IS_WINDOWS:
+                from omnigent.inner._proc import process_alive
+
+                if not process_alive(record["relay_pid"]):
+                    return {}
+            else:
+                os.kill(record["relay_pid"], 0)
             return record
         except (OSError, ValueError):
             return {}

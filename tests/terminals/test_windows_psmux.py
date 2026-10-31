@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from omnigent.inner.datamodel import OSEnvSandboxSpec, OSEnvSpec, TerminalEnvSpec
+from omnigent.runner.resource_registry import CLAUDE_NATIVE_TERMINAL_ROLE, SessionResourceRegistry
 from omnigent.terminals import TerminalRegistry
 from omnigent.terminals import psmux as psmux_module
 from omnigent.terminals.backend import PsmuxTerminalInstance, PsmuxTerminalMuxBackend
@@ -83,6 +84,61 @@ async def test_windows_psmux_retains_dead_pane_output(tmp_path: Path) -> None:
             if "retained-output" in str(read.get("screen", "")):
                 break
         assert "retained-output" in str(read.get("screen", ""))
+    finally:
+        await reg.shutdown()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows psmux test")
+@pytest.mark.skipif(shutil.which("psmux") is None, reason="psmux not installed")
+@pytest.mark.parametrize("features", [None, "claude_osc_status", "-claude_osc_status"])
+async def test_windows_claude_role_launch_uses_supported_status_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, features: str | None
+) -> None:
+    """The real runner/backend path must launch the child without the POSIX relay."""
+    monkeypatch.delenv("OMNIGENT_FEATURES", raising=False)
+    if features is not None:
+        monkeypatch.setenv("OMNIGENT_FEATURES", features)
+    for key in (
+        "HOME",
+        "USERPROFILE",
+        "OMNIGENT_CONFIG_HOME",
+        "OMNIGENT_DATA_DIR",
+        "PSMUX_DATA_DIR",
+    ):
+        root = tmp_path / key.lower()
+        root.mkdir()
+        monkeypatch.setenv(key, str(root))
+    monkeypatch.setenv("PSMUX_NO_WARM", "1")
+    reg = TerminalRegistry(backend=PsmuxTerminalMuxBackend())
+    registry = SessionResourceRegistry(terminal_registry=reg)
+    marker = tmp_path / "child-started"
+    spec = TerminalEnvSpec(
+        command=sys.executable,
+        args=[
+            "-c",
+            "import sys; from pathlib import Path; Path(sys.argv[1]).write_text('started'); "
+            "print('claude-role-fallback', flush=True)",
+            str(marker),
+        ],
+        os_env=OSEnvSpec(
+            type="caller_process", cwd=str(tmp_path), sandbox=OSEnvSandboxSpec(type="none")
+        ),
+        keep_alive_after_exit=True,
+    )
+    try:
+        await registry.launch_required_terminal(
+            "claude-fallback", "claude", "main", spec, resource_role=CLAUDE_NATIVE_TERMINAL_ROLE
+        )
+        instance = reg.get("claude-fallback", "claude", "main")
+        assert instance is not None
+        assert instance.program_status_app == (
+            None if features == "-claude_osc_status" else "claude-code"
+        )
+        assert instance.program_status is None
+        async with asyncio.timeout(10):
+            while "claude-role-fallback" not in str((await instance.read()).get("screen", "")):
+                await asyncio.sleep(0.02)
+        assert marker.read_text() == "started"
     finally:
         await reg.shutdown()
 
@@ -487,6 +543,7 @@ async def test_psmux_launch_uses_isolated_absolute_python_wrapper(
 
     from omnigent.terminals import program_status
 
+    monkeypatch.setattr(program_status, "program_status_relay_supported", lambda: True)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", "inherited")
     status_path = tmp_path / "program-status.json"
     status_path.write_text("stale", encoding="utf-8")

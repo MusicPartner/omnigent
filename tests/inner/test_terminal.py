@@ -2443,6 +2443,7 @@ async def test_launch_status_wrapper_preserves_literal_inner_command(
     instance_type: type[TerminalInstance],
     status_app: str | None,
 ) -> None:
+    monkeypatch.setattr(program_status, "program_status_relay_supported", lambda: True)
     status_path = tmp_path / "program-status.json"
     status_path.write_text("stale", encoding="utf-8")
     instance = instance_type(
@@ -2494,9 +2495,33 @@ async def test_launch_status_wrapper_preserves_literal_inner_command(
 @pytest.mark.parametrize(
     "instance_type", [TerminalInstance, PsmuxTerminalInstance], ids=["tmux", "psmux"]
 )
+def test_unsupported_status_relay_preserves_command_and_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, instance_type: type[TerminalInstance]
+) -> None:
+    monkeypatch.setattr(program_status, "program_status_relay_supported", lambda: False)
+    status_path = tmp_path / "program-status.json"
+    status_path.write_text("stale", encoding="utf-8")
+    instance = instance_type(
+        name="shell",
+        session_key="main",
+        socket_path=tmp_path / "mux.sock",
+        private_dir=tmp_path,
+        program_status_app="claude-code",
+    )
+    command = [sys.executable, '{"value":"space & | %PATH% Å"}', "", "trailing\\"]
+    assert instance._wrap_program_status(command) is command
+    assert instance.program_status is None
+    assert instance.program_status_app == "claude-code"
+    assert status_path.read_text(encoding="utf-8") == "stale"
+
+
+@pytest.mark.parametrize(
+    "instance_type", [TerminalInstance, PsmuxTerminalInstance], ids=["tmux", "psmux"]
+)
 async def test_launch_status_preparation_failure_does_not_spawn(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, instance_type: type[TerminalInstance]
 ) -> None:
+    monkeypatch.setattr(program_status, "program_status_relay_supported", lambda: True)
     status_path = tmp_path / "program-status.json"
     status_path.mkdir()
     instance = instance_type(

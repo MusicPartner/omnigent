@@ -1628,6 +1628,10 @@ class TerminalInstance:
             return command
         from omnigent.terminals import program_status
 
+        if not program_status.program_status_relay_supported():
+            self.program_status = None
+            return command
+
         status_path = self.private_dir / "program-status.json"
         status_path.unlink(missing_ok=True)
         self.program_status = program_status.ProgramStatusReader(status_path)
