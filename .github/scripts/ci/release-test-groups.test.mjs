@@ -189,7 +189,7 @@ test("isolation branch runs source-matched contracts and exact branch-only audit
   const triggers = workflow.slice(0, workflow.indexOf("\npermissions:"));
   assert.doesNotMatch(triggers, /windows-parity\/v0\.20-isolation-p3-p5/);
   assert.match(triggers, /workflow_dispatch:/);
-  assert.match(workflow, /ISOLATION_SOURCE_SHA: a67684ae0fc2299c8efc2e5f37824c71c8f044a6/);
+  assert.match(workflow, /baseline="\$ISOLATION_SOURCE_SHA"/);
   assert.match(
     workflow,
     /if: \$\{\{ github\.ref == 'refs\/heads\/windows-parity\/v0\.19-isolation-p1-p2' \|\| github\.ref == 'refs\/heads\/windows-parity\/v0\.20-integration' \|\| github\.ref == 'refs\/heads\/windows-parity\/v0\.20-isolation-p3-p5' \}\}/,
@@ -203,7 +203,9 @@ test("isolation branch runs source-matched contracts and exact branch-only audit
     /if: \$\{\{ github\.ref == 'refs\/heads\/windows-parity\/v0\.20-integration' \|\| github\.ref == 'refs\/heads\/windows-parity\/v0\.20-isolation-p3-p5' \}\}/g,
   );
   assert.match(workflow, /baseline="\$RELEASE_SOURCE_SHA"\s+git merge-base --is-ancestor "\$baseline" "\$GITHUB_SHA"/);
-  assert.match(workflow, /CONTRACT_TESTS: >-/);
+  assert.match(workflow, /read-release-inputs\.mjs --stage/);
+  assert.match(workflow, /CONTRACT_TESTS/);
+  assert.match(workflow, /PLATFORM_MARKER_BASELINE_SHA/);
 });
 
 test("maintenance candidate buffer owner and paste safety run on both contract platforms", () => {

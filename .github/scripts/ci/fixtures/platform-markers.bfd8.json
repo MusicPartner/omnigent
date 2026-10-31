@@ -1,0 +1,47 @@
+{
+  "baselineSha": "bfd8ab5624e34aa72c01fb451e11c2a0e1aae3ee",
+  "snapshots": {
+    "tests/harnesses/claude_native/test_claude_native_bridge.py": {
+      "testCount": 379,
+      "testDecoratorsSha256": "a467f750d160ef4be5bf3eefe597803aed67976f1bd1a711bf51f2d0f5204648"
+    },
+    "tests/harnesses/claude_native/test_claude_native_slow_ready.py": {
+      "testCount": 2,
+      "testDecoratorsSha256": "afedebe9d2ffa4c01918c410415a50a3be099d59445edf2a41d4b7be93f41e33"
+    },
+    "tests/e2e_ui/chat/test_claude_native_slow_ready_first_prompt.py": {
+      "testCount": 2,
+      "testDecoratorsSha256": "7cc17a23521ca1db390a49593c6fd45a1e89702f30c26c5b895bb78352b82ebe"
+    },
+    "tests/inner/test_pi_executor.py": {
+      "testCount": 210,
+      "testDecoratorsSha256": "2566ab53cb787e83501a88716b5ca1c2d4c3c2a2858a3b9e24f3eff3a75da3fd"
+    },
+    "tests/e2e/test_repl_approval_e2e.py": {
+      "testCount": 15,
+      "testDecoratorsSha256": "0151384f21cb3f0cbe16273aa31cee03e6e97eb1b670df09d83b018ec116ef98"
+    }
+  },
+  "expectedPosix": {
+    "tests/harnesses/claude_native/test_claude_native_slow_ready.py": [
+      "test_first_message_survives_slow_terminal_startup",
+      "test_slash_command_waits_for_a_silently_booting_terminal"
+    ],
+    "tests/e2e_ui/chat/test_claude_native_slow_ready_first_prompt.py": [
+      "test_slow_ready_wrapper_waits_for_delivery",
+      "test_claude_native_first_prompt_survives_slow_terminal_boot"
+    ]
+  },
+  "expectedWindowsMatrix": {
+    "tests/harnesses/claude_native/test_claude_native_bridge.py": [
+      "test_inject_user_message_pastes_content_then_submits",
+      "test_usable_composer_height_restores_size_after_delivery"
+    ]
+  },
+  "gatewayFailure": {
+    "path": "tests/inner/test_pi_executor.py",
+    "test": "test_gateway_helper_failure_is_bounded_and_redacted",
+    "target": "pytest.mark.parametrize(\n  (\"command\", \"error\"), [\n    (\"printf secret; printf secret >&2; exit 1\", \"command failed\"),\n    (\"printf '  '\", \"empty token\"),\n    (\"sleep 30 & wait\", \"timed out\"),\n  ]\n)",
+    "portable": "pytest.mark.parametrize(\n  (\"script\", \"error\"), [\n    (\"import sys; print('secret'); print('secret', file=sys.stderr); sys.exit(1)\", \"command failed\"),\n    (\"print('  ')\", \"empty token\"),\n    (\"import time; time.sleep(30)\", \"timed out\"),\n  ]\n)"
+  }
+}

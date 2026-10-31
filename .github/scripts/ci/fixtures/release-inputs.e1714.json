@@ -1,0 +1,30 @@
+{
+  "sourceSha": "e1714c416d2608f7bfd5bf4ea93ee81b108d7311",
+  "inputs": {
+    "CHARACTERIZATION_SHA": "a07520b5053e24ccbc399356296ad47842d6ed6d",
+    "VALIDATED_BASE_SHA": "6a7c711308587a2c39dd916c0820af71debfbb67",
+    "RELEASE_SOURCE_SHA": "430ea3caabec09ff894e92c0c03bfe029361418e",
+    "ISOLATION_SOURCE_SHA": "a67684ae0fc2299c8efc2e5f37824c71c8f044a6",
+    "PLATFORM_MARKER_BASELINE_SHA": "bfd8ab5624e34aa72c01fb451e11c2a0e1aae3ee",
+    "CONTRACT_TESTS": [
+      "tests/terminals/test_backend_release_contract.py",
+      "tests/terminals/test_registry.py::test_launch_forwards_backend_context_and_assigns_lifecycle_before_launch",
+      "tests/terminals/test_registry.py::test_launch_replaces_stale_running_entry",
+      "tests/terminals/test_registry.py::test_close_expected_leaves_a_successor_on_the_same_key_running",
+      "tests/terminals/test_registry.py::test_close_expected_closes_its_own_instance",
+      "tests/inner/test_terminal.py::test_launch_discards_previous_exit_diagnostics_before_starting",
+      "tests/inner/test_terminal.py::test_launch_replaces_inherited_correlation_and_resets_only_for_new_launch",
+      "tests/inner/test_terminal.py::test_failed_launch_telemetry_does_not_block_or_reuse_parent_identity",
+      "tests/inner/test_terminal.py::test_launch_environment_preserves_windows_override_and_exclusion_order",
+      "tests/inner/test_terminal.py::test_launch_status_wrapper_preserves_literal_inner_command",
+      "tests/inner/test_terminal.py::test_launch_status_preparation_failure_does_not_spawn",
+      "tests/inner/test_terminal.py::test_apply_utf8_locale_default_fixes_repro_config",
+      "tests/inner/test_terminal.py::test_apply_utf8_locale_default_preserves_operator_locale",
+      "tests/inner/test_terminal.py::test_apply_utf8_locale_default_corrects_pinned_non_utf8_lc_all",
+      "tests/inner/test_terminal.py::test_apply_utf8_locale_default_noop_on_windows",
+      "tests/terminals/test_windows_psmux.py::test_psmux_launch_uses_isolated_absolute_python_wrapper"
+    ],
+    "WINDOWS_LAUNCHER_TOOLSET_VERSION": "14.44.35207",
+    "WINDOWS_SDK_VERSION": "10.0.26100.0"
+  }
+}
