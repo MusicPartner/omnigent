@@ -10,6 +10,28 @@ extraction. It is a plan, not permission to refactor or publish.
 
 ## Post-v0.20 maintenance (2026-10-31)
 
+Current validated maintenance is
+`e1714c416d2608f7bfd5bf4ea93ee81b108d7311` on
+`windows-parity/v0.20-isolation-p3-p5`. All six source-labelled fork/lint/
+backend E2E/integration/UI/nonpublishing Docker results are indexed in the
+[current closeout](../docs/windows/ISOLATION-PLAN-0.20.md).
+The selected worktree and live origin branch were reverified at e1714;
+the old editor checkout and release checkout are preserved.
+
+Continuation is approved with **five remote rounds**, shared across pushes,
+corrections, documentation publication and validation rerun batches; **0/5
+used** at the [P0 checkpoint](../docs/windows/ISOLATION-P0-2026-10-31.md).
+P0 audits precede release tooling 4–6 and neutral extractions 7, 9 and 10.
+Launcher item 8 and observable portability fixes remain separate. Shared
+feature/status/lifecycle policy and main's manual-only automation stay
+canonical. Historical paragraphs below do not restore exhausted permissions
+or supersede the current acceptance limits.
+
+Implementation topics and the allocated first publication/validation round
+are tracked in the [current package record](../docs/windows/ISOLATION-PACKAGE-2026-10-31.md).
+The OSC transport/liveness R fix was separately approved at P0; it is not
+hidden inside neutral extractions. Remote results remain pending.
+
 The completed release is `a67684ae0fc2299c8efc2e5f37824c71c8f044a6`:
 [fork41088395617](https://github.com/MusicPartner/omnigent/actions/runs/41088395617)
 and [lint41088396527](https://github.com/MusicPartner/omnigent/actions/runs/41088396527)

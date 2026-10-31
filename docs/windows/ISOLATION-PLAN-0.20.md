@@ -1,6 +1,62 @@
 # Windows isolation after v0.20
 
-Date: 2026-10-31. Status: candidate publication in progress; acceptance provisional.
+Date: 2026-10-31. Status: e1714 maintenance validated; next package at P0 checkpoint.
+
+## Current closeout and renewed scope
+
+The published maintenance source is
+`e1714c416d2608f7bfd5bf4ea93ee81b108d7311` on the existing
+`windows-parity/v0.20-isolation-p3-p5` branch. Its parent is the unchanged
+`a67684ae0fc2299c8efc2e5f37824c71c8f044a6` release. Implementation preflight
+reverified the selected worktree clean and the live origin branch at e1714.
+The older editor checkout is not the implementation source.
+
+External final evidence supersedes the provisional publication statements
+below: fork validation **41197014276**, lint **41197016266**, backend E2E
+**41206986194**, integration **41206989049**, E2E UI **41206991716** and
+nonpublishing Docker **41206994238** completed successfully at e1714.
+The recorded two-OS comparison retained 37 identical executed nodes; candidate
+gates passed 90 tests per OS. The blocking Windows sweep had 4,552 actual
+records, 4,576 suite-attributed tests, zero failures/errors and 233 skips.
+CLI artifact **13040829831** and desktop artifact **13041936323** belong to
+e1714, not just the same 0.20.0 version. These results were recovered from
+the final report, not rerun during the current preflight.
+
+The historical 328-row integration ledger and its 46 REVIEW paths remain
+open. Human UX, vendor credentials, signing/update and real migration
+acceptance are not established by these results. Artifacts remain
+dev/unsigned/unapproved. General CI, web-tests and standalone Windows lack
+dispatch here; snapshot dispatch would change baselines. No such coverage
+was manufactured by changing triggers or opening a PR.
+
+The user approved continuation and clarified **five remote rounds** on
+2026-10-31. The limit is shared across coordinator/workers and covers
+coordinated publication and validation batches, including correction,
+documentation-only pushes and reruns. Read-only monitoring is not a round;
+local edits/checks are not counted as remote rounds. **0/5 used** at this
+checkpoint; the exhausted historical allowances are not reused.
+
+Approved sequence: P0 closeout/status/mux audits (items 1–3), release-input,
+AST-audit and bundle/verifier extraction (4–6), then neutral path/Pi/popup
+extractions (7, 9, 10). Item 8 stays a separate launcher-characterization
+project. Observable portability fixes require their own contract decision;
+no shared defaults, lifecycle, auth, sandbox or publishing policy may change
+as an extraction side effect. No new branch is required.
+
+See [current P0 checkpoint](ISOLATION-P0-2026-10-31.md). Its command-path OSC
+failure is newly reproduced; its psmux chained-capture concern did not fail
+on the observed 3.4.0 private server. Neither finding authorizes a runtime
+fix. Source-labelled raw evidence lives outside the tracked tree under
+`D:\Develop\Source\OpenSource\_AI\Omnigent\_evidence\v020-isolation-next-20261031`.
+
+The [approved implementation package](ISOLATION-PACKAGE-2026-10-31.md) records
+the separate fresh R approval, neutral topic commits and local gates.
+Remote round 1 is allocated for initial publication/validation; results are
+pending. P0's original 0/5 audit snapshot is historical, not the live counter.
+
+The remaining sections preserve the earlier implementation chronology.
+Their uncommitted/pending-result and remaining-allowance statements are
+historical snapshots, superseded by this closeout, not current permissions.
 
 ## Source and authorization
 
