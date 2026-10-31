@@ -13,6 +13,7 @@ JSON body) and on the no-request invariant when the popup is dismissed.
 
 from __future__ import annotations
 
+import base64
 import json
 import types
 from dataclasses import dataclass, field
@@ -426,6 +427,48 @@ def test_popup_command_uses_native_windows_interpreter_quoting(
     inner = spawned[0][-1]
     assert inner.startswith("& 'C:\\Program Files\\Omnigent\\.venv\\Scripts\\python.exe' ")
     assert "runpy.run_module" in inner
+
+
+def test_popup_command_encodes_literal_argv_tail_for_powershell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Windows leaf passes an ASCII payload to the isolated UTF-8 consumer."""
+    captured: dict[str, Any] = {}
+    argv = [
+        r"C:\Program Files\Omnigent\python.exe",
+        "-I",
+        "-m",
+        "old.module",
+        "--message",
+        "Grüße $env:PATH; 'quoted'\n雪",
+    ]
+
+    def capture_shell(parts: list[str], *, consumer: str | None = None) -> str:
+        captured["parts"] = parts
+        captured["consumer"] = consumer
+        return "captured command"
+
+    monkeypatch.setattr(native_cost_popup, "IS_WINDOWS", True)
+    monkeypatch.setattr(native_cost_popup.shutil, "which", lambda name: "pwsh.exe")
+    monkeypatch.setattr(native_cost_popup, "shell_join", capture_shell)
+    command = native_cost_popup._popup_command(argv)
+
+    assert command == "captured command"
+    assert captured["consumer"] == "powershell"
+    parts = captured["parts"]
+    assert parts[:5] == [argv[0], "-I", "-X", "utf8", "-c"]
+    assert "runpy.run_module('omnigent.native.native_cost_popup',run_name='__main__')" in parts[5]
+    assert "sys.argv=['omnigent.native.native_cost_popup',*json.loads" in parts[5]
+    assert parts[6].isascii()
+    assert json.loads(base64.b64decode(parts[6])) == argv[4:]
+
+
+def test_popup_command_returns_none_when_pwsh_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(native_cost_popup, "IS_WINDOWS", True)
+    monkeypatch.setattr(native_cost_popup.shutil, "which", lambda _name: None)
+    assert native_cost_popup._popup_command(["python", "-I", "-m", "module"]) is None
 
 
 def test_launch_blocked_notice_skips_without_client(

@@ -32,7 +32,6 @@ in the web UI or resolved by the server-side approval timeout.
 from __future__ import annotations
 
 import argparse
-import base64
 import contextlib
 import json
 import os
@@ -47,6 +46,7 @@ from urllib import error, request
 from omnigent._platform import IS_WINDOWS
 from omnigent.native.mux import terminal_mux_command
 from omnigent.native.shell import shell_join
+from omnigent.native.windows_cost_popup import windows_popup_command
 
 # Timeout for the (fast, local) ``tmux list-clients`` lookup the launcher
 # runs before popping a modal.
@@ -219,17 +219,7 @@ def _popup_command(argv: list[str]) -> str | None:
         return shell_join(argv, consumer="posix")
     if shutil.which("pwsh") is None:
         return None
-    # Only ASCII base64 crosses PowerShell's native argument parser, including
-    # older pwsh releases with legacy embedded-double-quote handling.
-    payload = base64.b64encode(json.dumps(argv[4:], ensure_ascii=True).encode()).decode("ascii")
-    bootstrap = (
-        "import base64,json,runpy,sys;"
-        "sys.argv=['omnigent.native.native_cost_popup',*json.loads(base64.b64decode(sys.argv[1]))];"
-        "runpy.run_module('omnigent.native.native_cost_popup',run_name='__main__')"
-    )
-    return shell_join(
-        [argv[0], "-I", "-X", "utf8", "-c", bootstrap, payload], consumer="powershell"
-    )
+    return windows_popup_command(argv, shell_join=shell_join)
 
 
 def launch_cost_popup(

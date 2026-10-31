@@ -15,6 +15,7 @@ import {
   basename,
   isHostAbsolutePath,
   isNavigablePath,
+  isWindowsDrivePath,
   joinPath,
   listingFilter,
   normalizeTypedPath,
@@ -23,6 +24,7 @@ import {
   useResolvedHostHome,
   WorkspacePicker,
 } from "./WorkspacePicker";
+import * as hostPaths from "./hostPaths";
 import {
   useCreateHostDirectory,
   useHostFilesystem,
@@ -55,6 +57,20 @@ vi.mock("@/hooks/useHostWorktrees", async (importOriginal) => ({
 const useHostFilesystemMock = vi.mocked(useHostFilesystem);
 const useCreateHostDirectoryMock = vi.mocked(useCreateHostDirectory);
 const useHostWorktreesMock = vi.mocked(useHostWorktrees);
+
+describe("WorkspacePicker path helper facades", () => {
+  it("re-exports the pure helpers from hostPaths without wrapping them", () => {
+    expect(basename).toBe(hostPaths.basename);
+    expect(isHostAbsolutePath).toBe(hostPaths.isHostAbsolutePath);
+    expect(isNavigablePath).toBe(hostPaths.isNavigablePath);
+    expect(isWindowsDrivePath).toBe(hostPaths.isWindowsDrivePath);
+    expect(joinPath).toBe(hostPaths.joinPath);
+    expect(listingFilter).toBe(hostPaths.listingFilter);
+    expect(normalizeTypedPath).toBe(hostPaths.normalizeTypedPath);
+    expect(parentOf).toBe(hostPaths.parentOf);
+    expect(resolveWorkspacePath).toBe(hostPaths.resolveWorkspacePath);
+  });
+});
 
 function dir(name: string, path: string): HostFilesystemEntry {
   return { name, path, type: "directory", bytes: null, modified_at: 0 };

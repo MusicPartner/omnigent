@@ -91,6 +91,27 @@ def test_npm_pi_rejects_an_entry_outside_its_package(
     assert pi_executor._pi_spawn_argv(str(shim), {}) == [str(shim)]
 
 
+def test_npm_pi_malformed_metadata_falls_back_to_the_shim(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(pi_executor, "IS_WINDOWS", True)
+    shim, _, script = _npm_pi(tmp_path, "@earendil-works/pi-coding-agent")
+    (script.parents[1] / "package.json").write_text("{not json", encoding="utf-8")
+
+    assert pi_executor._pi_spawn_argv(str(shim), {}) == [str(shim)]
+
+
+def test_npm_pi_unreadable_shim_falls_back_to_the_shim_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(pi_executor, "IS_WINDOWS", True)
+    shim, _, _ = _npm_pi(tmp_path, "@earendil-works/pi-coding-agent")
+    shim.unlink()
+    shim.mkdir()
+
+    assert pi_executor._pi_spawn_argv(str(shim), {}) == [str(shim)]
+
+
 @pytest.mark.parametrize("mode", ["append", "replace"])
 async def test_rpc_preserves_multiline_and_shell_metacharacters(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mode: str
