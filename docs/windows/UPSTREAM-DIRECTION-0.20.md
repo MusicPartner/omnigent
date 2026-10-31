@@ -1,5 +1,43 @@
 # Upstream direction after v0.20.0: Windows integration
 
+## Maintenance decision update — 2026-10-31
+
+This section supersedes the historical candidate/state snapshots below. Final
+release a676 passed fork41088395617/lint41088396527. Current maintenance is a
+separate, uncommitted branch at that baseline, not a new validated release.
+See [isolation record](ISOLATION-PLAN-0.20.md). The upstream review was pinned to
+`8ceb87942b07f1f6135ab87fbe69af796af2bbcd`; development main is direction only.
+Read-only `gh` refresh at `2026-10-31T11:12:06+01:00` confirmed the first eight
+rows below (#12335 through #12414), including immutable merge pins for merged
+PRs and observed heads for open PRs. The remaining rows retain the earlier
+October31 review; they were not refreshed in this final batch.
+
+| PR / reviewed state | Immutable reviewed pin | Separation decision |
+| --- | --- | --- |
+| #12335 merged, wide composer | `e68446c012a1b3c80b1aff140d3e8326841fcae4` | Keep pure parser shared; no competing fork parser module. |
+| #12344 merged, repaint | `553d49ec1fa05c4a303f56a48d2be65a94409a5e` | POSIX discovery returns zero on Windows; do not invent supported repaint. |
+| #12394 open, clear-hold/repaint/order | `a310587b71e22df1d65863b53af4b924c8b9d548` | Isolate only psmux load-buffer addressing; clear/submit/cancellation stay shared. |
+| #12330 merged, retire fence | `c26c74cc35df508267d334610b27a77af59fe606` | New post-read behavior, not a sem-neutral extraction. Defer adoption. |
+| #12331 merged, stale callbacks | `b2c7acb7f5672722b6b72a5a313c8ea795dbbc23` | Keep instance identity at publication; reconcile behavior separately. |
+| #12259 open, confirmed interrupt | `8075349df826e28d89f3144ddfa475e56bd50baa` | Escape injection is not confirmed idle or Stop. |
+| #5554 open, stalled output queues | `22d35b88c3875ff7e2cfa0af13be2ba9df80d5d1` | Updated head; raw queue policy is not captured-grid transport. |
+| #12414 open, attach retry | `fa9181530558a8874a976f2c7de9e85728543aa8` | Keep attachment lifecycle separate from mux command execution. |
+| #12080 merged, managed MCP | `57fcefe0cbd575c5bea536a840df103d6528b9a8` | Keep canonical managed config and tool-availability consequences. |
+| #12355 merged, SDK worker catalog | `1504b908851a64c54c90ab693b4c4ad8c3132c51` | Shared child launch/catalog owner; no Windows worker framework. |
+| #12406 open, managed Codex provider | `2d6753bac0d2cb4a318cbfe3b6e6a92465b9daf5` | No speculative provider policy extraction. |
+| #12385 merged, Pi turn budget | `d6c6822a63e001bde2eddf26fe9ec7cdbd227b5f` | Future timeout keywords must retain actual shell and owned cleanup. |
+| #12339 closed, not merged | `26552c496c7436447bbc71e901295d600fbea19c` | Synthetic merge SHA is not merge proof; no accepted timeout fix. |
+
+Desktop #12305/#12306/#12307 form an identity/network-policy dependency chain;
+do not take an isolated localhost relaxation. #12411 long tools and
+#12418/#12417/#12403 session/sandbox direction do not justify a new global
+Windows lifecycle or sandbox abstraction. No listed PR behavior was backported
+by this maintenance task. Recheck state, ancestry and owning code before the
+next stable release integration. Shared hooks and `_run_tmux`/`_capture_pane`
+facades retain existing cancellation/error/test-injection contracts.
+
+## Historical October30 review
+
 Recorded **2026-10-30**. This is a bounded compatibility assessment and
 next-release watchlist. The v0.20 integration is committed, but candidate
 validation and runtime acceptance remain pending; this is not permission to

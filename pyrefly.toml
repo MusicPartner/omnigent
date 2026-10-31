@@ -10,6 +10,9 @@ project-excludes = []
 disable-project-excludes-heuristics = true
 
 python-version = "3.12"
+# Match the canonical Linux type-check lane on every development host.
+# Native Windows behavior is covered by the Windows runtime test lanes.
+python-platform = "linux"
 
 search-path = ["."]
 

@@ -16,7 +16,7 @@ Save planning documents only when requested or required by the current workflow.
 1. Read the chosen checkout's `AGENTS.md`, scoped guidance and
    `.github/FORK_MAINTENANCE.md`. Record repository, branch, full HEAD, dirty
    paths, worktrees and remotes. Preserve foreign edits, installations and live
-   sessions. An editor checkout can still be v0.14 while the source is v0.19.
+  sessions. An editor checkout can lag the selected source at any release.
 2. Use [sources.md](./references/sources.md) for targeted handover recovery.
    Distinguish full transcripts, recovered prompts and summaries. Prefer latest
    user corrections, actual code and raw results. Report missing history.
@@ -28,11 +28,10 @@ Save planning documents only when requested or required by the current workflow.
    for local implementation, commits, pushes, Actions and publishing in the
    [integration record](./assets/integration-record.md).
 
-The v0.19 integration used a new branch, not promotion to main. Existing
-boundaries: no PR to main, no WSL, local native Windows validation where
-permitted and Linux coverage in Actions. Main automation became manual-only
-on 2026-10-21; preserve that policy unless explicitly changed. Do not backport
-to unused v0.14 or reuse one-off registry/TLS/cleanup permissions.
+The v0.19 and v0.20 integrations used dedicated branches, not promotion to
+main. Preserve the no-PR-to-main and no-WSL boundaries, and keep main's
+manual-only automation policy unless explicitly changed. Do not backport
+generic proposals as established behavior or reuse one-off permissions.
 
 ## Choose a strategy once
 
@@ -72,12 +71,13 @@ Keep stable release versions, lockstep SDK pins and locks unless an actual
 dependency change requires regeneration. Inspect dependency groups instead
 of copying obsolete `uv sync --extra dev` commands.
 
-For new isolation, first map original v0.14 contracts to current owners, tests
-and support limits. The original release-port ledger describes v0.17, not
-v0.19. Do not restore obsolete code or old patch targets. Package 1 establishes
-contract tests/primitives; package 2 reduces duplicated terminal preparation.
-See the [staged isolation plan](../../../docs/windows/ISOLATION-PLAN-0.19.md).
-Planning alone does not authorize those runtime refactors.
+For new isolation, map historical contracts to current owners, tests and
+support limits; old editor checkouts can lag at any release. Do not restore
+obsolete code or old patch targets. The [v0.20 isolation plan](../../../docs/windows/ISOLATION-PLAN-0.20.md) is the maintained
+source for staged work; planning does not authorize runtime refactors. P1/P2
+already use `terminal_pane_environment` and
+`TerminalInstance._wrap_program_status`; verify current consumers before
+proposing further extraction.
 
 ## Delegate bounded work economically
 
@@ -140,7 +140,8 @@ attribution. Do not commit raw transcripts, credentials or demo captures.
   round, across coordinator/workers/handovers. Count documentation-only pushes
   when included. Batch independent known fixes; avoid rerunning full E2E for
   unchanged input closures. Reserve handover capacity or record results
-  externally without another push. Old four/five-attempt caps are not defaults.
+  externally without another push. Historical attempt caps are not defaults;
+  read the current record rather than carrying forward an old allowance.
 - Once a resource or executable is policy-denied, do not retry via aliases,
   other tools or recreated environments. Record the blocked scope and use
   independently permitted checks. Remote checks need current authorization.
@@ -167,4 +168,5 @@ intentional support limits and rollback. Follow human checks in the lessons.
 Update the record and this skill with demonstrated reusable lessons only.
 Keep a reviewed skill copy in the maintained lineage, not just an untracked
 old checkout. Index final results and limits without raw private logs or an
-extra push after the allowance is exhausted.
+extra push after the allowance is exhausted. See [current and historical
+evidence](./references/sources.md) and [Windows lessons](./references/windows-lessons.md).

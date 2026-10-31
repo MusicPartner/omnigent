@@ -440,11 +440,15 @@ if (
   path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   try {
-    const findings = process.argv
-      .slice(2)
-      .flatMap((filename) =>
-        analyzeSource(filename, readFileSync(filename, "utf8")),
-      );
+    const filenames = process.argv[2] === "--stdin-files"
+      ? JSON.parse(readFileSync(0, "utf8"))
+      : process.argv.slice(2);
+    if (!Array.isArray(filenames) || filenames.some((filename) => typeof filename !== "string")) {
+      throw new Error("Expected a JSON array of filenames.");
+    }
+    const findings = filenames.flatMap((filename) =>
+      analyzeSource(filename, readFileSync(filename, "utf8")),
+    );
     process.stdout.write(`${JSON.stringify(findings)}\n`);
   } catch (error) {
     process.stderr.write(`${error.message}\n`);

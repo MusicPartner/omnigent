@@ -33,7 +33,7 @@ env:
 jobs:
   terminal-preparation-contracts:
     name: Terminal preparation contracts (${{ matrix.os }})
-    if: ${{ github.ref == 'refs/heads/windows-parity/v0.19-isolation-p1-p2' || github.ref == 'refs/heads/windows-parity/v0.20-integration' }}
+    if: ${{ github.ref == 'refs/heads/windows-parity/v0.19-isolation-p1-p2' || github.ref == 'refs/heads/windows-parity/v0.20-integration' || github.ref == 'refs/heads/windows-parity/v0.20-isolation-p3-p5' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -45,6 +45,7 @@ jobs:
       CHARACTERIZATION_SHA: a07520b5053e24ccbc399356296ad47842d6ed6d
       VALIDATED_BASE_SHA: 6a7c711308587a2c39dd916c0820af71debfbb67
       RELEASE_SOURCE_SHA: 430ea3caabec09ff894e92c0c03bfe029361418e
+      ISOLATION_SOURCE_SHA: a67684ae0fc2299c8efc2e5f37824c71c8f044a6
       CONTRACT_TESTS: >-
         tests/terminals/test_backend_release_contract.py
         tests/terminals/test_registry.py::test_launch_forwards_backend_context_and_assigns_lifecycle_before_launch
@@ -86,6 +87,9 @@ jobs:
           if [[ "$GITHUB_REF" == refs/heads/windows-parity/v0.20-integration ]]; then
             baseline="$RELEASE_SOURCE_SHA"
             git merge-base --is-ancestor "$baseline" "$GITHUB_SHA"
+          elif [[ "$GITHUB_REF" == refs/heads/windows-parity/v0.20-isolation-p3-p5 ]]; then
+            baseline="$ISOLATION_SOURCE_SHA"
+            git merge-base --is-ancestor "$baseline" "$GITHUB_SHA"
           else
             test "$(git rev-parse "$CHARACTERIZATION_SHA^")" = "$VALIDATED_BASE_SHA"
             git diff --exit-code "$VALIDATED_BASE_SHA" "$CHARACTERIZATION_SHA" -- omnigent pyproject.toml uv.lock
@@ -122,7 +126,7 @@ jobs:
         run: uv sync --locked --group test --extra tracing
 
       - name: Audit reconciled test symbols and platform marker owners
-        if: ${{ github.ref == 'refs/heads/windows-parity/v0.20-integration' }}
+        if: ${{ github.ref == 'refs/heads/windows-parity/v0.20-integration' || github.ref == 'refs/heads/windows-parity/v0.20-isolation-p3-p5' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -214,7 +218,7 @@ jobs:
           uv run --no-sync pytest "${targets[@]}" -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -q -ra --junitxml=isolation-candidate.xml
 
       - name: Verify candidate launch failure and placeholder status regressions
-        if: ${{ github.ref == 'refs/heads/windows-parity/v0.20-integration' }}
+        if: ${{ github.ref == 'refs/heads/windows-parity/v0.20-integration' || github.ref == 'refs/heads/windows-parity/v0.20-isolation-p3-p5' }}
         run: >-
           uv run --no-sync pytest
           tests/terminals/test_launch_failure_cleanup.py
@@ -234,6 +238,26 @@ jobs:
             candidate-collection.log
             baseline-nodes.txt
             candidate-nodes.txt
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Verify candidate buffer routing and paste failure safety
+        if: ${{ github.ref == 'refs/heads/windows-parity/v0.20-isolation-p3-p5' }}
+        run: >-
+          uv run --no-sync pytest
+          tests/test_native_mux.py
+          tests/dev/lint/test_lint_session_list_visibility.py
+          tests/harnesses/claude_native/test_claude_native_bridge.py::test_inject_user_message_pastes_content_then_submits
+          tests/harnesses/claude_native/test_claude_native_bridge.py::test_inject_user_message_buffer_failure_cleans_file_without_submitting
+          -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -q -ra
+          --junitxml=isolation-buffer-routing.xml
+
+      - name: Upload candidate buffer routing evidence
+        if: ${{ always() && github.ref == 'refs/heads/windows-parity/v0.20-isolation-p3-p5' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: buffer-routing-${{ matrix.os }}-${{ github.sha }}
+          path: isolation-buffer-routing.xml
           if-no-files-found: warn
           retention-days: 30
 
@@ -276,82 +300,23 @@ jobs:
           tests/server/integration/test_mock_anthropic_messages.py
           -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -q -ra
 
-      - name: Portable Codex lifecycle and platform-scoped fixtures
-        run: >-
-          uv run pytest
-          tests/inner/test_model_signer_lifecycle.py
-          tests/inner/test_codex_worker_containment.py
-          tests/inner/test_codex_executor.py
-          tests/inner/test_codex_hooks_generation.py
-          tests/inner/test_codex_model_catalog.py
-          tests/inner/test_codex_staging.py
-          tests/inner/test_copy_on_write.py
-          tests/inner/test_bwrap_symlink_mask_3265.py
-          tests/inner/test_credential_refresh.py
-          tests/inner/test_cwd_scan.py
-          tests/inner/test_model_auth.py
-          tests/inner/test_databricks_executor.py
-          tests/inner/test_os_env_grant_reach.py
-          tests/inner/test_os_env_fork.py
-          tests/inner/test_pi_executor.py
-          tests/inner/test_pi_settings.py
-          tests/inner/test_pi_prompt_context.py
-          tests/inner/test_pi_windows.py
-          tests/inner/test_qwen_executor.py
-          tests/inner/test_qwen_agent_integration.py
-          tests/inner/test_terminal_clipboard.py
-          tests/inner/test_terminal_orphan_ownership.py
-          tests/inner/test_terminal.py
-          tests/inner/test_wordmark.py
-          tests/runtime/harnesses/test_process_manager.py
-          -n 0 -p no:cacheprovider -q -ra
-
-      - name: Native attachment cache and Windows handle security
-        run: >-
-          uv run pytest
-          tests/inner/test_native_attachments.py
-          tests/inner/test_windows_attachments.py
-          -n 0 -p no:cacheprovider -q --timeout=30
-
-      - name: Native attachment consumers and resume delivery
-        run: >-
-          uv run pytest
-          tests/inner/test_claude_native_executor.py
-          tests/inner/test_codex_native_executor.py
-          tests/harnesses/claude_native/test_claude_native.py::test_ensure_local_claude_resume_transcript_rematerializes_image_blocks
-          tests/harnesses/claude_native/test_claude_native.py::test_resume_rebuild_delivers_a_zip_to_the_attachment_cache
-          tests/harnesses/claude_native/test_claude_native.py::test_resume_restores_attachments_using_the_launch_bridge
-          tests/harnesses/codex_native/test_codex_native.py::test_ensure_local_codex_resume_rollout_restores_a_zip_outside_the_workspace
-          tests/inner/test_cursor_native_executor.py::TestContentExtraction::test_real_image_attachment_materialized
-          tests/inner/test_kimi_native_executor.py::TestContentExtraction::test_real_image_attachment_materialized
-          tests/inner/test_antigravity_native_executor.py::test_run_turn_image_attachment_materialized
-          tests/inner/test_antigravity_native_executor.py::test_run_turn_attachment_only_no_longer_errors
-          tests/server/routes/test_filesystem_attachment_runtime.py
-          -k "image or attachment or zip or resize or input_file or path_traversal or connected_builds or replica"
-          -n 0 -p no:cacheprovider -q --timeout=30
-
-      - name: Owned process shutdown, native shell discovery and Codex Stop regressions
-        run: >-
-          uv run pytest
-          tests/inner/test_windows_process_shutdown.py
-          tests/inner/test_windows_powershell.py
-          tests/host/test_windows_shutdown.py
-          tests/host/test_windows_shutdown_cli.py
-          tests/host/test_windows_server_shutdown.py
-          tests/host/test_windows_local_server_shutdown.py
-          tests/runner/test_windows_runner_shutdown.py
-          tests/runner/test_codex_native_stop_teardown.py
-          tests/runner/test_codex_native_stop_process.py
-          tests/harnesses/codex_native/test_codex_native_windows_resume_lock.py
-          tests/harnesses/codex_native/test_windows_powershell_env.py
-          tests/harnesses/claude_native/test_claude_native_powershell_env.py
-          tests/inner/test_claude_sdk_powershell_env.py
-          tests/inner/test_copilot_executor.py
-          tests/inner/test_model_auth.py::test_cancelled_ucode_mint_terminates_helper
-          -n 0 -p no:cacheprovider -q
-
       - name: Set up pnpm for desktop shutdown regressions
         uses: ./.github/actions/setup-pnpm
+
+      - name: Release test-group runner contracts
+        run: node --test .github/scripts/ci/release-test-groups.test.mjs
+
+      - name: Portable Codex lifecycle and platform-scoped fixtures
+        run: node .github/scripts/ci/run-release-test-group.mjs portable-codex-lifecycle
+
+      - name: Native attachment cache and Windows handle security
+        run: node .github/scripts/ci/run-release-test-group.mjs attachment-cache
+
+      - name: Native attachment consumers and resume delivery
+        run: node .github/scripts/ci/run-release-test-group.mjs attachment-consumers
+
+      - name: Owned process shutdown, native shell discovery and Codex Stop regressions
+        run: node .github/scripts/ci/run-release-test-group.mjs process-shutdown
 
       - name: Install desktop test runtime dependencies without Electron
         run: pnpm install --frozen-lockfile --prod --ignore-scripts --filter omnigent-desktop-electron
@@ -480,82 +445,24 @@ jobs:
           tests/terminals/test_windows_psmux.py::test_psmux_launch_uses_isolated_absolute_python_wrapper
           -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -x -vv --tb=short -ra
 
-      - name: Portable Codex lifecycle and platform-scoped fixtures
-        run: >-
-          uv run pytest
-          tests/inner/test_model_signer_lifecycle.py
-          tests/inner/test_codex_worker_containment.py
-          tests/inner/test_codex_executor.py
-          tests/inner/test_codex_hooks_generation.py
-          tests/inner/test_codex_model_catalog.py
-          tests/inner/test_codex_staging.py
-          tests/inner/test_copy_on_write.py
-          tests/inner/test_bwrap_symlink_mask_3265.py
-          tests/inner/test_credential_refresh.py
-          tests/inner/test_cwd_scan.py
-          tests/inner/test_model_auth.py
-          tests/inner/test_databricks_executor.py
-          tests/inner/test_os_env_grant_reach.py
-          tests/inner/test_os_env_fork.py
-          tests/inner/test_pi_executor.py
-          tests/inner/test_pi_settings.py
-          tests/inner/test_pi_prompt_context.py
-          tests/inner/test_pi_windows.py
-          tests/inner/test_qwen_executor.py
-          tests/inner/test_qwen_agent_integration.py
-          tests/inner/test_terminal_clipboard.py
-          tests/inner/test_terminal_orphan_ownership.py
-          tests/inner/test_terminal.py
-          tests/inner/test_wordmark.py
-          tests/runtime/harnesses/test_process_manager.py
-          -n 0 -p no:cacheprovider -q -ra
-
-      - name: Native attachment cache and Windows handle security
-        run: >-
-          uv run pytest
-          tests/inner/test_native_attachments.py
-          tests/inner/test_windows_attachments.py
-          -n 0 -p no:cacheprovider -q --timeout=30
-
-      - name: Native attachment consumers and resume delivery
-        run: >-
-          uv run pytest
-          tests/inner/test_claude_native_executor.py
-          tests/inner/test_codex_native_executor.py
-          tests/harnesses/claude_native/test_claude_native.py::test_ensure_local_claude_resume_transcript_rematerializes_image_blocks
-          tests/harnesses/claude_native/test_claude_native.py::test_resume_rebuild_delivers_a_zip_to_the_attachment_cache
-          tests/harnesses/claude_native/test_claude_native.py::test_resume_restores_attachments_using_the_launch_bridge
-          tests/harnesses/codex_native/test_codex_native.py::test_ensure_local_codex_resume_rollout_restores_a_zip_outside_the_workspace
-          tests/inner/test_cursor_native_executor.py::TestContentExtraction::test_real_image_attachment_materialized
-          tests/inner/test_kimi_native_executor.py::TestContentExtraction::test_real_image_attachment_materialized
-          tests/inner/test_antigravity_native_executor.py::test_run_turn_image_attachment_materialized
-          tests/inner/test_antigravity_native_executor.py::test_run_turn_attachment_only_no_longer_errors
-          tests/server/routes/test_filesystem_attachment_runtime.py
-          -k "image or attachment or zip or resize or input_file or path_traversal or connected_builds or replica"
-          -n 0 -p no:cacheprovider -q --timeout=30
-
-      - name: Owned process shutdown, native shell discovery and Codex Stop regressions
-        run: >-
-          uv run pytest
-          tests/inner/test_windows_process_shutdown.py
-          tests/inner/test_windows_powershell.py
-          tests/host/test_windows_shutdown.py
-          tests/host/test_windows_shutdown_cli.py
-          tests/host/test_windows_server_shutdown.py
-          tests/host/test_windows_local_server_shutdown.py
-          tests/runner/test_windows_runner_shutdown.py
-          tests/runner/test_codex_native_stop_teardown.py
-          tests/runner/test_codex_native_stop_process.py
-          tests/harnesses/codex_native/test_codex_native_windows_resume_lock.py
-          tests/harnesses/codex_native/test_windows_powershell_env.py
-          tests/harnesses/claude_native/test_claude_native_powershell_env.py
-          tests/inner/test_claude_sdk_powershell_env.py
-          tests/inner/test_copilot_executor.py
-          tests/inner/test_model_auth.py::test_cancelled_ucode_mint_terminates_helper
-          -n 0 -p no:cacheprovider -q
-
       - name: Set up pnpm for desktop shutdown regressions
         uses: ./.github/actions/setup-pnpm
+
+      - name: Release test-group runner contracts
+        run: node --test .github/scripts/ci/release-test-groups.test.mjs
+
+      - name: Portable Codex lifecycle and platform-scoped fixtures
+        run: node .github/scripts/ci/run-release-test-group.mjs portable-codex-lifecycle
+
+      - name: Native attachment cache and Windows handle security
+        run: node .github/scripts/ci/run-release-test-group.mjs attachment-cache
+
+      - name: Native attachment consumers and resume delivery
+        run: node .github/scripts/ci/run-release-test-group.mjs attachment-consumers
+
+      - name: Owned process shutdown, native shell discovery and Codex Stop regressions
+        run: node .github/scripts/ci/run-release-test-group.mjs process-shutdown
+
 
       - name: Install desktop test runtime dependencies without Electron
         run: pnpm install --frozen-lockfile --prod --ignore-scripts --filter omnigent-desktop-electron

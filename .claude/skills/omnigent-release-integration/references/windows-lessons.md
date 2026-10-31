@@ -1,7 +1,8 @@
 # Windows integration lessons
 
-Reviewed 2026-10-22. These are demonstrated lessons, not permanent dependency
-versions or claims of support. Recheck the target's implementation.
+Reviewed 2026-10-31 against the v0.20 integration. These are demonstrated
+lessons, not permanent dependency versions or claims of support. Recheck the
+target's implementation.
 
 ## Historical intent and current ownership
 
@@ -15,6 +16,9 @@ versions or claims of support. Recheck the target's implementation.
   Do not hide them inside platform adapters or revive upstream-covered drops.
 - Retarget moved Claude/Codex test suites. Clean three-way applies can attach
   skip decorators to the wrong neighboring test; check owning symbols/markers.
+- After a clean apply, compare the exact AST owning-symbol matrix and patch
+  identity; a green merge does not prove a decorator or assertion stayed with
+  its intended test. Parse the final YAML document after its last edit.
 - SSE readiness changes require matching heartbeat frames in browser fakes.
   New UI areas need current feature-map registration.
 
@@ -24,6 +28,10 @@ versions or claims of support. Recheck the target's implementation.
   correlation, status wrapping and failure cleanup. In v0.19 a clean merge left
   psmux's launch override without upstream's optional program-status wrapper.
   Characterize both backends before sharing preparation; do not duplicate policy.
+- P1/P2 now share `terminal_pane_environment` and
+  `TerminalInstance._wrap_program_status`. Verify true consumers and patch
+  identity before proposing another transport extraction; do not revive the
+  already implemented preparation work as a new proposal.
 - Reuse existing preparation helpers where semantics agree. For example,
   `terminal_pane_environment` already owns inherited overrides, exclusions,
   stale correlation removal, runner-secret stripping and UTF-8 locale defaults.
@@ -41,9 +49,12 @@ versions or claims of support. Recheck the target's implementation.
 - psmux 3.4.0 custom `-S` paths namespace metadata. A guessed session `.port`
   file was wrong, not late. Capture the child's actual `TMUX` context instead
   of duplicating private hashing or adding waits.
+- psmux 3.4.0 still exposes placeholder exit-status/cursor fields; upgrading
+  the binary does not prove existing servers restarted or gained support.
 - v0.19 Claude sends a focus-probe Space before clear-line keys. A raw reader
   records it while the editor clears it. Expect the exact prelude; do not strip
-  arbitrary data to satisfy a payload check.
+  arbitrary data to satisfy a payload check. A raw-reader fixture validates
+  framed composer/focus/clear/paste bytes, not a real Claude session.
 
 ## Shell consumers and hooks
 
@@ -57,6 +68,8 @@ versions or claims of support. Recheck the target's implementation.
 - Canonical hook settings and lifecycle gates stay with upstream's owner.
   Windows adapters transport them. Forward current readiness/hook keyword
   contracts, including newly added options in observers/stubs.
+- Treat hook keywords as transport contracts. Exercise the canonical owner and
+  its actual consumers instead of encoding a generic proposal as policy.
 - Gateway command helpers must use their actual shell and owned-process
   cleanup. Keep missing-profile/credential refusals explicit and redacted.
 
@@ -95,7 +108,16 @@ versions or claims of support. Recheck the target's implementation.
   not assume `AF_UNIX`. Keep faults/assertions visible and reuse nearby helpers.
 - Completed JUnit can be authoritative when console output truncates after
   collection. A passing family is not a passing whole job; a retry pass does
-  not prove the prior root cause.
+  not prove the prior root cause. Report actual test cases separately from
+  suite-attributed counts (including subtests), and distinguish skips.
+- For accepted model requests, assert the real request marker/wire model and
+  allowlisted `anthropic-beta` context header, not invented CLI transcript
+  fields. A rejected HTTP 400 `invalid_input` draft instead requires actionable
+  UI, preserved input, no accepted-message bubble and no model forwarding.
+- Keep fixture isolation explicit (`HOME` and `USERPROFILE` in temporary
+  directories), and verify required utilities such as `rg` before relying on
+  them. A raw C checkout's CRLF-sensitive hash is not its Git SHA or executable
+  hash.
 - Validate installer arguments before PATH writes. The bundle installer
   rejected option-looking install paths and scoped `UV_SYSTEM_CERTS` with
   restoration/opt-out; do not disable TLS verification.

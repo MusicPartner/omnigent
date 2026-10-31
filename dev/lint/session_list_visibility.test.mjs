@@ -171,18 +171,19 @@ test("CLI reports setup errors with nonzero exit", () => {
   assert.match(result.stderr, /ENOENT/);
 });
 
-test("CLI emits JSON findings with exit zero", (context) => {
+for (const stdinFiles of [false, true]) {
+test(`CLI emits JSON findings with exit zero (stdin files: ${stdinFiles})`, (context) => {
   const directory = mkdtempSync(path.join(tmpdir(), "session-visibility-"));
   context.after(() => rmSync(directory, { recursive: true, force: true }));
-  const filename = path.join(directory, "example.ts");
+  const filename = path.join(directory, "東京 space example.ts");
   writeFileSync(filename, 'fetch("/v1/sessions");');
   const result = spawnSync(
     process.execPath,
     [
       fileURLToPath(new URL("./session_list_visibility.mjs", import.meta.url)),
-      filename,
+      stdinFiles ? "--stdin-files" : filename,
     ],
-    { encoding: "utf8" },
+    { encoding: "utf8", input: stdinFiles ? JSON.stringify([filename]) : undefined },
   );
   assert.equal(result.status, 0);
   assert.deepEqual(
@@ -191,3 +192,4 @@ test("CLI emits JSON findings with exit zero", (context) => {
   );
   assert.equal(result.stderr, "");
 });
+}

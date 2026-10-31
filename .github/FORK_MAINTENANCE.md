@@ -8,6 +8,24 @@ The [post-v0.19 isolation plan](../docs/windows/ISOLATION-PLAN-0.19.md) prioriti
 contract tests/primitives and shared terminal preparation before further
 extraction. It is a plan, not permission to refactor or publish.
 
+## Post-v0.20 maintenance (2026-10-31)
+
+The completed release is `a67684ae0fc2299c8efc2e5f37824c71c8f044a6`:
+[fork41088395617](https://github.com/MusicPartner/omnigent/actions/runs/41088395617)
+and [lint41088396527](https://github.com/MusicPartner/omnigent/actions/runs/41088396527)
+passed. CLI/desktop artifact inspection also passed; human/runtime/migration
+and vendor-sandbox acceptance remain separate. The older snapshot below is
+historical, not the current outcome.
+
+The new `windows-parity/v0.20-isolation-p3-p5` worktree starts at that release.
+See [current isolation record](../docs/windows/ISOLATION-PLAN-0.20.md) for the
+five-iteration limit, uncommitted changes and verification gaps. Four shared CI
+selection groups now have one literal argv owner; the Windows paste-load rule
+uses the existing mux leaf. Shared composer/lifecycle/hooks remain canonical.
+No main automation, automatic maintenance push trigger, release publication or
+old release-branch edits were made. Maintenance Python/native acceptance has
+not passed merely because the preceding release passed.
+
 ## Current automation policy (2026-10-30)
 
 The v0.20 integration branch's round-5 snapshot is

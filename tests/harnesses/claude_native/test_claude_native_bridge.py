@@ -4488,6 +4488,8 @@ def test_inject_user_message_pastes_content_then_submits(
         "omnigent-paste",
     ]
     assert load[6:-1] == (["-t", "claude:0.0"] if windows else [])
+    assert Path(load[-1]).parent == bridge_dir
+    assert not Path(load[-1]).exists()
     # -p (bracketed-paste markers) dropped = newlines submit per-line in
     # the TUI; -d dropped = stale buffer copies accumulate server-side.
     assert paste == [

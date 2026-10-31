@@ -1,6 +1,6 @@
 # Release and isolation evidence index
 
-Reviewed 2026-10-22. Local paths describe the discovered archive, not guaranteed
+Reviewed 2026-10-31. Local paths describe discovered evidence, not guaranteed
 availability on another machine. Do not commit raw private logs or reconstruct
 policy-excluded content. Use immutable code and results over stale summaries.
 
@@ -8,34 +8,62 @@ policy-excluded content. Use immutable code and results over stale summaries.
 
 | Role | Full ref |
 | --- | --- |
-| Validated Windows v0.19 branch | `windows-parity/v0.19-integration`, `6a7c711308587a2c39dd916c0820af71debfbb67` |
-| Exact upstream v0.19.0 | `d43340fec4e7d2d767f319d715e84aa82f4d1bc8` |
-| Prior Windows source | `windows-parity/v0.17-integration`, `f50a1f1cdcbc2c01499a09c8c932c9f7348b8a42` |
-| Previous upstream stable/semantic base | v0.17.0, `12b5f67d2529b43eab7366a7288fb89f7587e48b` |
-| Actual Git merge base for that integration | `b05888bab8527a10e34e7c61d19f01a442ce325e` |
+| Validated Windows v0.20 branch | `windows-parity/v0.20-integration`, `a67684ae0fc2299c8efc2e5f37824c71c8f044a6` |
+| Exact upstream stable v0.20 | `bfd8ab5624e34aa72c01fb451e11c2a0e1aae3ee` |
+| Prior Windows P1/P2 source | `430ea3caabec09ff894e92c0c03bfe029361418e` |
+| Actual Git merge base for v0.20 | `71fb9694ecf4b54b37919fbb1acd575dfd28243f` |
 | Original v0.14 isolation source | `ca0088b9c8e72a71b11b17d9b71898b703e56b4e` |
 
-Both source histories are ancestors of the validated branch. The original
-v0.14 editor checkout and v0.17 source are not the next integration baseline.
-Main was not promoted to the Windows application.
+Use the validated v0.20 source, not an editor checkout that may lag at any
+release. Main was not promoted to the Windows application.
 
 | Result | Immutable evidence |
 | --- | --- |
-| Final Linux/Windows, broader suite, CLI and desktop artifacts | [39674542910](https://github.com/MusicPartner/omnigent/actions/runs/39674542910), final SHA above |
-| Full remote pre-commit formatting/lint/types and version lockstep | [39674541787](https://github.com/MusicPartner/omnigent/actions/runs/39674541787), final SHA |
-| Four backend E2E shards | [39661930031](https://github.com/MusicPartner/omnigent/actions/runs/39661930031), `008949b15688d19ab16213b606840935c4c65f6d` |
-| Ten UI shards, Browser Contract and aggregate | [39661934560](https://github.com/MusicPartner/omnigent/actions/runs/39661934560), same earlier SHA |
-| Harness integration matrix | [39661935006](https://github.com/MusicPartner/omnigent/actions/runs/39661935006), same earlier SHA |
-| Docker, `publish=false` | [39661930209](https://github.com/MusicPartner/omnigent/actions/runs/39661930209), same earlier SHA |
-| Source-matched CLI/desktop bundles | [CLI](https://github.com/MusicPartner/omnigent/actions/runs/39674542910/artifacts/12381398475), [desktop](https://github.com/MusicPartner/omnigent/actions/runs/39674542910/artifacts/12382976790) |
+| Final fork validation, six jobs SUCCESS, exact SHA above | [41088395617](https://github.com/MusicPartner/omnigent/actions/runs/41088395617) |
+| Final lint, three jobs SUCCESS, exact SHA above | [41088396527](https://github.com/MusicPartner/omnigent/actions/runs/41088396527) |
+| Both-OS baseline candidate | 37 nodes; zero errors, failures or skips; identical nodes |
+| Broader Windows suite | 4,552 actual / 4,576 suite-attributed including subtests; 0 failures, 0 errors, 233 skips |
+| Source-matched CLI / desktop artifacts | [CLI 12993698944](https://github.com/MusicPartner/omnigent/actions/runs/41088395617/artifacts/12993698944), [desktop 12995030094](https://github.com/MusicPartner/omnigent/actions/runs/41088395617/artifacts/12995030094); same fork run, dev/unsigned, `release_approved=false` |
+| UI, backend E2E, integration matrix | [41078697033](https://github.com/MusicPartner/omnigent/actions/runs/41078697033), [41078798047](https://github.com/MusicPartner/omnigent/actions/runs/41078798047), [41078793722](https://github.com/MusicPartner/omnigent/actions/runs/41078793722); all PASS at `dfcf012803e7045cd25b29bee60f6184c9fac482`, unchanged input closure only—not final-SHA runs |
+| Docker, `publish=false` | [41067511450](https://github.com/MusicPartner/omnigent/actions/runs/41067511450), at `9ba784ca2fd4eb44a8033cc3be07ffb12a5a869c`; unchanged runtime closure, not final-SHA evidence |
 
-The earlier E2E/integration/Docker input closure was unchanged by later Windows
-unit-fixture/documentation commits; those runs are not relabeled as final-SHA
-runs. Fourteen Python and four desktop modules were compared with final source.
-All three wheel versions are 0.19.0; desktop metadata is dev mode with final SHA.
-Artifact retention is finite; links are provenance, not permanent availability.
+These are source-matched results only as labeled; earlier workflow runs are
+not relabeled as final-SHA runs. Artifact retention is finite; links are
+provenance, not permanent availability.
+
+The v0.20 six-round push/retry allowance is exhausted. This is not a generic
+future cap; any additional integration push or retry needs renewed permission.
+Human acceptance, vendor-sandbox checks, migration acceptance and signing
+remain outstanding. The release artifacts are dev/unsigned and not approved.
+
+The v0.20 ledger has 328 rows: 282 pending, 45 review-pending and one excluded.
+Its 46 `REVIEW` paths remain unresolved; automated success does not clear them.
+The maintained isolation plan is `docs/windows/ISOLATION-PLAN-0.20.md`; use it for the
+staged work and authorization boundary; this evidence index is not
+implementation authorization.
 
 ## Maintained records
+
+- [v0.20 isolation plan](../../../../docs/windows/ISOLATION-PLAN-0.20.md)
+  (staged work and authorization boundary).
+- [v0.20 integration snapshot](../../../../docs/windows/RELEASE-INTEGRATION-0.20.md)
+  and [ledger](../../../../docs/windows/RELEASE-INTEGRATION-0.20-ledger.csv).
+- Local final evidence: `D:\Develop\Source\OpenSource\_AI\Omnigent\_evidence\v020-integration-20261030\FINAL-VALIDATION.md`.
+- [Maintenance map](../../../../.github/FORK_MAINTENANCE.md) and
+  [Windows documentation](../../../../docs/windows/README.md).
+
+## Historical v0.19 integration
+
+The v0.19 record is preserved as historical evidence, not as the current
+baseline:
+
+| Historical role | Full ref / evidence |
+| --- | --- |
+| Validated v0.19 integration | `6a7c711308587a2c39dd916c0820af71debfbb67`, branch `windows-parity/v0.19-integration` |
+| Exact upstream v0.19.0 | `d43340fec4e7d2d767f319d715e84aa82f4d1bc8` |
+| Prior Windows v0.17 source | `f50a1f1cdcbc2c01499a09c8c932c9f7348b8a42` |
+| Actual v0.19 merge base | `b05888bab8527a10e34e7c61d19f01a442ce325e` |
+| Final fork / lint at v0.19 SHA | [39674542910](https://github.com/MusicPartner/omnigent/actions/runs/39674542910) / [39674541787](https://github.com/MusicPartner/omnigent/actions/runs/39674541787) |
 
 - [v0.19 integration snapshot](../../../../docs/windows/RELEASE-INTEGRATION-0.19.md)
   and [ledger](../../../../docs/windows/RELEASE-INTEGRATION-0.19-ledger.csv):
@@ -44,8 +72,6 @@ Artifact retention is finite; links are provenance, not permanent availability.
 - [Isolation plan](../../../../docs/windows/ISOLATION-PLAN-0.19.md):
   historical mapping, contract tests/primitives first, terminal preparation
   second. This is not runtime implementation authorization.
-- [Maintenance map](../../../../.github/FORK_MAINTENANCE.md) and
-  [Windows documentation](../../../../docs/windows/README.md).
 - Local Copilot session `f0e7a504-24b0-4fe3-b2c0-d48eb50d59fa`,
   `files/v019-integration/FINAL-RESULT.md`: completed result and human steps;
   the same directory holds raw logs and module comparison evidence.
@@ -53,8 +79,8 @@ Artifact retention is finite; links are provenance, not permanent availability.
 Main automation separately became manual-only in workflow-only commit
 `d8a23edf8b2e3f9531cfc70177b6a255a9415dbd`: 58 enabled definitions changed, no
 application promotion. Preserve this policy on any later promotion.
-Four additional push/retry rounds were used. New pushes, documentation pushes
-or manual retries require renewed permission; that count is not a future cap.
+The v0.19 allowance was four additional push/retry rounds. That historical
+count is not a future cap; see the current v0.20 allowance above.
 
 ## Historical isolation and replay
 
@@ -65,7 +91,7 @@ Resolve these paths from the repository's parent directory:
 | `omnigent/.github/FORK_MAINTENANCE.md` at `ca0088b9` | Original v0.14 Windows leaf/caller/test boundaries |
 | `_evidence/HANDOVER-windows-parity.md` | October 8 isolation commit list, original constraints and then-open acceptance |
 | `_evidence/release-port/REPLAY_PROTOCOL.md` | Original semantic replay procedure and attribution |
-| `_evidence/release-port/ledger.csv`, `ledger-summary.md`, `replay/final-row-status.csv` | Original **v0.17** replay; not v0.19 evidence |
+| `_evidence/release-port/ledger.csv`, `ledger-summary.md`, `replay/final-row-status.csv` | Original **v0.17** replay; not v0.19 or v0.20 evidence |
 | `omnigent-v017/docs/windows/BROADER-WINDOWS-SUITE-HANDOVER-2026-10-09.md` | Task-specific broad-suite continuation |
 | `omnigent-v017/docs/windows/BROADER-TEST-FINDINGS-2026-10-09.md`, `BROADER-WINDOWS-SKIPS-2026-10-09.md` | Historical failures, final counts, platform versus fixture distinctions |
 | `omnigent-v017/docs/windows/PARITY-NEXT-STEPS.md` | Later launch/hook/shutdown/attachment outcomes; reconcile against newer code |
@@ -82,7 +108,7 @@ paths/breadcrumbs `3c460fb34`, host listing/probe `83bb2d870`, splitting
 `e8b442a7a`, Codex resolution `5a09bf943`, Claude hooks `6057704ce` and
 shutdown/native-env `a68442657`, indexed in the handover. Parent-environment,
 tracing and readiness/transport extensions are later contracts. Do not present
-later replay SHAs as original v0.14 or current v0.19 validation.
+later replay SHAs as original v0.14 or current-release validation.
 
 ## Deeper history only when needed
 

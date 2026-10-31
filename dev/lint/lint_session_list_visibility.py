@@ -145,9 +145,11 @@ def _check_typescript(paths: list[Path]) -> list[str]:
         return []
     try:
         result = subprocess.run(
-            ["node", str(_SCRIPT), *(str(path) for path in paths)],
+            ["node", str(_SCRIPT), "--stdin-files"],
+            input=json.dumps([str(path) for path in paths]),
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
         )
     except OSError as exc:

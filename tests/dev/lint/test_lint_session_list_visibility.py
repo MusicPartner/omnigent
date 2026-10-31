@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from pathlib import Path
@@ -118,18 +119,19 @@ def test_comment_marker_in_a_string_does_not_suppress(tmp_path: Path) -> None:
 
 def test_typescript_results_keep_file_and_line(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
+    paths = [Path(f"web/東京 space/client-{index}.ts") for index in range(2000)]
 
     def run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append(args)
+        assert json.loads(str(kwargs["input"])) == [str(path) for path in paths]
+        assert kwargs["encoding"] == "utf-8"
         return subprocess.CompletedProcess(
             args, 0, '[{"path":"web/client.ts","line":7,"message":"missing visibility"}]', ""
         )
 
     monkeypatch.setattr(lint.subprocess, "run", run)
-    assert lint._check_typescript([Path("web/client.ts")]) == [
-        "web/client.ts:7: missing visibility"
-    ]
-    assert calls[0][-1] == "web/client.ts"
+    assert lint._check_typescript(paths) == ["web/client.ts:7: missing visibility"]
+    assert calls[0] == ["node", str(lint._SCRIPT), "--stdin-files"]
 
 
 @pytest.mark.parametrize("mode", ["missing-node", "missing-typescript", "bad-json"])

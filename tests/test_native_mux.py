@@ -13,8 +13,27 @@ import pytest
 
 from omnigent.harnesses.claude_native import bridge, main
 from omnigent.native import native_cost_popup
-from omnigent.native.mux import terminal_mux_command, terminal_mux_exit_status
+from omnigent.native.mux import (
+    terminal_mux_command,
+    terminal_mux_exit_status,
+    terminal_mux_load_buffer_args,
+)
 from omnigent.terminals import ws_common
+
+
+@pytest.mark.parametrize("windows", [False, True], ids=["tmux", "psmux"])
+def test_buffer_load_arguments_preserve_literal_paths_and_session_target(windows: bool) -> None:
+    paste_path = 'D:\\work space\\東京\\paste "literal".bin'
+    target = "resumed session:0.1"
+    expected_target = ("-t", target) if windows else ()
+    actual = terminal_mux_load_buffer_args("private buffer", paste_path, target, windows=windows)
+    assert actual == (
+        "load-buffer",
+        "-b",
+        "private buffer",
+        *expected_target,
+        paste_path,
+    )
 
 
 @pytest.mark.parametrize("windows,binary", [(True, "psmux"), (False, "tmux")])
