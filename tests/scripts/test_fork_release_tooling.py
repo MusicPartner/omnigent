@@ -105,6 +105,8 @@ def test_workflow_policy_and_release_inputs_match_immutable_e1714() -> None:
         "Verify Windows bundle ownership contracts",
         "Audit executed Windows startup contract identities",
         "Verify local-tool and content-search transports",
+        "Record inspected Windows bundle provenance",
+        "Verify inspected Windows bundle provenance before upload",
     }
     changed_commands = {
         "Audit reconciled test symbols and platform marker owners",
@@ -133,7 +135,11 @@ def test_workflow_policy_and_release_inputs_match_immutable_e1714() -> None:
             "Audit executed Windows startup contract identities",
             "Upload real Windows status fallback evidence",
         ],
-        "build-windows-artifact": ["Stage candidate release inputs"],
+        "build-windows-artifact": [
+            "Stage candidate release inputs",
+            "Record inspected Windows bundle provenance",
+            "Verify inspected Windows bundle provenance before upload",
+        ],
         "build-windows-desktop-artifact": [],
     }
     moved_inputs = {
@@ -288,6 +294,8 @@ def test_maintenance_gates_are_branch_scoped_and_cover_real_cli_entrypoints() ->
         "tests/scripts/test_windows_delta_inventory.py",
         "tests/scripts/test_windows_contracts.py",
         "tests/scripts/test_web_checkout_eol.py",
+        "tests/scripts/test_windows_bundle_provenance.py",
+        "tests/e2e/test_windows_bundle_provenance_e2e.py",
         "tests/e2e/test_windows_delta_inventory_e2e.py",
         "tests/e2e/test_windows_contracts_e2e.py",
         ".github/scripts/ci/release-profiles.test.mjs",
@@ -642,6 +650,35 @@ def test_bundle_assembly_preserves_template_bytes_layout_and_wheel_checksums(
         + "\r\n"
     )
     assert (output / "SHA256SUMS.txt").read_bytes() == expected_sums.encode("ascii")
+
+
+def test_provenance_gates_record_then_verify_before_upload_without_changing_policy() -> None:
+    workflow = yaml.load(WORKFLOW_PATH.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    steps = workflow["jobs"]["build-windows-artifact"]["steps"]
+    names = [step["name"] for step in steps]
+    record = "Record inspected Windows bundle provenance"
+    verify = "Verify inspected Windows bundle provenance before upload"
+    assert names.index("Assemble Windows bundle") < names.index(record)
+    assert names.index(record) < names.index(
+        "Test upstream-style artifact installer and uninstaller"
+    )
+    assert names.index("Test upstream-style artifact installer and uninstaller") < names.index(
+        verify
+    )
+    assert names.index(verify) < names.index("Upload Windows artifact")
+    for name in (record, verify):
+        step = steps[names.index(name)]
+        assert (
+            step["if"] == "${{ github.ref == 'refs/heads/windows-parity/v0.20-isolation-p3-p5' }}"
+        )
+        assert step["shell"] == "pwsh"
+        assert "continue-on-error" not in step
+        assert "--source-sha $env:GITHUB_SHA" in step["run"]
+        assert "--expected-version $expectedVersion" in step["run"]
+        assert "--repository-root ." in step["run"]
+        assert "(git rev-parse HEAD) -ne $env:GITHUB_SHA" in step["run"]
+    assert "--write-manifest" in steps[names.index(record)]["run"]
+    assert "--write-manifest" not in steps[names.index(verify)]["run"]
 
 
 def test_bundle_assembly_requires_wheels_but_not_a_specific_wheel_count(tmp_path: Path) -> None:

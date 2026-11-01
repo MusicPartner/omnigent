@@ -122,7 +122,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          uv run --no-sync pytest tests/scripts/test_windows_delta_inventory.py tests/scripts/test_windows_contracts.py tests/scripts/test_web_checkout_eol.py tests/e2e/test_windows_delta_inventory_e2e.py tests/e2e/test_windows_contracts_e2e.py -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -q
+          uv run --no-sync pytest tests/scripts/test_windows_delta_inventory.py tests/scripts/test_windows_contracts.py tests/scripts/test_web_checkout_eol.py tests/scripts/test_windows_bundle_provenance.py tests/e2e/test_windows_delta_inventory_e2e.py tests/e2e/test_windows_contracts_e2e.py tests/e2e/test_windows_bundle_provenance_e2e.py -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -q
           node --test .github/scripts/ci/release-profiles.test.mjs
           uv run --no-sync python .github/scripts/ci/audit-windows-contracts.py --repository "$GITHUB_WORKSPACE" --contracts .github/scripts/ci/windows-contracts.json --mode boundaries
 
@@ -699,6 +699,16 @@ jobs:
           python .github/scripts/ci/assemble-windows-bundle.py --repository-root . --wheels-dir dist --output-dir windows-bundle --expected-version $expectedVersion --source-sha $env:GITHUB_SHA
           if ($LASTEXITCODE -ne 0) { throw "Windows bundle assembly failed" }
 
+      - name: Record inspected Windows bundle provenance
+        if: ${{ github.ref == 'refs/heads/windows-parity/v0.20-isolation-p3-p5' }}
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD) -ne $env:GITHUB_SHA) { throw "Bundle source checkout mismatch" }
+          $expectedVersion = python -c "import pathlib, tomllib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version'])"
+          if ($LASTEXITCODE -ne 0) { throw "Could not resolve provenance version" }
+          python .github/scripts/ci/verify-windows-bundle-provenance.py --bundle-dir windows-bundle --expected-version $expectedVersion --source-sha $env:GITHUB_SHA --repository-root . --write-manifest
+          if ($LASTEXITCODE -ne 0) { throw "Bundle provenance recording failed" }
+
       - name: Test upstream-style artifact installer and uninstaller
         shell: pwsh
         run: |
@@ -760,6 +770,16 @@ jobs:
           Assert-UvEnvironmentRestored
           & .\windows-bundle\uninstall.ps1 -InstallDir $installDir
           Assert-UvEnvironmentRestored
+
+      - name: Verify inspected Windows bundle provenance before upload
+        if: ${{ github.ref == 'refs/heads/windows-parity/v0.20-isolation-p3-p5' }}
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD) -ne $env:GITHUB_SHA) { throw "Bundle source checkout mismatch" }
+          $expectedVersion = python -c "import pathlib, tomllib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version'])"
+          if ($LASTEXITCODE -ne 0) { throw "Could not resolve provenance version" }
+          python .github/scripts/ci/verify-windows-bundle-provenance.py --bundle-dir windows-bundle --expected-version $expectedVersion --source-sha $env:GITHUB_SHA --repository-root .
+          if ($LASTEXITCODE -ne 0) { throw "Bundle provenance verification failed" }
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

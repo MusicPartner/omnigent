@@ -8,7 +8,36 @@ The [post-v0.19 isolation plan](../docs/windows/ISOLATION-PLAN-0.19.md) prioriti
 contract tests/primitives and shared terminal preparation before further
 extraction. It is a plan, not permission to refactor or publish.
 
-## Current continuation and allowance reset (2026-11-01)
+## Current accepted checkpoint and D35 continuation (2026-11-01)
+
+Latest published HEAD and live origin were reverified at
+`836f308e79f4231e8f9e2efe2aea70d7eabab69b` in `omnigent-v020-isolation`,
+branch `windows-parity/v0.20-isolation-p3-p5`. Reset budget: **1/5 used,
+four remaining**. Fork **41333606690**, Lint **41333609058** and Integration
+**41333611385** completed successfully at that full SHA, including both
+Windows artifacts. C #15's cache/reinstall/sentinel-refusal/uninstall and UV
+environment-restoration roundtrip passed. Raw startup JUnit has three
+executed cases with no skips/failures/errors; broader Windows has 4,556 actual
+records, 233 skips and no failures/errors.
+
+Read-only downloaded CLI inspection matches three wheel versions, three
+selected Git source fingerprints and the installer/uninstaller/helper bytes.
+The actual core commit field is empty; native approval remains false/unsigned.
+Desktop ASAR records 0.20.0, the exact source commit and dev build identity;
+this is not GUI, signing or production acceptance. No historical artifact
+was modified or given a provenance manifest.
+
+D #35's separate checker/shared fixture/unit/CLI tests and candidate-only
+record/reverify gates are local; the current 59-test suite passed. The next
+coordinated package also reconciles these status records and uses reset
+round 2 only when published. It needs actual uploaded-manifest verification
+at its new SHA. Assembler bytes, workflow policy and shared pins stay unchanged.
+C #8, locking/privacy, desktop consistency automation, broader hook/pnpm
+reproducibility and E #37 remain open. Older Electron/launcher edits stay
+excluded; no main/production/signing/native-default/WSL/foreign-state changes
+are authorized. See the [master roadmap](../docs/windows/WINDOWS-ISOLATION-ROADMAP.md).
+
+## Historical allowance reset before correction publication (2026-11-01)
 
 Latest published HEAD and live origin were reverified at
 `3c191b8bba11f7abcb585a7c613206c10f53edc1` in `omnigent-v020-isolation`,

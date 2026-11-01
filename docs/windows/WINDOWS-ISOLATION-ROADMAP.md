@@ -5,6 +5,41 @@ isolation records remain dated evidence, not current execution instructions.
 
 ## Current continuation: allowance reset and correction package
 
+Correction checkpoint **`836f308e79f4231e8f9e2efe2aea70d7eabab69b`** is now
+published with normal commit/push hooks and matching live origin. **Reset
+allowance: 1/5 used, four remaining.** Fork **41333606690**, Lint
+**41333609058** and Integration **41333611385** were verified at that exact
+SHA and completed successfully. Both preparation jobs, focused Linux, native
+Windows, CLI artifact and desktop artifact jobs passed. The ANSI transport,
+real startup and identity audit gates passed. Downloaded startup JUnit has
+three executed cases and no skips/failures/errors; broader Windows has 4,556
+actual records, 233 skips and no failures/errors. C #15's complete clean-wheel
+and cache/reinstall/sentinel-refusal/uninstall roundtrip passed remotely.
+
+Read-only inspection of the downloaded CLI bundle verified three lockstep
+wheels, 13 files, three source fingerprints against 836f308e's Git blobs, and
+exact LF-normalized installer/uninstaller/helper bytes. Its actual core commit
+field is empty; native resource remains unsigned and `release_approved=false`.
+Desktop ASAR records version `0.20.0`, `omnigentSourceCommit=836f308e...` and
+`omnigentBuild=dev`. ZIP SHA-256:
+`3879e2977d74ca3409483b4236f8452f760df2acd23751c3686a0f7bc8112908`
+(149,172,501 bytes). This is package consistency, not GUI, signing or production
+acceptance. No provenance manifest was added to these downloaded artifacts.
+
+D #35's current local suite passed 59 tests in 5.55s after the intervening-edit
+recheck. The next coordinated package contains its separate checker, shared
+synthetic fixture, unit/CLI tests, candidate-only record/reverify gates and
+these reconciled status records. Round 2 is allocated, not yet consumed; it
+will require normal hooks, exact-SHA fork/Lint/Integration results and the
+actual uploaded provenance manifest. Desktop automation and broader hooks
+remain separate. The paragraphs below preserve pre-publication evidence.
+
+Pre-commit's stash restoration converted only the two excluded Electron
+files' checkout line endings from CRLF to LF under the new attributes.
+Reconstructed CRLF SHA-256 values matched their pre-commit hashes exactly;
+all semantic content remained excluded. The launcher test was byte-identical.
+No excluded changes were staged and no broad checkout rewrite was performed.
+
 The user reset the remote allowance to **five fresh coordinated rounds**:
 **0/5 used, five available** before this correction package's publication.
 The three preceding rounds remain historical evidence, not the active cap.
@@ -32,13 +67,9 @@ failed before Prettier ran because the subprocess could not resolve pnpm.
 No dependency installation completed. The prior direct Prettier check remains
 valid scoped evidence; it is not the required pnpm gate. Web edits remain
 excluded, and the maintained checkout is not mass-rewritten. D #36's checkout
-contract is implemented locally; broader hook/setup reproducibility remains open.
-
-Reset round 1 will publish this reviewed correction checkpoint and dispatch
-fork validation, Lint and Integration at its actual SHA. Require the Windows
-ANSI transport gate, executed startup identities and complete CLI bundle
-cache/reinstall/refusal/uninstall roundtrip before claiming remote acceptance.
-Artifact jobs skipped in historical round 3 are not successful results.
+contract is published and its two-OS CI gate passed; broader hook/setup
+reproducibility remains open. Historical round 3's skipped artifacts remain
+unsuccessful evidence; the later 836f308e roundtrip does not relabel them.
 
 ### Historical round 3 checkpoint
 
@@ -209,15 +240,15 @@ shared application policy; more leaf files alone do not demonstrate success.
 
 - Worktree: `D:\Develop\Source\OpenSource\_AI\Omnigent\omnigent-v020-isolation`.
 - Branch: `windows-parity/v0.20-isolation-p3-p5`.
-- Latest published basis: `3c191b8bba11f7abcb585a7c613206c10f53edc1`.
+- Latest published basis: `836f308e79f4231e8f9e2efe2aea70d7eabab69b`.
 - Original extraction basis: `e1714c416d2608f7bfd5bf4ea93ee81b108d7311`.
 - Validated v0.20 integration: `a67684ae0fc2299c8efc2e5f37824c71c8f044a6`.
 - Exact upstream v0.20: `bfd8ab5624e34aa72c01fb451e11c2a0e1aae3ee`.
 
 Implementation was requested on 2026-11-01. Packages A/B and C #11/#12/#15
-are published; the latest remote Windows/cache acceptance remains open after
-the round 3 failure. The local C #11 follow-up and D #36 checkout contract
-are the next correction package described above. Local #13 Electron files
+are published; Windows/cache acceptance passed at 836f308e after the distinct
+round 3 failure. The C #11 ANSI follow-up and D #36 checkout contract are
+published and remotely validated. D #35 is the next local package. Local #13 Electron files
 and the #8 safe-launcher test remain excluded; they are not implicitly
 authorized for this publication. Older dated paragraphs describe their
 original checkpoints, not the current source or renewed allowance.
@@ -252,13 +283,13 @@ payback; P2 maintains/selectively refines seams; P3 is separate support work.
 | 8 | Batch launcher / `inner/sandbox.py` | Safe subset test local; actual percent expansion and ampersand splitting reproduced. P1: decide filename-consumer contract before R/E. |
 | 9 | Pi Windows argv / `pi_windows.py` | Published; preserve package allowlist, containment, worker PATH and fallback. |
 | 10 | Popup / `native/windows_cost_popup.py` | Published; encoding mechanics only, shared approval/dismissal lifecycle retained. |
-| 11 | Content search / supplied environment | P1: reproduce native Windows execution before selecting a narrow argv seam. Preserve grants, bounds and result shape. |
-| 12 | Local tools / `tools/local.py`, `_runner.py` | P1: reproduce plain/uv fd transport; reuse stdout protocol if justified, preserving secrets/state/cancellation. Audit actual buffering bounds. |
+| 11 | Content search / supplied environment | Published and remotely validated, including explicit ANSI control at 836f308e. Supplied-environment argv seam preserves shared grants, bounds and result shape. |
+| 12 | Local tools / `tools/local.py`, `_runner.py` | Published and remotely validated; Windows reuses stdout, POSIX fd 3 remains. Secrets/state/cancellation retained; logical response cap is not bounded `communicate()` memory. |
 | 13 | Auth/state paths / Electron CLI | Auth-only DATA_DIR correction local; daemon/cache unchanged. P0: validate checkpoint; later migration needs its own contract. |
 | 14 | Desktop CLI discovery/update/cache | P2: minimal-PATH reproduction first; isolate enumeration, not shared precedence or update policy. |
-| 15 | Installer/uninstaller ownership | Implemented locally in `scripts/windows_bundle_state.ps1` and both bundle callers. Tests cover ownership receipts, preflight/refusal, inventory cleanup and environment restoration; source-matched CI roundtrip remains pending. `scripts/install_oss.ps1` is unchanged and outside this fix. |
+| 15 | Installer/uninstaller ownership | Published helper/callers/cache correction; source-matched clean-wheel/cache/reinstall/refusal/uninstall and UV restoration roundtrip passed at 836f308e. Receipt limits remain; `scripts/install_oss.ps1` is unchanged and outside this fix. |
 | 16 | Structured encoding | P1/P2: audit UTF-8 producer/reader pairs; do not globally reinterpret terminal/vendor output. |
-| 17 | Test reachability / skip inventory | Post-psmux three-case and desktop auth selections local. P0: actual execution; #34 extends reporting. |
+| 17 | Test reachability / skip inventory | Three real post-psmux cases executed and audited at 836f308e, no skips. Desktop auth edits remain local; broader reachability is not automatically complete. |
 | 18 | Terminal backend/registry/launch preparation | Existing seam sufficient. P2: protect caller arguments, environment and failure cleanup; no second launch framework. |
 | 19 | Shell/vendor CLI/native environment/hooks | P2: actual-shell/version fixtures and kwargs; keep shared hooks/readiness policy. |
 | 20 | Owned shutdown/process replacement | P1/P2: ownership, creation-time and grace contracts; distinguish Stop, Interrupt and Quit. |
@@ -296,11 +327,11 @@ original IDs, evidence, publication state and next work.
 | Package | Scope | State |
 | --- | --- | --- |
 | A | Preflight; #1/#13/#17 closeout and existing #8 safe regression | Validated locally; current source/owner records reconciled and local test reachability corrections recorded. The prior 96ee results and follow-up work remain distinct. |
-| B | #32 → #33/#34, then package validation | Validated locally: owner map/delta audit, release-profile data and boundary/contract gates. Its 72 Python and 23 Node results are separate suites, not a combined latest-run count. Final hooks and remote validation remain pending. |
-| C | #15 installer ownership safeguards | Implemented and focused tests passed locally. Genuine three-wheel uv probe and mock refusal/cleanup checks are recorded below; final hooks and source-matched CI bundle roundtrip remain pending. #8 remains a separate contract; #11/#12 reproductions and #16/#25 audits are not claimed complete. |
-| D | Evidence-based #14/#18–28 refinements and #35/#36 | #35 read-only artifact audit and #36 local LF checkout contract begun; standard formatter and broad hook acceptance pending. Other gaps remain selective. |
+| B | #32 → #33/#34, then package validation | Published at 15f11e with normal hooks and integrated CI; maintenance and executed-startup gates passed again at 836f308e. Historical local suite counts remain separate; broader contracts remain review work. |
+| C | #15 ownership and #11/#12 transports; #8 separate | Published at 3c191, ANSI correction at 836f308e; transport and actual cache/reinstall/refusal/uninstall acceptance passed at 836f308e. #8 API and #16/#25 locking/privacy changes are not implemented. |
+| D | Evidence-based #14/#18–28 refinements and #35/#36 | #36 scoped checkout contract published at 836f308e; standard pnpm wrapper/broad hooks remain open. #35's separate local identity/inventory checker and synthetic CLI e2e are implemented, not published or remotely accepted. Other gaps remain selective. |
 | E | #37 rehearsal/scorecard and justified upstream-covered retirement | Not started; needs a selected exact target and validated basis. |
-| Publication | Local commits/push/Actions limits | Separate checkpoint; no new round consumed. |
+| Publication | Local commits/push/Actions limits | Reset round 1 published 836f308e; all three source-matched workflows passed. Four rounds remain; D35 round 2 allocated, no next push/rerun yet. |
 
 Dependency order: A first, then B. #33 and #34 can proceed independently once
 #32 defines the map. C can progress independently after A; separate topics and
@@ -319,8 +350,8 @@ recursively. Unexpected content stops. Missing uninstall targets are no-ops.
 UV tool variables and installer TLS state are restored after uv calls.
 
 A genuine local three-wheel probe inventoried 1,799 uv entries without detected
-reparse points; the complete source-matched CI bundle roundtrip remains
-pending. Stop if a future actual uv layout requires unsupported reparse
+reparse points; the complete source-matched CI bundle roundtrip passed at
+836f308e. Stop if a future actual uv layout requires unsupported reparse
 traversal. Receipts guard accidental collisions, not malicious concurrent
 writers or proof of race-free deletion (#30). If a fresh install fails before
 receipt creation, any partial prefix is left for manual review; use a fresh
@@ -335,6 +366,47 @@ Inventory real executable-filename consumers before changing `.cmd` forwarding.
 Exact argv may require a support/API decision. Preserve existing native/signing
 defaults until explicitly reviewed; pure rendering extraction alone would keep
 the reproduced percent/ampersand defects.
+
+### Artifact consistency (#35), local implementation
+
+`verify-windows-bundle-provenance.py` is a separate stdlib checker, not an
+assembler rewrite. It inspects one of each lockstep package's actual METADATA,
+checks filename/version agreement, inspects the core's literal embedded
+`COMMIT_SHA` without importing artifact code, and matches native resource
+bytes to the existing manifest digest. It records sizes and SHA-256 values
+for all bundle files except its own `BUNDLE-PROVENANCE.json`, retaining unsigned
+and `release_approved=false` status without approving it. Additional nonlockstep
+wheels remain permitted if their metadata and filename agree.
+
+The candidate-only workflow records after assembly and independently compares
+the live bundle after the installer roundtrip, before upload. The existing
+assembler/template/checksum bytes and upstream eligibility remain unchanged.
+Synthetic unit and CLI e2e tests cover identity mismatch, missing SDKs, stale
+checksums, altered/extra files, malformed/duplicate metadata and size refusals.
+The checker refuses detected links and bounds inventory count/member reads;
+ZIP parsing and filesystem enumeration are not hostile-input or race-proof
+security. The embedded source field remains builder-authored consistency
+metadata, not signed attestation of source contents. A real historical 96ee
+wheel contained an empty `COMMIT_SHA`, consistent with the documented no-Git
+build fallback. Empty fields require three selected maintained modules to
+match actual Git blobs at the requested full SHA, normalizing only CRLF to
+LF; the manifest records the empty field and each fingerprint explicitly.
+A nonempty wrong SHA still refuses. These selected fingerprints are not a
+whole-source binding. Desktop ASAR consistency remains follow-up scope.
+
+Final fingerprint/unit/CLI/register/preservation validation passed **59 tests
+in 5.85s** after normal hooks. Read-only inspection of the actual historical
+96ee three-wheel bundle passed against its own Git SHA: 12 files and three
+module fingerprints, with its empty embedded commit recorded in the result.
+No historical manifest was written and no evidence was relabelled as current.
+The continuation recheck passed 59 tests in 5.55s. The same read-only checker
+also inspected the actual 836f308e bundle against its Git SHA: three wheels,
+13 files and three fingerprints. These local inspections do not prove that
+the checker ran remotely or that a provenance record was uploaded.
+
+Do not attribute this uncommitted checker or manifest to the completed 836f308e
+Actions or historical bundles. Its remote validation will need a later reviewed
+checkpoint, now allocated as reset round 2, not an automatic rerun.
 
 ## Verification and acceptance
 
