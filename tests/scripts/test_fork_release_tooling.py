@@ -104,6 +104,7 @@ def test_workflow_policy_and_release_inputs_match_immutable_e1714() -> None:
         "Verify maintenance tooling and boundary contracts",
         "Verify Windows bundle ownership contracts",
         "Audit executed Windows startup contract identities",
+        "Verify local-tool and content-search transports",
     }
     changed_commands = {
         "Audit reconciled test symbols and platform marker owners",
@@ -121,8 +122,12 @@ def test_workflow_policy_and_release_inputs_match_immutable_e1714() -> None:
             "Verify Windows bundle ownership contracts",
             "Verify approved relay capability and reader safety",
         ],
-        "focused-linux": ["Release input staging contracts"],
+        "focused-linux": [
+            "Verify local-tool and content-search transports",
+            "Release input staging contracts",
+        ],
         "windows-native": [
+            "Verify local-tool and content-search transports",
             "Release input staging contracts",
             "Verify real Windows status fallback after psmux installation",
             "Audit executed Windows startup contract identities",
@@ -366,6 +371,35 @@ def test_bundle_ownership_gate_and_artifact_roundtrip_keep_safety_checks() -> No
     ):
         assert smoke in command
     assert "Remove-Item" not in command
+
+
+def test_transport_gates_preserve_platform_selection_and_real_windows_execution() -> None:
+    workflow = yaml.load(WORKFLOW_PATH.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    for job_name in ("focused-linux", "windows-native"):
+        gate = next(
+            step
+            for step in workflow["jobs"][job_name]["steps"]
+            if step.get("name") == "Verify local-tool and content-search transports"
+        )
+        assert gate["if"] == (
+            "${{ github.ref == 'refs/heads/windows-parity/v0.20-isolation-p3-p5' }}"
+        )
+        assert "continue-on-error" not in gate
+        assert "tests/tools/test_local.py" in gate["run"]
+        assert "tests/runner/test_content_search_windows.py" in gate["run"]
+        assert "--reruns 0" in gate["run"] and "--timeout=30" in gate["run"]
+        assert "--junitxml=local-tool-search-transports.xml" in gate["run"]
+        if job_name == "windows-native":
+            assert gate["shell"] == "pwsh"
+            for identity in (
+                "test_windows_content_search_uses_supplied_workspace",
+                "test_invoke_unicode_with_debug_stdout[plain]",
+                "test_invoke_unicode_with_debug_stdout[uv]",
+            ):
+                assert identity in gate["run"]
+            assert "$cases.Count -ne 1" in gate["run"]
+            assert 'SelectNodes("skipped | failure | error").Count -ne 0' in gate["run"]
+            assert "Get-Command rg" in gate["run"]
 
 
 def test_bundle_body_fixture_matches_immutable_e1714_workflow() -> None:

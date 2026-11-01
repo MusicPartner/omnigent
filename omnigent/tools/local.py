@@ -8,8 +8,8 @@ expands one :class:`LocalToolInfo` (file-level) into N
 ``LocalPythonTool`` instances.
 
 Tool code runs in a **subprocess** (not in-process) for crash
-isolation. Communication uses the fd 3 pipe protocol — see
-``_runner.py`` for the child side. The subprocess invocation
+isolation. Communication uses fd 3 on POSIX and the shared stdout
+protocol on Windows or wrappers — see ``_runner.py`` for the child side. The invocation
 identifies the target ``@tool`` function by name, since one
 file may host several.
 
@@ -49,6 +49,7 @@ from typing import Any
 
 from omnigent_client.tools import ToolMetadata, get_tool_metadata
 
+from omnigent._platform import IS_WINDOWS
 from omnigent.runner.identity import strip_runner_auth_secrets
 from omnigent.spec.types import LocalToolInfo, SandboxConfig, ToolRuntime
 from omnigent.tools._pep723 import parse_inline_metadata
@@ -61,7 +62,7 @@ _logger = logging.getLogger(__name__)
 # so subprocess invocations don't depend on cwd.
 _RUNNER_PATH = str(Path(__file__).parent / "_runner.py")
 
-# Maximum bytes to read from the fd 3 response pipe (1 MiB).
+# Maximum logical response bytes, independent of transport (1 MiB).
 _MAX_RESPONSE_BYTES = 1024 * 1024
 
 # Prefix used by the runner in Docker/stdout mode.
@@ -242,11 +243,10 @@ class LocalPythonTool(Tool):
             }
         ).encode()
 
-        # srt and Docker both wrap the command in their own process
-        # chain, so the fd 3 pipe doesn't survive to the inner
-        # Python process. Use the stdout protocol instead.
+        # Windows cannot pass fd 3; srt/container wrappers also lose it.
+        # Keep the shared runner's stdout protocol for those transports.
         srt_active = self._srt_available and self._sandbox_enabled
-        use_stdout = self._sandbox_config.container_image is not None or srt_active
+        use_stdout = IS_WINDOWS or self._sandbox_config.container_image is not None or srt_active
         cmd = self._build_command(state_root=state_root)
         if use_stdout:
             return self._invoke_stdout(cmd, request, workspace=ctx.workspace)
@@ -306,7 +306,7 @@ class LocalPythonTool(Tool):
         workspace: Path | None,
     ) -> str:
         """
-        Run the tool via stdout protocol (for srt and Docker).
+        Run the tool via stdout protocol (Windows, srt and Docker).
 
         When the command is wrapped by srt or Docker, the fd 3 pipe
         doesn't survive to the inner Python process. The runner
@@ -597,6 +597,8 @@ def _read_stdout_response(
     for line in text.splitlines():
         if line.startswith(_STDOUT_RESPONSE_PREFIX):
             payload = line[len(_STDOUT_RESPONSE_PREFIX) :]
+            if len(payload.encode("utf-8")) > _MAX_RESPONSE_BYTES:
+                return "Error: tool response exceeds the 1 MiB limit"
             try:
                 data = json.loads(payload)
             except json.JSONDecodeError as exc:

@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import sys
 from typing import TYPE_CHECKING, Any
 
+from omnigent._platform import IS_WINDOWS
+from omnigent.inner.os_env import CallerProcessOSEnvironment
 from omnigent.runner.environment_filesystem import _python_shell_command, split_glob_list
+from omnigent.runner.python_probe import windows_python_argv
 
 if TYPE_CHECKING:
     from omnigent.inner.os_env import OSEnvironment
@@ -15,6 +19,7 @@ if TYPE_CHECKING:
 _SEARCH_SCRIPT = r"""
 import base64
 import json
+import os
 import subprocess
 import tempfile
 import threading
@@ -74,6 +79,8 @@ with tempfile.TemporaryFile() as errors:
                 break
             data = event["data"]
             path = decode(data["path"])
+            if os.sep == "\\":
+                path = path.replace("\\", "/")
             content = data["lines"]
             raw = (content["text"].encode("utf-8") if "text" in content
                    else base64.b64decode(content["bytes"]))
@@ -163,11 +170,15 @@ async def search_content(
         f"regex = {regex!r}\nlimit = {limit!r}\nglob_args = {glob_args!r}\n"
     )
     # ponytail: one capped response; stream batches if large-workspace latency warrants it.
-    result = await environment.shell(
-        _python_shell_command(parameters + _SEARCH_SCRIPT),
-        timeout=20,
-        max_output=4 * 1024 * 1024,
-    )
+    script = parameters + _SEARCH_SCRIPT
+    if IS_WINDOWS and isinstance(environment, CallerProcessOSEnvironment):
+        argv = windows_python_argv(sys.executable, script)
+        argv[1:1] = ["-I", "-X", "utf8"]
+        result = await environment.launch_command(argv, timeout=20, max_output=4 * 1024 * 1024)
+    else:
+        result = await environment.shell(
+            _python_shell_command(script), timeout=20, max_output=4 * 1024 * 1024
+        )
     if result.get("error") or result.get("exit_code"):
         return {"error": "Content search could not run in this workspace. Try again."}
     try:

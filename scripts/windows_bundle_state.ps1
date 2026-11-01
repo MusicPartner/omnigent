@@ -293,6 +293,20 @@ function Assert-OmnigentLiveInventoryMatches([string]$Prefix, $Receipt, [switch]
     $live = @(Get-OmnigentLiveInventory $Prefix)
     $expectedByPath = @{}
     foreach ($entry in @($Receipt.inventory)) { $expectedByPath[$entry.Path] = $entry.Kind }
+    # Python may cache imports after the receipt is written. Only derive caches
+    # from recorded sources in this tool's site-packages, never arbitrary files.
+    foreach ($entry in @($Receipt.inventory)) {
+        if ($entry.Kind -cne 'file' -or $entry.Path -notmatch '^tools/omnigent/Lib/site-packages/(.*/)?([^/]+)\.py$') {
+            continue
+        }
+        $cacheDirectory = 'tools/omnigent/Lib/site-packages/' + $Matches[1] + '__pycache__'
+        $moduleName = $Matches[2]
+        if (-not $expectedByPath.ContainsKey($cacheDirectory)) { $expectedByPath[$cacheDirectory] = 'directory' }
+        foreach ($optimization in @('', '.opt-1', '.opt-2')) {
+            $cachePath = $cacheDirectory + '/' + $moduleName + '.cpython-312' + $optimization + '.pyc'
+            if (-not $expectedByPath.ContainsKey($cachePath)) { $expectedByPath[$cachePath] = 'file' }
+        }
+    }
     $liveByPath = @{}
     foreach ($entry in $live) {
         if (-not $expectedByPath.ContainsKey($entry.Path)) {
@@ -304,9 +318,9 @@ function Assert-OmnigentLiveInventoryMatches([string]$Prefix, $Receipt, [switch]
         $liveByPath[$entry.Path] = $entry.Kind
     }
     if (-not $AllowMissing) {
-        foreach ($expectedPath in $expectedByPath.Keys) {
-            if (-not $liveByPath.ContainsKey($expectedPath)) {
-                throw "A recorded bundle item is missing: $expectedPath"
+        foreach ($entry in @($Receipt.inventory)) {
+            if (-not $liveByPath.ContainsKey($entry.Path)) {
+                throw "A recorded bundle item is missing: $($entry.Path)"
             }
         }
     }
@@ -440,10 +454,10 @@ function Remove-OmnigentBundleInventory($State) {
             throw "The bundle receipt changed after state was captured; preserving the bundle."
         }
     }
-    Assert-OmnigentLiveInventoryMatches $prefix $stateReceipt -AllowMissing | Out-Null
+    $liveInventory = @(Assert-OmnigentLiveInventoryMatches $prefix $stateReceipt -AllowMissing)
     Assert-OmnigentBundleReceiptIsOrdinary $prefix
 
-    $files = @($receipt.inventory | Where-Object { $_.Kind -ceq 'file' } | Sort-Object -Property Path)
+    $files = @($liveInventory | Where-Object { $_.Kind -ceq 'file' } | Sort-Object -Property Path)
     foreach ($entry in $files) {
         $path = Join-Path $prefix ($entry.Path.Replace('/', '\'))
         Assert-OmnigentNoReparseAncestors $path
@@ -458,7 +472,7 @@ function Remove-OmnigentBundleInventory($State) {
 
     Assert-OmnigentLiveInventoryMatches $prefix $receipt -AllowMissing | Out-Null
     Assert-OmnigentBundleReceiptIsOrdinary $prefix
-    $directories = @($receipt.inventory | Where-Object { $_.Kind -ceq 'directory' } |
+    $directories = @($liveInventory | Where-Object { $_.Kind -ceq 'directory' } |
         Sort-Object { ($_.Path -split '/').Count } -Descending)
     foreach ($entry in $directories) {
         $path = Join-Path $prefix ($entry.Path.Replace('/', '\'))

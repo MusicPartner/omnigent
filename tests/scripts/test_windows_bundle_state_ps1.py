@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -177,6 +179,79 @@ catch { $failure = $_.Exception.Message }
     )
     assert f"missing its expected directory: {missing_root}" in result["failure"]
     assert result["receipt_exists"] is False
+
+
+@pytest.mark.parametrize("package", ["", "omnigent/"])
+def test_receipted_python_source_can_generate_owned_bytecode(tmp_path: Path, package: str) -> None:
+    prefix = tmp_path / "bundle"
+    source = prefix / "tools" / "omnigent" / "Lib" / "site-packages" / package / "synthetic.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("value = 'synthetic'\n", encoding="utf-8")
+    (prefix / "bin").mkdir()
+    run_state("Write-OmnigentBundleReceipt $env:TEST_PREFIX; '{}'", tmp_path)
+    subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            "import py_compile, sys; "
+            "[py_compile.compile(sys.argv[1], doraise=True, optimize=level) "
+            "for level in (0, 1, 2)]",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=10,
+    )
+    assert len(list((source.parent / "__pycache__").glob("*.pyc"))) == 3
+    result = run_state(
+        r"""
+$state = Get-OmnigentBundleState $env:TEST_PREFIX -ForInstall
+Remove-OmnigentBundleInventory $state
+@{ prefix_exists = [IO.Directory]::Exists($env:TEST_PREFIX) } | ConvertTo-Json -Compress
+""",
+        tmp_path,
+    )
+    assert result == {"prefix_exists": False}
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        "__pycache__/unrelated.txt",
+        "__pycache__/unrecorded.cpython-312.pyc",
+        "__pycache__/synthetic.cpython-313.pyc",
+        "__pycache__/synthetic.cpython-312.opt-3.pyc",
+        "synthetic.pyc",
+    ],
+)
+def test_generated_cache_rule_refuses_unrecorded_or_unsupported_files(
+    tmp_path: Path, extra: str
+) -> None:
+    prefix = tmp_path / "bundle"
+    package = prefix / "tools" / "omnigent" / "Lib" / "site-packages" / "omnigent"
+    package.mkdir(parents=True)
+    (package / "synthetic.py").write_text("value = 'synthetic'\n", encoding="utf-8")
+    (prefix / "bin").mkdir()
+    run_state("Write-OmnigentBundleReceipt $env:TEST_PREFIX; '{}'", tmp_path)
+    unexpected = package / extra
+    unexpected.parent.mkdir(exist_ok=True)
+    unexpected.write_bytes(b"synthetic unrelated content")
+    result = run_state(
+        r"""
+$failure = $null
+try { Get-OmnigentBundleState $env:TEST_PREFIX | Out-Null }
+catch { $failure = $_.Exception.Message }
+@{
+    failure = $failure
+    receipt_kept = Test-Path (Get-OmnigentReceiptPath $env:TEST_PREFIX)
+} | ConvertTo-Json -Compress
+""",
+        tmp_path,
+    )
+    assert "Unexpected item" in result["failure"]
+    assert result["receipt_kept"] is True
+    assert unexpected.read_bytes() == b"synthetic unrelated content"
 
 
 def _valid_receipt(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -13,12 +14,15 @@ from typing import Any
 
 import pytest
 
+from omnigent._platform import IS_WINDOWS
 from omnigent.runner.identity import RUNNER_TUNNEL_BINDING_TOKEN_ENV_VAR
 from omnigent.spec.types import LocalToolInfo, SandboxConfig, ToolRuntime
 from omnigent.tools.base import ToolContext
 from omnigent.tools.local import (
+    _MAX_RESPONSE_BYTES,
     LocalPythonTool,
     LocalToolLoadError,
+    _read_stdout_response,
     load_local_python_tools,
 )
 
@@ -114,7 +118,7 @@ def tool_ctx() -> ToolContext:
 
 
 def test_invoke_subprocess_success(tmp_path: Path, tool_ctx: ToolContext) -> None:
-    """A valid tool executes via subprocess and returns its result over fd 3."""
+    """A valid tool executes via subprocess and returns its framed result."""
     py_dir = tmp_path / "tools" / "python"
     _write_decorated_tool(py_dir, "echo_tool.py", func_name="echo_tool")
     info = LocalToolInfo(name="echo_tool", path="tools/python/echo_tool.py", language="python")
@@ -125,6 +129,86 @@ def test_invoke_subprocess_success(tmp_path: Path, tool_ctx: ToolContext) -> Non
     # actually traversed the subprocess pipeline.
     assert "hello" in result
     assert "result:" in result
+
+
+@pytest.mark.parametrize("use_uv", [False, True], ids=["plain", "uv"])
+def test_invoke_unicode_with_debug_stdout(
+    tmp_path: Path,
+    tool_ctx: ToolContext,
+    monkeypatch: pytest.MonkeyPatch,
+    use_uv: bool,
+) -> None:
+    """Real plain/uv processes preserve results independently of debug output."""
+    if use_uv and shutil.which("uv") is None:
+        pytest.skip("uv is required for the real uv transport case")
+    py_dir = tmp_path / "tools" / "python"
+    _write_decorated_tool(
+        py_dir, "echo_tool.py", body="print('synthetic debug output')\nreturn value"
+    )
+    info = LocalToolInfo(name="echo_tool", path="tools/python/echo_tool.py", language="python")
+    tool = load_local_python_tools([info], tmp_path, srt_available=False, uv_available=use_uv)[0]
+    if use_uv:
+        info.has_inline_deps = True
+        info.inline_deps = []
+        monkeypatch.setenv("UV_NO_PROJECT", "1")
+        monkeypatch.setenv("UV_NO_CONFIG", "1")
+        monkeypatch.setenv("UV_NO_SYNC", "1")
+        monkeypatch.setenv("UV_OFFLINE", "1")
+        monkeypatch.setenv("UV_PYTHON", sys.executable)
+        monkeypatch.setenv("UV_PYTHON_DOWNLOADS", "never")
+        monkeypatch.setenv("UV_CACHE_DIR", str(tmp_path / "uv-cache"))
+        assert tool._build_command(state_root=None)[:3] == ["uv", "run", "--"]
+    value = '😀 café "quoted" %SYNTHETIC% a&b\nsecond line'
+    assert tool.invoke(json.dumps({"value": value}), tool_ctx) == value
+    assert not tool._live_procs
+
+
+@pytest.mark.parametrize("extra_bytes", [0, 1])
+def test_stdout_response_enforces_logical_byte_limit(extra_bytes: int) -> None:
+    overhead = len(b'{"result":""}')
+    value = "x" * (_MAX_RESPONSE_BYTES - overhead + extra_bytes)
+    payload = json.dumps({"result": value}, separators=(",", ":")).encode()
+    result = _read_stdout_response(b"debug\n__AP_RESPONSE__:" + payload + b"\n", 0, b"")
+    assert result == ("Error: tool response exceeds the 1 MiB limit" if extra_bytes else value)
+
+
+def test_stdout_response_limit_counts_utf8_bytes_not_characters() -> None:
+    value = "😀" * (_MAX_RESPONSE_BYTES // 4)
+    payload = json.dumps({"result": value}, ensure_ascii=False).encode("utf-8")
+    assert len(payload) > _MAX_RESPONSE_BYTES
+    assert len(payload.decode("utf-8")) < _MAX_RESPONSE_BYTES
+    assert _read_stdout_response(b"__AP_RESPONSE__:" + payload, 0, b"") == (
+        "Error: tool response exceeds the 1 MiB limit"
+    )
+
+
+@pytest.mark.parametrize(
+    ("windows", "container", "srt", "enabled", "expected"),
+    [
+        (True, None, False, True, "stdout"),
+        (False, None, False, True, "fd3"),
+        (False, "synthetic-image", False, True, "stdout"),
+        (False, None, True, True, "stdout"),
+        (False, None, True, False, "fd3"),
+    ],
+)
+def test_local_tool_transport_preserves_platform_and_wrapper_selection(
+    tmp_path: Path,
+    tool_ctx: ToolContext,
+    monkeypatch: pytest.MonkeyPatch,
+    windows: bool,
+    container: str | None,
+    srt: bool,
+    enabled: bool,
+    expected: str,
+) -> None:
+    tool = _make_tool(
+        tmp_path, container_image=container, srt_available=srt, sandbox_enabled=enabled
+    )
+    monkeypatch.setattr("omnigent.tools.local.IS_WINDOWS", windows)
+    monkeypatch.setattr(tool, "_invoke_stdout", lambda *args, **kwargs: "stdout")
+    monkeypatch.setattr(tool, "_invoke_subprocess", lambda *args, **kwargs: "fd3")
+    assert tool.invoke(json.dumps({"value": "synthetic"}), tool_ctx) == expected
 
 
 def test_stateless_tool_does_not_create_tool_state_directory(tmp_path: Path) -> None:
@@ -716,8 +800,7 @@ def _run_runner_with_request(tool_path: Path, tool_name: str, arguments: dict) -
     """
     Spawn the runner subprocess and return its parsed JSON response.
 
-    Uses fd 3 protocol so the test mirrors the real production
-    invocation path, not the Docker fallback.
+    Mirrors the production transport: stdout on Windows, fd 3 on POSIX.
     """
     runner = Path(__file__).parent.parent.parent / "omnigent" / "tools" / "_runner.py"
     request = json.dumps(
@@ -727,6 +810,22 @@ def _run_runner_with_request(tool_path: Path, tool_name: str, arguments: dict) -
             "arguments": arguments,
         }
     ).encode()
+
+    if IS_WINDOWS:
+        completed = subprocess.run(
+            [sys.executable, str(runner)],
+            input=request,
+            capture_output=True,
+            env={**os.environ, "_AP_RESPONSE_MODE": "stdout"},
+            timeout=10,
+        )
+        records = [
+            line.removeprefix(b"__AP_RESPONSE__:")
+            for line in completed.stdout.splitlines()
+            if line.startswith(b"__AP_RESPONSE__:")
+        ]
+        assert len(records) == 1, (completed.stdout, completed.stderr)
+        return json.loads(records[0])
 
     read_fd, write_fd = os.pipe()
     try:

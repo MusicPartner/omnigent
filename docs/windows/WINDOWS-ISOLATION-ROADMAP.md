@@ -3,6 +3,122 @@
 Updated 2026-11-01. This is the current master roadmap; older release and
 isolation records remain dated evidence, not current execution instructions.
 
+## Current execution checkpoint
+
+Published B/C maintenance and item 15:
+`15f11e64929bfeb65bab3513ba43ed73c6fcadba`, on the branch below. Normal commit
+and push hooks passed; live origin matched. Existing remote allowance is
+**2/5 rounds used, three remaining**. No second follow-up push or rerun has
+been made. The 96ee paragraphs below describe the preceding checkpoints.
+
+All six dispatched runs were verified at that full 15f SHA. Lint, Integration,
+backend E2E, UI and nonpublishing Docker completed successfully. Fork
+validation's Linux, native Windows and desktop artifact jobs completed
+successfully. The CLI artifact installer roundtrip failed on newly generated
+Python bytecode after receipt creation. Downloaded startup JUnit passed
+the maintained identity audit: three executed, no skips/failures/errors.
+CLI artifact roundtrip/provenance remain pending; this is not final acceptance.
+
+### C item 15: artifact-discovered cache correction
+
+At 15f, CLI smoke generated a new
+`tools/omnigent/Lib/site-packages/omnigent/__pycache__/install_ledger.cpython-312.pyc`
+after the receipt was recorded. The subsequent preflight correctly refused the
+unrecorded item, preventing the intended reinstall/uninstall roundtrip. This
+invalidates the earlier assumption that the installed inventory stays static.
+
+The local correction derives optional `__pycache__` directories and exact
+CPython 3.12 cache filenames (normal, opt-1 and opt-2) only from receipt-recorded
+`.py` sources under this tool's site-packages. It does not allow arbitrary
+cache contents, unrecorded module names, other interpreter tags, reparse points
+or type changes. Cleanup uses the fully validated live inventory, with literal
+file removal and bottom-up empty-directory deletion, never recursion. Receipts
+are still accidental-collision guards, not hostile-writer/security proof.
+
+Real `py_compile` generation after receipt creation and negative name/tag tests
+pass with all owning installer suites: **107 passed in 204.59s** before final
+formatting corrections. This R is local, not yet validated remotely. A new
+coordinated correction/runtime checkpoint will use the next existing round,
+not rerun or relabel the failed 15f artifact result.
+
+### C items 11/12: local R corrections
+
+Native Windows reproduced `pass_fds not supported on Windows` in the real
+plain local-tool caller. The existing shared stdout protocol now covers local
+Windows execution; POSIX fd 3 and srt/container command construction remain
+unchanged. Real plain and uv subprocess tests pass, with uv offline, no-project,
+no-sync, an existing interpreter and no dependency downloads. State, secret
+stripping, cancellation, Unicode/debug output and transport selection are
+covered by the owning suite. The shared stdout decoder now refuses logical
+responses over 1 MiB; `communicate()` still buffers stdout/stderr in memory.
+This decoder correction also applies to existing wrapper transports.
+
+Search failed through the actual supplied Windows environment despite working
+shell and direct-Python controls. The local Windows caller now reuses
+`windows_python_argv` and `launch_command`, retaining isolated mode and explicit
+UTF-8 for this JSON producer. A piped isolated-Python control proved cp1252
+stdout/Unicode failure; console success was not valid pipe evidence. POSIX and
+nonlocal environments retain the existing shell transport. Path separators are
+normalized by the execution-side script only on Windows; POSIX backslash
+filenames remain unchanged. Shared grants, cwd, query/glob semantics, search
+limits and UTF-16 columns remain canonical.
+
+Focused combined validation: **73 passed, one skipped in 35.22s**. The only skip
+is a separate real no-follow symlink test after Windows error 1314; all 15
+existing query/glob scenarios execute without that privilege requirement.
+Normal scoped hooks passed. The supplied-environment fixture was subsequently
+changed to close only its owned helper. Post-cleanup validation, including a
+representative filesystem caller and the B register/boundary suites:
+**125 passed, one skipped in 41.37s**, with no helper-reaping report. Normal
+scoped hooks passed again. These are separate run counts, not an aggregate.
+These runtime/test edits are local and uncommitted, not part of 15f CI.
+
+Final combined runtime, register, boundary and workflow-preservation checks:
+**147 passed, one skipped in 40.20s**; normal hooks including Pyrefly and YAML
+passed. The exact-branch CI additions require real Windows search/plain/uv
+identities to execute successfully and retain a separate POSIX transport gate.
+No triggers, permissions, shared pins or existing test commands were changed.
+This is the next local checkpoint, not a new remote result.
+
+### C item 8: contract inventory, not runtime completion
+
+Actual filename consumers include ACP, Goose, Qwen, Kimi and Pi subprocess
+paths, Codex worker/catalog preparation and Claude's explicitly configured SDK
+path. Codex's consumer calls are in `codex_executor.py` at
+`prepare_codex_catalog_probe` and `prepare_codex_worker`; a delegate's claim
+that no callers existed was rejected against the current absolute source.
+Claude's implicit tight wrapper is Linux-only; this does not prove all explicit
+SDK paths skip Windows. psmux's launch override does not call the shared base
+launcher's factory. Per-consumer runtime support and cleanup remain to verify.
+
+Default `.cmd %*` cannot preserve unrestricted percent/ampersand argv. Keep
+`create_exec_launcher(...)->str`, policy and native/signing defaults unchanged.
+A pure rendering extraction would preserve that defect. Selecting a restricted
+filename contract, migrating consumers to an explicit launch description, or
+adopting a separately approved native distribution is a contract decision,
+not an implicit permission to change the API or enable unsigned native defaults.
+Item 8 remains open; items 16/25 and packages D/E are not complete.
+
+### C items 16/25: bounded auth audit
+
+`cli_auth._write_tokens_file` writes UTF-8 but its three JSON readers have no
+explicit encoding. A synthetic non-ASCII user-id roundtrip proved the current
+writer's JSON is entirely ASCII (`ensure_ascii=True`), so that mismatch alone
+does not prove a decoding bug. No token-format or encoding change was made.
+
+A disposable two-process check held `cli_auth._token_file_lock` in the parent;
+the child announced readiness and entered its own lock before the parent
+released it. Native Windows serialization is therefore absent in this tested
+fallback. No real credentials, user state or network exchange was accessed.
+This proves lock non-exclusion, not a duplicate-refresh result or lost update.
+The existing synthetic token roundtrip passed separately.
+
+Before a locking R package, define lock acquisition/failure/release semantics,
+test simultaneous synthetic refresh exchanges and ordinary writers, and audit
+Windows ACL privacy separately from POSIX mode bits. Shared token formats,
+refresh recheck, refusal and credential provenance must remain canonical.
+No lock/ACL implementation or security guarantee is claimed here.
+
 ## Goal and source
 
 Reduce Windows-specific mechanics in frequently changing upstream owners and

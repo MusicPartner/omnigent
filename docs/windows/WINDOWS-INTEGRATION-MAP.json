@@ -126,11 +126,11 @@
       "roadmap_ids": [11, 12, 16],
       "original_ids": [11, 12, 16],
       "boundary": "Content search, local-tool fd transport, and structured encoding",
-      "ownership": "Shared grants, bounds, tool protocol, and result shape; omnigent/runner/content_search.py::search_content is covered by tests/runner/test_environment_filesystem.py. Transport and encoding audits remain pending; no POSIX-style content-search bug is claimed fixed",
+      "ownership": "Shared grants, bounds, tool protocol, and result shape. Native Windows search uses the existing supplied-environment direct Python argv seam; local Windows tools use the shared stdout protocol. Local R corrections verified; broader item 16 encoding audit remains pending. No remote acceptance of these dirty runtime edits",
       "shared_caller": ["omnigent/runner/content_search.py", "omnigent/tools/local.py", "omnigent/tools/_runner.py"],
-      "windows_leaf": ["omnigent/inner/windows_powershell.py"],
-      "test_support": ["tests/runner/test_environment_filesystem.py", "tests/tools/test_local.py", "tests/tools/test_runner.py", "tests/inner/test_windows_powershell.py"],
-      "status": "planned",
+      "windows_leaf": ["omnigent/runner/python_probe.py", "omnigent/inner/windows_powershell.py"],
+      "test_support": ["tests/runner/test_environment_filesystem.py", "tests/runner/test_content_search_windows.py", "tests/tools/test_local.py", "tests/tools/test_runner.py", "tests/inner/test_windows_powershell.py"],
+      "status": "local",
       "disposition": "REVIEW"
     },
     {

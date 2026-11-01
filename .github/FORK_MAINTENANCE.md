@@ -10,6 +10,29 @@ extraction. It is a plan, not permission to refactor or publish.
 
 ## Current roadmap and implementation (2026-11-01)
 
+Latest published checkpoint is
+`15f11e64929bfeb65bab3513ba43ed73c6fcadba`, with normal commit/push hooks and
+live-origin identity verified. Existing budget: **2/5 remote rounds used,
+three remaining**. Lint, Integration, backend E2E, UI and nonpublishing Docker
+passed at that SHA; fork Linux/Windows jobs passed and its CLI/desktop artifact
+jobs finished: desktop passed, CLI installer roundtrip failed because normal
+Python imports added bytecode after receipt creation. The downloaded startup
+JUnit has three executed cases and no skips/failures/errors. Item 15's complete
+artifact roundtrip has not passed. A local correction derives only exact
+CPython 3.12 caches from recorded site-packages sources and keeps arbitrary
+extras/reparse/type changes refused; all 107 owning installer tests passed
+before final formatting closure. The next checkpoint batches that R with C11/12.
+
+Local C items 11/12 now reuse supplied-environment direct Windows Python argv
+and the shared stdout local-tool protocol. Final combined tests: 147 passed,
+one actual symlink-privilege skip; normal hooks passed. Those runtime edits and
+their candidate-only CI gates are not part of 15f validation. The 15f batch is
+finished; its failed CLI result must not be relabelled. C item 8 remains a
+separate filename/API
+decision; C16/25 synthetic audit findings are in the master roadmap, without
+an auth lock/ACL fix or security claim. Older paragraphs below are historical
+pre-publication snapshots, not the latest branch or budget.
+
 Use the [master Windows roadmap](../docs/windows/WINDOWS-ISOLATION-ROADMAP.md)
 for all original items 1–31, new maintenance work 32–37, dependencies and
 current progress. Packages A/B are validated locally; C item 15 is implemented

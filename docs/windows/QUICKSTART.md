@@ -52,7 +52,11 @@ for a fresh or coherently receipted prefix with no unexpected files; a
 nonempty receipt-free legacy prefix is refused, not adopted automatically.
 New helper-equipped bundles record the files they own. This is an
 accidental-collision safeguard, not protection against a malicious concurrent
-filesystem writer. Choose a fresh prefix or review a receipt-free old
+filesystem writer. The current source correction also recognizes only exact
+CPython 3.12 caches derived from recorded site-packages `.py` files; arbitrary
+extra cache files are still refused. The 15f installer roundtrip failed on a
+new import cache and did not publish a CLI bundle; use a later successful,
+source-matched run to verify the correction. Choose a fresh prefix or review a receipt-free old
 installation manually. Do not infer these safeguards for historical artifacts:
 the artifact from `96ee061d690a26ef37f9d432a98231105fa68d9f` predates the shared
 bundle helper and does not contain it.
@@ -97,6 +101,11 @@ foreach ($name in $uvNames) {
 if (-not (Test-Path (Join-Path $prefix '.omnigent-bundle-receipt.json'))) {
    throw 'The fresh install did not write its ownership receipt.'
 }
+$omni = Join-Path $prefix 'bin\omni.exe'
+& $omni server --help *> $null
+if ($LASTEXITCODE -ne 0) { throw 'Installed server help failed.' }
+& $omni host --help *> $null
+if ($LASTEXITCODE -ne 0) { throw 'Installed host help failed.' }
 & .\install.ps1 -InstallDir $prefix -NoPath -SkipPsmux
 
 $sentinel = Join-Path $prefix 'review-me.txt'

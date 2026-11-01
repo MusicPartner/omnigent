@@ -52,7 +52,7 @@ def workspace(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def registry(workspace: Path) -> SessionResourceRegistry:
+def registry(workspace: Path) -> Iterator[SessionResourceRegistry]:
     """Registry with a real CallerProcessOSEnvironment."""
     os_env = create_os_environment(
         OSEnvSpec(
@@ -64,7 +64,10 @@ def registry(workspace: Path) -> SessionResourceRegistry:
     assert os_env is not None
     reg = SessionResourceRegistry()
     reg._primary_envs["conv_test"] = os_env
-    return reg
+    try:
+        yield reg
+    finally:
+        os_env.close()
 
 
 @pytest.fixture
@@ -1887,9 +1890,6 @@ async def test_content_search_live_workspace(
     (workspace / "ignored.txt").write_text("needle\n")
     (workspace / ".git" / "hidden-match").write_text("needle\n")
     (workspace / "binary").write_bytes(b"\x00needle\n")
-    outside = workspace.parent / "outside.txt"
-    outside.write_text("needle\n")
-    (workspace / "link.txt").symlink_to(outside)
     response = await client.get(
         "/v1/sessions/conv_test/resources/environments/default/content-search",
         params={"q": query, **options},
@@ -1906,6 +1906,28 @@ async def test_content_search_live_workspace(
         assert (match["match_start"], match["match_end"]) == (3, 9)
     assert result["truncated"] is False
     assert not (workspace / "injected").exists()
+
+
+@pytest.mark.asyncio
+async def test_content_search_does_not_follow_workspace_symlink(
+    client: httpx.AsyncClient, workspace: Path
+) -> None:
+    outside = workspace.parent / "outside-search.txt"
+    outside.write_text("synthetic-outside-marker\n", encoding="utf-8")
+    try:
+        (workspace / "link.txt").symlink_to(outside)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows symlink creation requires privilege or Developer Mode")
+        raise
+    response = await client.get(
+        "/v1/sessions/conv_test/resources/environments/default/content-search",
+        params={"q": "synthetic-outside-marker"},
+    )
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "error" not in result, result
+    assert result["matches"] == []
 
 
 @pytest.mark.asyncio
@@ -1998,15 +2020,21 @@ async def test_content_search_rejects_invalid_helper_output(
 
     environment = registry._primary_envs["conv_test"]
     shell = AsyncMock(return_value={"stdout": stdout})
-    monkeypatch.setattr(environment, "shell", shell)
+    from omnigent._platform import IS_WINDOWS
+
+    monkeypatch.setattr(environment, "launch_command" if IS_WINDOWS else "shell", shell)
     assert await search_content(environment, "needle") == {
         "error": "Content search could not run in this workspace. Try again."
     }
     shell.assert_awaited_once()
     args, kwargs = shell.await_args
-    command = shlex.split(args[0])
-    assert command[:3] == ["python3", "-I", "-c"]
-    assert command[3] == (
+    if IS_WINDOWS:
+        command = args[0]
+        assert command[:5] == [sys.executable, "-I", "-X", "utf8", "-c"]
+    else:
+        command = shlex.split(args[0])
+        assert command[:3] == ["python3", "-I", "-c"]
+    assert command[-1] == (
         "query = 'needle'\ncase_sensitive = False\n"
         "regex = False\nlimit = 500\nglob_args = []\n" + _SEARCH_SCRIPT
     )
