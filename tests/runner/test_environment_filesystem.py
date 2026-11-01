@@ -1884,7 +1884,8 @@ async def test_content_search_live_workspace(
 ) -> None:
     subprocess.run(["git", "init", "-q", str(workspace)], check=True)
     (workspace / "src" / "content.txt").write_text(
-        "first\n😀 Needle\nneedle\n--help\n  spaced  \n$(touch injected)\n"
+        "first\n😀 Needle\nneedle\n--help\n  spaced  \n$(touch injected)\n",
+        encoding="utf-8",
     )
     (workspace / ".gitignore").write_text("ignored.txt\n")
     (workspace / "ignored.txt").write_text("needle\n")
@@ -1956,7 +1957,7 @@ async def test_content_search_limits_errors_and_hidden_files(
         for invalid in ("!*.txt", "src/\n", "src/\r", "src/\x00", "["):
             response = await client.get(endpoint, params={"q": "needle", field: invalid})
             assert response.json().get("error"), response.text
-    (workspace / ".hidden.txt").write_text("é" * 1000 + "😀 needle tail\n")
+    (workspace / ".hidden.txt").write_text("é" * 1000 + "😀 needle tail\n", encoding="utf-8")
     response = await client.get(endpoint, params={"q": "needle"})
     match = response.json()["matches"][0]
     assert match["column"] == 1004

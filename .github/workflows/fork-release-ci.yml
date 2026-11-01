@@ -122,7 +122,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          uv run --no-sync pytest tests/scripts/test_windows_delta_inventory.py tests/scripts/test_windows_contracts.py tests/e2e/test_windows_delta_inventory_e2e.py tests/e2e/test_windows_contracts_e2e.py -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -q
+          uv run --no-sync pytest tests/scripts/test_windows_delta_inventory.py tests/scripts/test_windows_contracts.py tests/scripts/test_web_checkout_eol.py tests/e2e/test_windows_delta_inventory_e2e.py tests/e2e/test_windows_contracts_e2e.py -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -q
           node --test .github/scripts/ci/release-profiles.test.mjs
           uv run --no-sync python .github/scripts/ci/audit-windows-contracts.py --repository "$GITHUB_WORKSPACE" --contracts .github/scripts/ci/windows-contracts.json --mode boundaries
 
@@ -401,6 +401,8 @@ jobs:
       - name: Verify local-tool and content-search transports
         if: ${{ github.ref == 'refs/heads/windows-parity/v0.20-isolation-p3-p5' }}
         shell: pwsh
+        env:
+          PYTHONUTF8: '0'
         run: |
           if (-not (Get-Command rg -ErrorAction SilentlyContinue)) {
             choco install ripgrep --yes --no-progress
@@ -409,6 +411,8 @@ jobs:
           if (-not (Get-Command rg -ErrorAction SilentlyContinue)) {
             throw "ripgrep is required for the real Windows search contract"
           }
+          uv run --no-sync python -c "import sys; assert sys.flags.utf8_mode == 0"
+          if ($LASTEXITCODE -ne 0) { throw "ANSI-mode transport control did not apply" }
           uv run --no-sync pytest tests/tools/test_local.py tests/runner/test_content_search_windows.py tests/runner/test_environment_filesystem.py::test_content_search_live_workspace tests/runner/test_environment_filesystem.py::test_content_search_does_not_follow_workspace_symlink tests/runner/test_environment_filesystem.py::test_content_search_limits_errors_and_hidden_files tests/runner/test_environment_filesystem.py::test_content_search_rejects_invalid_helper_output -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -q -ra --junitxml=local-tool-search-transports.xml
           if ($LASTEXITCODE -ne 0) { throw "Windows local-tool/search transport contracts failed" }
           [xml]$results = Get-Content -Raw local-tool-search-transports.xml

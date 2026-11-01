@@ -287,6 +287,7 @@ def test_maintenance_gates_are_branch_scoped_and_cover_real_cli_entrypoints() ->
     for test_path in (
         "tests/scripts/test_windows_delta_inventory.py",
         "tests/scripts/test_windows_contracts.py",
+        "tests/scripts/test_web_checkout_eol.py",
         "tests/e2e/test_windows_delta_inventory_e2e.py",
         "tests/e2e/test_windows_contracts_e2e.py",
         ".github/scripts/ci/release-profiles.test.mjs",
@@ -391,6 +392,8 @@ def test_transport_gates_preserve_platform_selection_and_real_windows_execution(
         assert "--junitxml=local-tool-search-transports.xml" in gate["run"]
         if job_name == "windows-native":
             assert gate["shell"] == "pwsh"
+            assert gate["env"] == {"PYTHONUTF8": "0"}
+            assert "assert sys.flags.utf8_mode == 0" in gate["run"]
             for identity in (
                 "test_windows_content_search_uses_supplied_workspace",
                 "test_invoke_unicode_with_debug_stdout[plain]",

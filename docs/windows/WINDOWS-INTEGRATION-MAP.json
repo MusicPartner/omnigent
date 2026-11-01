@@ -357,11 +357,11 @@
       "roadmap_ids": [36],
       "original_ids": [],
       "boundary": "Scoped native checkout and hook reproducibility",
-      "ownership": "Scoped native checkout and hook reproducibility remain planned; the native-hook audit has no dedicated test support identified yet",
-      "shared_caller": [".pre-commit-config.yaml", "justfile"],
+      "ownership": "Repository LF checkout contract for formatter-managed web text; real disposable Git checkout verifies autocrlf modes and binary exclusions. Standard whole-web formatting and broader hook reproducibility remain pending; no current checkout mass rewrite or global Git setting change",
+      "shared_caller": [".gitattributes", ".pre-commit-config.yaml", "justfile"],
       "windows_leaf": null,
-      "test_support": [],
-      "status": "planned",
+      "test_support": ["tests/scripts/test_web_checkout_eol.py"],
+      "status": "local",
       "disposition": "REVIEW"
     },
     {

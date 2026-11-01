@@ -8,7 +8,37 @@ The [post-v0.19 isolation plan](../docs/windows/ISOLATION-PLAN-0.19.md) prioriti
 contract tests/primitives and shared terminal preparation before further
 extraction. It is a plan, not permission to refactor or publish.
 
-## Current roadmap and implementation (2026-11-01)
+## Current continuation and allowance reset (2026-11-01)
+
+Latest published HEAD and live origin were reverified at
+`3c191b8bba11f7abcb585a7c613206c10f53edc1` in `omnigent-v020-isolation`,
+branch `windows-parity/v0.20-isolation-p3-p5`. The user reset the allowance
+to **five fresh coordinated remote rounds: 0/5 used, five available** before
+the next publication. Prior rounds remain historical; this does not authorize
+main promotion, production publication, signing/native-default changes, WSL,
+history rewriting or real-user installation/PATH tests.
+
+At 3c191, Lint and Integration passed; fork preparation and Linux passed,
+but native Windows failed on ANSI search decoding and implicit-encoding
+Unicode fixtures. CLI/desktop artifact jobs were skipped, so item 15's
+generated-cache correction still lacks remote bundle acceptance. The next
+reviewed package contains C #11's narrow ASCII JSON/UTF-8 fixture correction,
+explicit ANSI CI control, D #36's scoped LF checkout attributes and real
+checkout tests, preservation assertions and current pointers. Fresh local
+ANSI selection: 74 passed, one real symlink-privilege skip; required real
+search/plain/uv identities passed exactly once. Checkout/map/workflow: 42 passed.
+
+The source-matched disposable LF export passed direct Prettier; recovered
+pnpm 11.15.1 attempted dependency preflight and failed before formatting.
+Do not claim the required pnpm gate passed. No dependency installation
+completed or maintained-checkout mass rewrite occurred; the older two
+Electron files and launcher test remain excluded. Reset round 1 is the
+coordinated correction push plus fork/Lint/Integration dispatch, with actual
+head SHA and complete installer roundtrip required. See the
+[master roadmap](../docs/windows/WINDOWS-ISOLATION-ROADMAP.md) for remaining
+C #8, locking/privacy, D #35 and E #37 decisions and acceptance limits.
+
+## Historical roadmap checkpoint (2026-11-01)
 
 Latest published checkpoint is
 `15f11e64929bfeb65bab3513ba43ed73c6fcadba`, with normal commit/push hooks and

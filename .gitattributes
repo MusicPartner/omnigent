@@ -1,3 +1,18 @@
+# Prettier-managed web text must check out as LF on every host.
+web/**/*.json text eol=lf
+web/**/*.ts text eol=lf
+web/**/*.tsx text eol=lf
+web/**/*.md text eol=lf
+web/**/*.html text eol=lf
+web/**/*.js text eol=lf
+web/**/*.yml text eol=lf
+web/**/*.yaml text eol=lf
+web/**/*.jsx text eol=lf
+web/**/*.cjs text eol=lf
+web/**/*.mts text eol=lf
+web/**/*.mjs text eol=lf
+web/**/*.css text eol=lf
+
 # Treat the AppIcon bundle's contents as binary and never merge them.
 web/electron/icons/AppIcon.icon/** binary -merge
 

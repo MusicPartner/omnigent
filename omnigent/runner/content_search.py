@@ -125,7 +125,8 @@ with tempfile.TemporaryFile() as errors:
         }))
         raise SystemExit
 print(json.dumps(
-    {"matches": matches, "truncated": truncated, "warning": warning}, ensure_ascii=False
+    {"matches": matches, "truncated": truncated, "warning": warning},
+    ensure_ascii=(os.sep == "\\"),
 ))
 """
 

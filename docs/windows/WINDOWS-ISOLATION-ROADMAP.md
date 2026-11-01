@@ -3,7 +3,89 @@
 Updated 2026-11-01. This is the current master roadmap; older release and
 isolation records remain dated evidence, not current execution instructions.
 
-## Current execution checkpoint
+## Current continuation: allowance reset and correction package
+
+The user reset the remote allowance to **five fresh coordinated rounds**:
+**0/5 used, five available** before this correction package's publication.
+The three preceding rounds remain historical evidence, not the active cap.
+Pushes, corrections, docs publication and validation rerun batches share this
+ledger. No main promotion, production publication, signing/native-default
+change, WSL, history rewriting or real-user installation/PATH test is included.
+
+The selected worktree, branch, full HEAD and live origin were reverified at
+`3c191b8bba11f7abcb585a7c613206c10f53edc1`; the index was empty and the
+three older Electron/launcher files remained excluded. The reviewed next
+checkpoint contains the C #11 Windows ASCII JSON/UTF-8 fixture correction,
+explicit ANSI-mode CI control, D #36 scoped LF attributes and real checkout
+test, preservation assertions, and current status pointers. Shared shell
+decoding, POSIX transport, test pins and workflow triggers remain unchanged.
+
+Fresh local verification: **74 passed, one actual symlink-privilege skip in
+34.40s** with `PYTHONUTF8=0`. The real Unicode workspace search and both
+plain/uv Unicode tool identities each passed exactly once. D #36's owning
+checkout/map/workflow suite passed **42 tests in 15.84s**. These are separate
+runs, not aggregate whole-suite acceptance.
+
+Cached pnpm 11.15.1 was recovered, but its standard formatter invocation on
+the disposable LF export attempted a dependency installation preflight and
+failed before Prettier ran because the subprocess could not resolve pnpm.
+No dependency installation completed. The prior direct Prettier check remains
+valid scoped evidence; it is not the required pnpm gate. Web edits remain
+excluded, and the maintained checkout is not mass-rewritten. D #36's checkout
+contract is implemented locally; broader hook/setup reproducibility remains open.
+
+Reset round 1 will publish this reviewed correction checkpoint and dispatch
+fork validation, Lint and Integration at its actual SHA. Require the Windows
+ANSI transport gate, executed startup identities and complete CLI bundle
+cache/reinstall/refusal/uninstall roundtrip before claiming remote acceptance.
+Artifact jobs skipped in historical round 3 are not successful results.
+
+### Historical round 3 checkpoint
+
+Published runtime/cache correction checkpoint:
+`3c191b8bba11f7abcb585a7c613206c10f53edc1`. Normal commit and push hooks
+passed; live origin matched. **3/5 remote rounds used, two remaining.**
+At that exact SHA, Lint and Integration passed. Fork validation passed both
+terminal preparation jobs and focused Linux, but native Windows failed its
+new transport gate: 58 passed, 17 failed. Artifact jobs were consequently
+skipped; the cache correction has no remote bundle acceptance yet.
+
+The failures exposed two distinct ANSI-mode gaps: UTF-8 search JSON was decoded
+through the helper's default codec, corrupting Unicode paths, and two Unicode
+fixtures omitted explicit file encoding. Both reproduced locally with
+`PYTHONUTF8=0`. The follow-up uses ASCII-escaped JSON only on Windows and
+explicit UTF-8 fixture writes; generic shell decoding and POSIX output stay
+unchanged. **72 tests passed in 33.48s** in ANSI mode, then **25 passed in
+4.26s** after normal hooks. The candidate CI step explicitly disables UTF-8
+mode and verifies it before the transport suite. These changes are local,
+not part of round 3 and not yet pushed.
+
+D #36 now has a local scoped LF checkout rule for formatter-managed web text
+extensions, retaining binary AppIcon overrides. Representative LF Git blobs
+were converted to CRLF by the system `core.autocrlf=true` setting. A real
+disposable checkout failed before the rule and passed all three modes
+(`true`, `input`, `false`) after it: **3 passed in 12.30s** before formatting.
+No global Git configuration or existing checkout mass rewrite was performed.
+The standard whole-web formatter check remains pending in an external
+source-matched LF export; the current checkout's older CRLF files have not
+been rewritten. Broad hook reproducibility is not claimed complete.
+
+The external Git LF export contains 1,761 tracked web paths from the exact
+published index, converted only through the candidate attributes. The installed
+`prettier.CMD --check .` passed with unchanged arguments/configuration. The
+required `pnpm exec prettier --check .` wrapper was unavailable after the shell
+reset, so this is a direct-tool result, not that gate's pass. The disposable
+clone's initial full checkout hit Windows path-length errors in unrelated
+snapshot paths; only its web input closure was recovered and verified, not a
+clean whole-repository checkout. Owning checkout/map/workflow tests subsequently
+passed **42 tests in 16.40s**; normal hooks passed with the established
+`PYTHONUTF8=1` environment. A separate ANSI-mode custom-lint run failed on an
+existing implicit source reader, so broad ANSI hook compatibility remains open.
+
+The three previously excluded Electron auth/launcher test files remain local.
+Items 8 and 16/25's locking/privacy contract, D #35 and E #37 remain open.
+
+### Historical round 2 checkpoint
 
 Published B/C maintenance and item 15:
 `15f11e64929bfeb65bab3513ba43ed73c6fcadba`, on the branch below. Normal commit
@@ -127,24 +209,18 @@ shared application policy; more leaf files alone do not demonstrate success.
 
 - Worktree: `D:\Develop\Source\OpenSource\_AI\Omnigent\omnigent-v020-isolation`.
 - Branch: `windows-parity/v0.20-isolation-p3-p5`.
-- Published basis: `96ee061d690a26ef37f9d432a98231105fa68d9f`.
+- Latest published basis: `3c191b8bba11f7abcb585a7c613206c10f53edc1`.
 - Original extraction basis: `e1714c416d2608f7bfd5bf4ea93ee81b108d7311`.
 - Validated v0.20 integration: `a67684ae0fc2299c8efc2e5f37824c71c8f044a6`.
 - Exact upstream v0.20: `bfd8ab5624e34aa72c01fb451e11c2a0e1aae3ee`.
 
-Local implementation was requested on 2026-11-01. Packages A and B are
-validated locally; package C's item 15 installer safeguards are implemented
-locally. Final hooks and a source-matched CI/bundle roundtrip remain pending.
-The published basis remains **96ee061d690a26ef37f9d432a98231105fa68d9f**;
-no new result SHA is asserted. One coordinated B/C checkpoint push and
-source-matched Actions batch is authorized as the next existing budget round
-(round 2/5); it has not been run as part of this documentation task. This does
-not renew the cap or authorize another round. The checkpoint plan excludes
-local #13 Electron files and the #8 safe-launcher test unless explicitly added;
-web files are excluded from the current push plan because the repository-wide
-standard Prettier check has a pre-existing CRLF finding. No main promotion,
-production publication, signing changes, WSL or foreign-state cleanup is
-included.
+Implementation was requested on 2026-11-01. Packages A/B and C #11/#12/#15
+are published; the latest remote Windows/cache acceptance remains open after
+the round 3 failure. The local C #11 follow-up and D #36 checkout contract
+are the next correction package described above. Local #13 Electron files
+and the #8 safe-launcher test remain excluded; they are not implicitly
+authorized for this publication. Older dated paragraphs describe their
+original checkpoints, not the current source or renewed allowance.
 
 ## Boundary rules
 
@@ -222,7 +298,7 @@ original IDs, evidence, publication state and next work.
 | A | Preflight; #1/#13/#17 closeout and existing #8 safe regression | Validated locally; current source/owner records reconciled and local test reachability corrections recorded. The prior 96ee results and follow-up work remain distinct. |
 | B | #32 → #33/#34, then package validation | Validated locally: owner map/delta audit, release-profile data and boundary/contract gates. Its 72 Python and 23 Node results are separate suites, not a combined latest-run count. Final hooks and remote validation remain pending. |
 | C | #15 installer ownership safeguards | Implemented and focused tests passed locally. Genuine three-wheel uv probe and mock refusal/cleanup checks are recorded below; final hooks and source-matched CI bundle roundtrip remain pending. #8 remains a separate contract; #11/#12 reproductions and #16/#25 audits are not claimed complete. |
-| D | Evidence-based #14/#18–28 refinements and #35/#36 | Not started; select only demonstrated gaps. |
+| D | Evidence-based #14/#18–28 refinements and #35/#36 | #35 read-only artifact audit and #36 local LF checkout contract begun; standard formatter and broad hook acceptance pending. Other gaps remain selective. |
 | E | #37 rehearsal/scorecard and justified upstream-covered retirement | Not started; needs a selected exact target and validated basis. |
 | Publication | Local commits/push/Actions limits | Separate checkpoint; no new round consumed. |
 
