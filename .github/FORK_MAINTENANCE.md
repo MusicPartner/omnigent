@@ -8,7 +8,37 @@ The [post-v0.19 isolation plan](../docs/windows/ISOLATION-PLAN-0.19.md) prioriti
 contract tests/primitives and shared terminal preparation before further
 extraction. It is a plan, not permission to refactor or publish.
 
-## Current accepted checkpoint and D35 continuation (2026-11-01)
+## Current accepted CLI provenance and desktop/D22 package (2026-11-01)
+
+Selected HEAD and live origin were reverified at
+`0cc1d8063ce5d7b2ab5df67231b29ed481a09bc7` on
+`windows-parity/v0.20-isolation-p3-p5` in `omnigent-v020-isolation`.
+**Reset allowance: 2/5 used, three remaining.** Fork **41337206027**, Lint
+**41337208884** and Integration **41337239841** completed successfully at
+that full SHA. Both CLI and desktop artifacts were downloaded externally.
+
+The actual CLI provenance record independently matches three wheels, 13
+files and three source fingerprints for the empty embedded commit fallback.
+Native approval remains false/unsigned. Startup raw JUnit has three executed
+cases and no skips/failures/errors; broad Windows has 4,556 actual records,
+233 skips and no failures/errors. The desktop ZIP's actual embedded version,
+source/dev identity and digest pass the new local checker, not a gate in those
+published Actions. This is neither signed attestation nor GUI acceptance.
+
+Reset round 3 is allocated, not yet consumed, for the separate desktop checker,
+shared synthetic tests, candidate-only pre-upload gate and D #22 test-only
+client-cache/close/queued-cancel assertions. Normal ten-path hooks and the
+combined 184-test selection passed. Existing build/upload policy, shared
+runtime, frozen test groups and toolchain inputs remain unchanged. The three
+older excluded Electron/launcher edits are preserved. After push, two rounds
+remain; exact new-SHA desktop gate/artifact acceptance is required.
+
+No main/production/signing/native-default/WSL/foreign-state changes are
+authorized. C #8, locking/privacy, broad hook/pnpm reproducibility, excluded
+Electron auth publication and E #37 remain open. See the
+[master roadmap](../docs/windows/WINDOWS-ISOLATION-ROADMAP.md).
+
+## Historical reset round 1 accepted checkpoint (2026-11-01)
 
 Latest published HEAD and live origin were reverified at
 `836f308e79f4231e8f9e2efe2aea70d7eabab69b` in `omnigent-v020-isolation`,

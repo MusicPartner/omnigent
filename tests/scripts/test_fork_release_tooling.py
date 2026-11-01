@@ -107,6 +107,7 @@ def test_workflow_policy_and_release_inputs_match_immutable_e1714() -> None:
         "Verify local-tool and content-search transports",
         "Record inspected Windows bundle provenance",
         "Verify inspected Windows bundle provenance before upload",
+        "Verify inspected Windows desktop provenance before upload",
     }
     changed_commands = {
         "Audit reconciled test symbols and platform marker owners",
@@ -140,7 +141,9 @@ def test_workflow_policy_and_release_inputs_match_immutable_e1714() -> None:
             "Record inspected Windows bundle provenance",
             "Verify inspected Windows bundle provenance before upload",
         ],
-        "build-windows-desktop-artifact": [],
+        "build-windows-desktop-artifact": [
+            "Verify inspected Windows desktop provenance before upload",
+        ],
     }
     moved_inputs = {
         "CHARACTERIZATION_SHA",
@@ -296,6 +299,10 @@ def test_maintenance_gates_are_branch_scoped_and_cover_real_cli_entrypoints() ->
         "tests/scripts/test_web_checkout_eol.py",
         "tests/scripts/test_windows_bundle_provenance.py",
         "tests/e2e/test_windows_bundle_provenance_e2e.py",
+        "tests/scripts/test_windows_desktop_provenance.py",
+        "tests/e2e/test_windows_desktop_provenance_e2e.py",
+        "tests/runner/test_routing.py",
+        "tests/runner/transports/ws_tunnel/test_transport.py",
         "tests/e2e/test_windows_delta_inventory_e2e.py",
         "tests/e2e/test_windows_contracts_e2e.py",
         ".github/scripts/ci/release-profiles.test.mjs",
@@ -679,6 +686,22 @@ def test_provenance_gates_record_then_verify_before_upload_without_changing_poli
         assert "(git rev-parse HEAD) -ne $env:GITHUB_SHA" in step["run"]
     assert "--write-manifest" in steps[names.index(record)]["run"]
     assert "--write-manifest" not in steps[names.index(verify)]["run"]
+
+
+def test_desktop_provenance_gate_inspects_archive_without_changing_build_policy() -> None:
+    workflow = yaml.load(WORKFLOW_PATH.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    steps = workflow["jobs"]["build-windows-desktop-artifact"]["steps"]
+    names = [step["name"] for step in steps]
+    name = "Verify inspected Windows desktop provenance before upload"
+    assert names.index("Build Windows desktop ZIP without publishing") < names.index(name)
+    assert names.index(name) < names.index("Upload Windows desktop artifact")
+    step = steps[names.index(name)]
+    assert step["if"] == "${{ github.ref == 'refs/heads/windows-parity/v0.20-isolation-p3-p5' }}"
+    assert step["shell"] == "pwsh" and "continue-on-error" not in step
+    assert "(git rev-parse HEAD) -ne $env:GITHUB_SHA" in step["run"]
+    assert "--archive $desktopArchives[0].FullName" in step["run"]
+    assert "--source-sha $env:GITHUB_SHA" in step["run"]
+    assert "--expected-version $desktopVersion" in step["run"]
 
 
 def test_bundle_assembly_requires_wheels_but_not_a_specific_wheel_count(tmp_path: Path) -> None:

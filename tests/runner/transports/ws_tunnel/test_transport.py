@@ -13,9 +13,11 @@ import pytest
 
 from omnigent.runner.transports.ws_tunnel.frames import (
     HelloFrame,
+    RequestCancelFrame,
     ResponseBodyFrame,
     ResponseEndFrame,
     ResponseHeadFrame,
+    decode_frame,
 )
 from omnigent.runner.transports.ws_tunnel.registry import TunnelRegistry
 from omnigent.runner.transports.ws_tunnel.transport import (
@@ -231,7 +233,7 @@ async def test_tunneled_byte_stream_propagates_abort() -> None:
 
 @pytest.mark.asyncio
 async def test_tunneled_byte_stream_aclose_cleans_up() -> None:
-    """aclose() closes the request in the registry."""
+    """aclose() queues cancellation and closes the request in the registry."""
     reg = TunnelRegistry()
     session = reg.register("r1", _NoopWS(), _hello())
     state = reg.open_request("r1", "req1")
@@ -239,7 +241,15 @@ async def test_tunneled_byte_stream_aclose_cleans_up() -> None:
     stream = _TunneledByteStream(reg, "r1", "req1", state)
     await stream.aclose()
 
+    queued = session.outbound_queue.get_nowait()
+    frame = decode_frame(queued.data)
+    assert isinstance(frame, RequestCancelFrame)
+    assert frame.id == "req1"
+    assert frame.reason == "client_disconnected"
     assert "req1" not in session.in_flight
+
+    await stream.aclose()
+    assert session.outbound_queue.empty()
 
 
 # ── WSTunnelTransport.aclose ────────────────────────────
@@ -249,5 +259,10 @@ async def test_tunneled_byte_stream_aclose_cleans_up() -> None:
 async def test_transport_aclose_is_noop() -> None:
     """Transport aclose is a safe no-op."""
     reg = TunnelRegistry()
+    session = reg.register("r1", _NoopWS(), _hello())
+    state = reg.open_request("r1", "req1")
     transport = WSTunnelTransport(reg, "r1")
     await transport.aclose()  # Should not raise.
+
+    assert reg.get("r1") is session
+    assert session.in_flight["req1"] is state

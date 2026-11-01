@@ -10,7 +10,10 @@ import pytest
 from omnigent.entities import Conversation
 from omnigent.errors import ErrorCode, OmnigentError
 from omnigent.runner.routing import RunnerRouter, runner_dispatch_harness
-from omnigent.runner.transport_locator import LocalRunnerTransportLocator
+from omnigent.runner.transport_locator import (
+    LocalRunnerTransportLocator,
+    WSTunnelRunnerTransportLocator,
+)
 from omnigent.runner.transports.ws_tunnel.frames import HelloFrame
 from omnigent.runner.transports.ws_tunnel.registry import TunnelRegistry
 from omnigent.spec import AgentSpec, ExecutorSpec, LLMConfig
@@ -18,6 +21,14 @@ from omnigent.spec import AgentSpec, ExecutorSpec, LLMConfig
 
 class _FakeWebSocket:
     """Minimal WebSocket used only to register runner sessions."""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def close(self, code: int = 1000, reason: str = "") -> None:
+        """Record an attempt to close the runner-owned socket."""
+        del code, reason
+        self.closed = True
 
     async def send_text(self, data: str) -> None:
         """
@@ -242,11 +253,42 @@ async def test_local_runner_transport_locator_returns_configured_client() -> Non
     """Env-selected local transports are usable by the router seam."""
     client = httpx.AsyncClient(base_url="http://127.0.0.1:7777")
     locator = LocalRunnerTransportLocator(client)
+    assert client.is_closed is False
     try:
         assert locator.client_for_runner("runner_one") is client
         assert locator.client_for_runner("runner_two") is client
     finally:
         await locator.aclose()
+    assert client.is_closed is True
+
+
+@pytest.mark.asyncio
+async def test_ws_tunnel_runner_transport_locator_owns_cached_clients_only() -> None:
+    """The locator caches per-runner clients without owning live WebSockets."""
+    registry = TunnelRegistry()
+    websocket_one = _FakeWebSocket()
+    websocket_two = _FakeWebSocket()
+    session_one = registry.register("runner_one", websocket_one, _hello(harnesses=["codex"]))
+    session_two = registry.register("runner_two", websocket_two, _hello(harnesses=["codex"]))
+    locator = WSTunnelRunnerTransportLocator(registry)
+
+    client_one = locator.client_for_runner("runner_one")
+    try:
+        assert locator.client_for_runner("runner_one") is client_one
+        client_two = locator.client_for_runner("runner_two")
+        assert client_two is not client_one
+        assert client_one.is_closed is False
+        assert client_two.is_closed is False
+    finally:
+        await locator.aclose()
+
+    assert client_one.is_closed is True
+    assert client_two.is_closed is True
+    assert locator._clients == {}
+    assert registry.get("runner_one") is session_one
+    assert registry.get("runner_two") is session_two
+    assert websocket_one.closed is False
+    assert websocket_two.closed is False
 
 
 @pytest.mark.asyncio

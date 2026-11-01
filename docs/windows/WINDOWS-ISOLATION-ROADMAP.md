@@ -3,7 +3,75 @@
 Updated 2026-11-01. This is the current master roadmap; older release and
 isolation records remain dated evidence, not current execution instructions.
 
-## Current continuation: allowance reset and correction package
+## Current continuation: published CLI provenance and local desktop follow-up
+
+Latest HEAD and live origin were reverified at
+**`0cc1d8063ce5d7b2ab5df67231b29ed481a09bc7`** in the selected worktree.
+**Reset budget: 2/5 used, three remaining.** D #35 CLI checker and its
+candidate-only record/reverify gates are published, with normal commit/push
+hooks and all three older excluded files byte-identical through both hooks.
+Exact-SHA Lint **41337208884** and Integration **41337239841** passed.
+Fork **41337206027** completed successfully, including both preparation,
+compatibility and artifact jobs. The downloaded CLI `BUNDLE-PROVENANCE.json`
+independently matches live contents: three lockstep wheels, 13 files, the
+actual empty core commit field and three selected Git fingerprints. Native
+approval remains false/unsigned. CLI provenance acceptance is complete at
+0cc1d8063, within its stated consistency limits. Raw startup JUnit has three
+executed cases and no skips/failures/errors; broad Windows has 4,556 actual
+records, 233 skips and no failures/errors.
+
+The same-SHA desktop ZIP passes the new local checker: actual ASAR identity
+is `0.20.0`, source 0cc1d8063 and dev; ZIP SHA-256
+`50e4a1186c1795731a2bc7a30ab7aa3b9d16c2e2b7f4e87ddd0606f96ff9babc`
+(149,172,508 bytes). This does not attribute the uncommitted desktop checker
+to those Actions. Downloaded evidence stays outside the maintained tree.
+
+The desktop follow-up is local and uncommitted: a separate stdlib ZIP/ASAR
+checker inspects embedded name/version/source/dev/main identity, the packed
+package's SHA-256 integrity and the exact ZIP digest. Candidate-only CI inserts
+one check after the unchanged desktop build and before the unchanged upload;
+the existing two-OS maintenance gate also selects unit and synthetic CLI tests.
+Cheap sub-agents supplied the compatible fixtures/tests; coordinator verification
+rejected stale research claims and used actual 836f308e ASAR bytes. The expanded
+desktop/CLI/register/preservation selection passed 107 tests in 6.90s before
+normal formatting closure, then **107 tests in 7.70s** after all scoped hooks
+passed (`d35-desktop-post-hooks.xml`). A real historical 836f desktop check passed against
+its own source SHA; no artifact was modified or relabelled as current.
+
+Limits remain explicit: bounded metadata reads/counts do not make ZIP central
+directory parsing, decompression or changing files hostile-input/race-safe.
+ASAR metadata and same-artifact integrity are builder-authored consistency,
+not whole-source binding, authentic signatures or GUI acceptance. A reproduced
+empty packed main entry now refuses. D #36 cached pnpm is verified 11.15.1,
+but the standard formatter gate remains unpassed; no preflight bypass, fake
+shim, dependency install or broad checkout rewrite was attempted.
+
+Reset round 3 is allocated for the verified desktop checker/tests/gate,
+D #22 test-only protection and reconciled status records; not yet published.
+The combined selection passed **184 tests in 8.59s** after normal ten-path
+hooks. Publishing consumes one round, then fork/Lint/Integration validation
+must verify the actual new SHA and desktop gate/artifacts. Two rounds will
+remain; no main, signing, native-default, workflow policy or runtime change
+is included. C #8, locking/privacy, excluded Electron edits, broad hooks and
+E #37 remain open. Following sections retain historical checkpoints.
+
+### D #22 selective contract protection while Actions run
+
+The existing runner locator seam is sufficient; no production extraction or
+transport policy change was made. The unchanged routing/transport/server
+selection passed 33 tests in 1.00s. Two cheap sub-agents extended the nearest
+scenarios for real httpx client reuse/separation, local and cached client close,
+cache clearing, retained registry/WebSocket ownership and the queued
+`RequestCancelFrame` reason/id with no duplicate frame on repeated stream close.
+Router close delegation was already asserted and was not duplicated. These
+are lifecycle assertions, not auth, real network or OS-transport acceptance.
+The expanded routing/transport/server/registry selection passed 77 tests in
+1.71s before final normalization; the combined post-hook selection passed
+184 tests in 8.59s. Existing candidate two-OS maintenance
+selection now includes the two owning files; frozen historical test groups
+remain unchanged. Other #22 routing/auth/integration audits remain open.
+
+## Historical reset round 1 acceptance
 
 Correction checkpoint **`836f308e79f4231e8f9e2efe2aea70d7eabab69b`** is now
 published with normal commit/push hooks and matching live origin. **Reset
@@ -240,7 +308,7 @@ shared application policy; more leaf files alone do not demonstrate success.
 
 - Worktree: `D:\Develop\Source\OpenSource\_AI\Omnigent\omnigent-v020-isolation`.
 - Branch: `windows-parity/v0.20-isolation-p3-p5`.
-- Latest published basis: `836f308e79f4231e8f9e2efe2aea70d7eabab69b`.
+- Latest published basis: `0cc1d8063ce5d7b2ab5df67231b29ed481a09bc7`.
 - Original extraction basis: `e1714c416d2608f7bfd5bf4ea93ee81b108d7311`.
 - Validated v0.20 integration: `a67684ae0fc2299c8efc2e5f37824c71c8f044a6`.
 - Exact upstream v0.20: `bfd8ab5624e34aa72c01fb451e11c2a0e1aae3ee`.
@@ -248,7 +316,8 @@ shared application policy; more leaf files alone do not demonstrate success.
 Implementation was requested on 2026-11-01. Packages A/B and C #11/#12/#15
 are published; Windows/cache acceptance passed at 836f308e after the distinct
 round 3 failure. The C #11 ANSI follow-up and D #36 checkout contract are
-published and remotely validated. D #35 is the next local package. Local #13 Electron files
+published and remotely validated. D #35 CLI is published with remote manifest
+acceptance pending; its desktop follow-up is local. Local #13 Electron files
 and the #8 safe-launcher test remain excluded; they are not implicitly
 authorized for this publication. Older dated paragraphs describe their
 original checkpoints, not the current source or renewed allowance.
@@ -294,7 +363,7 @@ payback; P2 maintains/selectively refines seams; P3 is separate support work.
 | 19 | Shell/vendor CLI/native environment/hooks | P2: actual-shell/version fixtures and kwargs; keep shared hooks/readiness policy. |
 | 20 | Owned shutdown/process replacement | P1/P2: ownership, creation-time and grace contracts; distinguish Stop, Interrupt and Quit. |
 | 21 | Capture/control/WebSocket/attach | P2: capability, resize, reconnect and read-only agreement; raw support belongs to #29. |
-| 22 | Runner transport locator/endpoints | Existing seam sufficient. P2: verify cache/aclose coverage before adding focused tests. |
+| 22 | Runner transport locator/endpoints | Existing seam sufficient. Local test-only cache/client-close/cancel assertions added to nearest scenarios and candidate two-OS gate; actual HTTP/WS/auth acceptance and other routing audits remain separate. |
 | 23 | Host listing/worktrees/filesystem/probes | P2: drive/UNC/reparse/containment matrices; keep traversal and grants shared. |
 | 24 | Attachment handles/DACL/aliases/collisions | P1 safety/P2 maintenance: verify fixed-volume/UNC refusal coverage, retain private alias tests; vendor reads separate. |
 | 25 | Credential privacy/locking/provenance/TLS | P1 audit: disposable concurrency and Windows privacy facts before R; preserve formats and trust domains. |
@@ -329,9 +398,9 @@ original IDs, evidence, publication state and next work.
 | A | Preflight; #1/#13/#17 closeout and existing #8 safe regression | Validated locally; current source/owner records reconciled and local test reachability corrections recorded. The prior 96ee results and follow-up work remain distinct. |
 | B | #32 → #33/#34, then package validation | Published at 15f11e with normal hooks and integrated CI; maintenance and executed-startup gates passed again at 836f308e. Historical local suite counts remain separate; broader contracts remain review work. |
 | C | #15 ownership and #11/#12 transports; #8 separate | Published at 3c191, ANSI correction at 836f308e; transport and actual cache/reinstall/refusal/uninstall acceptance passed at 836f308e. #8 API and #16/#25 locking/privacy changes are not implemented. |
-| D | Evidence-based #14/#18–28 refinements and #35/#36 | #36 scoped checkout contract published at 836f308e; standard pnpm wrapper/broad hooks remain open. #35's separate local identity/inventory checker and synthetic CLI e2e are implemented, not published or remotely accepted. Other gaps remain selective. |
+| D | Evidence-based #14/#18–28 refinements and #35/#36 | #36 published at 836f308e; pnpm wrapper/broad hooks open. #35 CLI published/accepted at 0cc1d8063; desktop checker/tests/gate local. #22 cache/close/cancel protection is locally verified and test-only; other gaps remain selective. |
 | E | #37 rehearsal/scorecard and justified upstream-covered retirement | Not started; needs a selected exact target and validated basis. |
-| Publication | Local commits/push/Actions limits | Reset round 1 published 836f308e; all three source-matched workflows passed. Four rounds remain; D35 round 2 allocated, no next push/rerun yet. |
+| Publication | Local commits/push/Actions limits | Reset round 2 accepted at 0cc1d8063; all three workflows passed and CLI manifest verified. Round 3 desktop/D22 package allocated, not published; three rounds remain until push. |
 
 Dependency order: A first, then B. #33 and #34 can proceed independently once
 #32 defines the map. C can progress independently after A; separate topics and
@@ -404,9 +473,10 @@ also inspected the actual 836f308e bundle against its Git SHA: three wheels,
 13 files and three fingerprints. These local inspections do not prove that
 the checker ran remotely or that a provenance record was uploaded.
 
-Do not attribute this uncommitted checker or manifest to the completed 836f308e
-Actions or historical bundles. Its remote validation will need a later reviewed
-checkpoint, now allocated as reset round 2, not an automatic rerun.
+Do not attribute the checker or manifest to the completed 836f308e Actions or
+historical bundles. It was subsequently published at 0cc1d8063; exact-SHA
+remote manifest acceptance passed against the actual downloaded record and
+contents. Desktop follow-up remains local; its gate needs later remote proof.
 
 ## Verification and acceptance
 
