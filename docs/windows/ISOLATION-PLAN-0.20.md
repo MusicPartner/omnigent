@@ -1,8 +1,38 @@
 # Windows isolation after v0.20
 
-Date: 2026-10-31. Status: e1714 maintenance validated; next package at P0 checkpoint.
+Date: 2026-11-01. Status: approved package validated at 96ee; closeout follow-up local.
 
-## Current closeout and renewed scope
+## Current implementation roadmap
+
+The [master roadmap](WINDOWS-ISOLATION-ROADMAP.md) reconciles all 31 original
+integration points and additions 32–37. Local implementation was requested on
+2026-11-01: Package A first, then B (#32 → #33/#34); corrective and support
+projects remain separately attributed. Its progress table and chat checklist
+track completed work and next steps. Commits, pushes and Actions remain a
+separate checkpoint, not renewed by starting implementation.
+
+## Latest status and carry-forward
+
+The validated/published next-work basis is
+`96ee061d690a26ef37f9d432a98231105fa68d9f`, on the same isolation branch.
+P0 audits, the separately approved relay/liveness R, and extractions 4–6,
+7, 9 and 10 are complete. All six source-matched workflows succeeded.
+See [November closeout](ISOLATION-CLOSEOUT-2026-11-01.md) for raw results,
+artifact identity, semantic/manual limits and next decisions.
+
+A missing post-install psmux startup selection is corrected locally; it is
+not yet remotely validated. Separate item 8 characterization reproduced
+percent expansion and ampersand command splitting; no launcher support/API
+fix is hidden in extraction. Next priorities are that contract decision,
+installer ownership/root/reparse safety (#15), and reproductions for #11/#12.
+The separately approved auth-only DATA_DIR correction (#13) is implemented
+locally with daemon paths unchanged; disposable item 15 characterization
+confirmed unrelated contents inside a supplied prefix are deleted without a
+receipt. No installer-policy fix is included. Remaining remote allowance: **four**
+of five rounds; no new publication at this closeout. Earlier sections below
+are historical snapshots, not current pending status or authorization.
+
+## Historical e1714 closeout and renewed scope
 
 The published maintenance source is
 `e1714c416d2608f7bfd5bf4ea93ee81b108d7311` on the existing

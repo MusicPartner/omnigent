@@ -52,7 +52,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node .github/scripts/ci/read-release-inputs.mjs --stage "$RUNNER_TEMP/omnigent-release-inputs" --github-env "$GITHUB_ENV"
+          node .github/scripts/ci/read-release-inputs.mjs --stage "$RUNNER_TEMP/omnigent-release-inputs" --github-env "$GITHUB_ENV" --ref "$GITHUB_REF" --candidate-sha "$GITHUB_SHA"
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -68,17 +68,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          baseline="$CHARACTERIZATION_SHA"
-          if [[ "$GITHUB_REF" == refs/heads/windows-parity/v0.20-integration ]]; then
-            baseline="$RELEASE_SOURCE_SHA"
-            git merge-base --is-ancestor "$baseline" "$GITHUB_SHA"
-          elif [[ "$GITHUB_REF" == refs/heads/windows-parity/v0.20-isolation-p3-p5 ]]; then
-            baseline="$ISOLATION_SOURCE_SHA"
-            git merge-base --is-ancestor "$baseline" "$GITHUB_SHA"
-          else
-            test "$(git rev-parse "$CHARACTERIZATION_SHA^")" = "$VALIDATED_BASE_SHA"
-            git diff --exit-code "$VALIDATED_BASE_SHA" "$CHARACTERIZATION_SHA" -- omnigent pyproject.toml uv.lock
-          fi
+          test "$RELEASE_CANDIDATE_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$RELEASE_CANDIDATE_SHA"
+          baseline="$RELEASE_BASELINE_SHA"
+          case "$RELEASE_BASELINE_CHECK" in
+            ancestor)
+              git merge-base --is-ancestor "$baseline" "$RELEASE_CANDIDATE_SHA"
+              ;;
+            characterization-parent)
+              test "$(git rev-parse "$baseline^")" = "$RELEASE_CHARACTERIZATION_PARENT_SHA"
+              git diff --exit-code "$RELEASE_CHARACTERIZATION_PARENT_SHA" "$baseline" -- omnigent pyproject.toml uv.lock
+              ;;
+            *) echo "Unsupported release baseline check" >&2; exit 1 ;;
+          esac
           git switch --detach "$baseline"
           test "$(git rev-parse HEAD)" = "$baseline"
           echo "Baseline source: $baseline"
@@ -114,6 +116,24 @@ jobs:
         run: >-
           uv run --no-sync pytest tests/scripts/test_fork_release_tooling.py
           --reruns 0 -n 0 -p no:cacheprovider -q
+
+      - name: Verify maintenance tooling and boundary contracts
+        if: ${{ github.ref == 'refs/heads/windows-parity/v0.20-isolation-p3-p5' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --no-sync pytest tests/scripts/test_windows_delta_inventory.py tests/scripts/test_windows_contracts.py tests/e2e/test_windows_delta_inventory_e2e.py tests/e2e/test_windows_contracts_e2e.py -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -q
+          node --test .github/scripts/ci/release-profiles.test.mjs
+          uv run --no-sync python .github/scripts/ci/audit-windows-contracts.py --repository "$GITHUB_WORKSPACE" --contracts .github/scripts/ci/windows-contracts.json --mode boundaries
+
+      - name: Verify Windows bundle ownership contracts
+        if: ${{ matrix.os == 'windows-latest' && github.ref == 'refs/heads/windows-parity/v0.20-isolation-p3-p5' }}
+        run: >-
+          uv run --no-sync pytest tests/scripts/test_install_windows_bundle_ps1.py
+          tests/scripts/test_windows_bundle_state_ps1.py
+          tests/scripts/test_windows_bundle_installer_caller.py
+          tests/scripts/test_uninstall_windows_bundle_ps1.py
+          -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -q
 
       - name: Audit reconciled test symbols and platform marker owners
         if: ${{ github.ref == 'refs/heads/windows-parity/v0.20-integration' || github.ref == 'refs/heads/windows-parity/v0.20-isolation-p3-p5' }}
@@ -456,6 +476,33 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or ($version -join "`n") -notmatch 'psmux 3\.4\.0(?:\s|$)') { throw "Unexpected psmux version: $version" }
           $version
 
+      - name: Verify real Windows status fallback after psmux installation
+        shell: pwsh
+        run: |
+          uv run pytest tests/terminals/test_windows_psmux.py::test_windows_claude_role_launch_uses_supported_status_fallback -n 0 --reruns 0 --timeout=30 -p no:cacheprovider -vv --tb=short -ra --junitxml=windows-status-fallback.xml
+          if ($LASTEXITCODE -ne 0) { throw 'Real Windows status fallback tests failed' }
+          [xml]$report = Get-Content -LiteralPath windows-status-fallback.xml -Raw
+          if ($report.SelectNodes('//testcase').Count -ne 3 -or $report.SelectNodes('//skipped | //failure | //error').Count -ne 0) {
+            throw 'Expected all three Windows startup cases to execute without skips or failures'
+          }
+
+      - name: Audit executed Windows startup contract identities
+        if: ${{ github.ref == 'refs/heads/windows-parity/v0.20-isolation-p3-p5' }}
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD) -ne $env:GITHUB_SHA) { throw 'Startup contract source mismatch' }
+          uv run --no-sync python .github/scripts/ci/audit-windows-contracts.py --repository $env:GITHUB_WORKSPACE --contracts .github/scripts/ci/windows-contracts.json --mode execution --group windows-status-fallback --junit windows-status-fallback.xml --source-sha $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Required startup contract identities did not all execute' }
+
+      - name: Upload real Windows status fallback evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-status-fallback-${{ github.sha }}
+          path: windows-status-fallback.xml
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Windows hook and shell consumer tests
         run: >-
           uv run pytest
@@ -622,9 +669,31 @@ jobs:
       - name: Test upstream-style artifact installer and uninstaller
         shell: pwsh
         run: |
-          $installDir = Join-Path $env:RUNNER_TEMP "omnigent-artifact-install"
+          $ErrorActionPreference = "Stop"
+          $installDir = Join-Path $env:RUNNER_TEMP ("omnigent-artifact-install-" + [guid]::NewGuid().ToString("N"))
+          $uvState = @{}
+          foreach ($name in @("UV_SYSTEM_CERTS", "UV_TOOL_DIR", "UV_TOOL_BIN_DIR")) {
+            $uvState[$name] = @{ Present = Test-Path "Env:$name"; Value = [Environment]::GetEnvironmentVariable($name, "Process") }
+          }
+          function Assert-UvEnvironmentRestored {
+            foreach ($name in $uvState.Keys) {
+              if ((Test-Path "Env:$name") -ne $uvState[$name].Present -or
+                  [Environment]::GetEnvironmentVariable($name, "Process") -cne $uvState[$name].Value) {
+                throw "Bundle operation did not restore $name"
+              }
+            }
+          }
           & .\windows-bundle\install.ps1 -InstallDir $installDir -NoPath -SkipPsmux
           if ($LASTEXITCODE -ne 0) { throw "artifact installer failed" }
+          Assert-UvEnvironmentRestored
+          $receiptPath = Join-Path $installDir ".omnigent-bundle-receipt.json"
+          $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json
+          if ($receipt.schema_version -ne 1 -or $receipt.product -ne "omnigent-windows-bundle") {
+            throw "Artifact installer did not create a valid ownership receipt"
+          }
+          & .\windows-bundle\install.ps1 -InstallDir $installDir -NoPath -SkipPsmux
+          if ($LASTEXITCODE -ne 0) { throw "receipted artifact reinstall failed" }
+          Assert-UvEnvironmentRestored
 
           $binDir = Join-Path $installDir "bin"
           $omni = Join-Path $binDir "omni.exe"
@@ -643,8 +712,21 @@ jobs:
           & $omnigent --version
           if ($LASTEXITCODE -ne 0) { throw "installed omnigent.exe --version failed" }
 
+          $sentinel = Join-Path $installDir "unrelated-sentinel.txt"
+          [IO.File]::WriteAllText($sentinel, "preserve")
+          $refused = $false
+          try { & .\windows-bundle\uninstall.ps1 -InstallDir $installDir } catch { $refused = $true }
+          if (-not $refused -or -not [IO.File]::Exists($sentinel) -or
+              -not [IO.File]::Exists($omni) -or -not [IO.File]::Exists($receiptPath)) {
+            throw "Artifact uninstaller did not preserve unexpected content and owned files"
+          }
+          Assert-UvEnvironmentRestored
+          [IO.File]::Delete($sentinel)
           & .\windows-bundle\uninstall.ps1 -InstallDir $installDir
           if (Test-Path $installDir) { throw "artifact uninstaller left the install directory behind" }
+          Assert-UvEnvironmentRestored
+          & .\windows-bundle\uninstall.ps1 -InstallDir $installDir
+          Assert-UvEnvironmentRestored
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

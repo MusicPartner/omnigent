@@ -1,5 +1,21 @@
 # Approved isolation package, 2026-10-31
 
+## Completed remote validation and follow-up
+
+Published candidate `96ee061d690a26ef37f9d432a98231105fa68d9f` completed
+all six round-1 workflows successfully. The [November closeout](ISOLATION-CLOSEOUT-2026-11-01.md)
+contains source-matched JUnit, artifact inspection, reachability corrections
+and separate item 8 characterization. **1/5 rounds used; four remain**.
+Local follow-up is not published; no new Actions have run. Original pending
+prose below is historical. Shared policy and semantic/manual limits remain.
+
+The user subsequently selected auth-only #13 correction plus disposable #15
+characterization. Auth readers reuse existing DATA_DIR resolution, leaving
+daemon/cache paths unchanged. The uninstaller removed unrelated synthetic
+contents in a receipt-free disposable prefix; real installations/PATH were
+untouched and no deletion-policy fix was made. See the closeout for focused
+tests, the separately attributed path-test portability correction and limits.
+
 ## Source and attribution
 
 Basis: `e1714c416d2608f7bfd5bf4ea93ee81b108d7311`, existing
@@ -88,7 +104,7 @@ and rerun batches count thereafter. Monitoring does not consume a round.
 
 | Round | State | Candidate/results |
 | --- | --- | --- |
-| 1 | Allocated for initial publication/validation | Normal push and exact-SHA fork/lint plus applicable validation; outcomes pending |
+| 1 | Completed | Candidate 96ee: fork/lint/E2E/integration/UI/Docker successful; see November closeout |
 | 2–5 | Unused | Reserved for diagnosed corrections and source-matched evidence |
 
 No round 6, force push, PR/main promotion, release or image publication.

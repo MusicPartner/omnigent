@@ -22,6 +22,9 @@ $ErrorActionPreference = "Stop"
 if ($InstallDir -match '^\s*--') {
     throw "InstallDir must be a filesystem path, not a command-line option. Use -NoSystemCertificates to disable system certificate use."
 }
+. (Join-Path $PSScriptRoot "windows_bundle_state.ps1")
+$bundleState = Get-OmnigentBundleState $InstallDir -ForInstall
+$InstallDir = $bundleState.Prefix
 $script:PythonVersion = "3.12"
 $script:BundleRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:WheelDir = Join-Path $script:BundleRoot "wheels"
@@ -132,14 +135,13 @@ $toolDir = Join-Path $InstallDir "tools"
 $binDir = Join-Path $InstallDir "bin"
 New-Item -ItemType Directory -Force $InstallDir | Out-Null
 
-# Keep this artifact installation isolated from any other uv-managed tools while
-# still using the same `uv tool install` mechanism documented by upstream.
-$env:UV_TOOL_DIR = $toolDir
-$env:UV_TOOL_BIN_DIR = $binDir
-
 Write-Step "Installing Omnigent from the bundled wheels with uv tool"
 $previousUvSystemCerts = $env:UV_SYSTEM_CERTS
+$previousUvToolDir = $env:UV_TOOL_DIR
+$previousUvToolBinDir = $env:UV_TOOL_BIN_DIR
 try {
+    $env:UV_TOOL_DIR = $toolDir
+    $env:UV_TOOL_BIN_DIR = $binDir
     $env:UV_SYSTEM_CERTS = if ($NoSystemCertificates) { "false" } else { "true" }
     & $uv tool install --force --python $script:PythonVersion --with $clientWheel --with $uiWheel $coreWheel
     $uvInstallExitCode = $LASTEXITCODE
@@ -149,6 +151,16 @@ finally {
         Remove-Item Env:\UV_SYSTEM_CERTS -ErrorAction SilentlyContinue
     } else {
         $env:UV_SYSTEM_CERTS = $previousUvSystemCerts
+    }
+    if ($null -eq $previousUvToolDir) {
+        Remove-Item Env:\UV_TOOL_DIR -ErrorAction SilentlyContinue
+    } else {
+        $env:UV_TOOL_DIR = $previousUvToolDir
+    }
+    if ($null -eq $previousUvToolBinDir) {
+        Remove-Item Env:\UV_TOOL_BIN_DIR -ErrorAction SilentlyContinue
+    } else {
+        $env:UV_TOOL_BIN_DIR = $previousUvToolBinDir
     }
 }
 if ($uvInstallExitCode -ne 0) {
@@ -164,11 +176,6 @@ if (-not (Test-Path $omnigentExe)) {
     throw "Installation completed without creating the omnigent.exe entry point: $omnigentExe"
 }
 
-if (-not $NoPath) {
-    Add-UserPathEntry $binDir
-}
-Ensure-Psmux
-
 Write-Step "Verifying the installed upstream-compatible CLI entry points"
 & $omniExe --version
 if ($LASTEXITCODE -ne 0) {
@@ -182,6 +189,12 @@ if ($LASTEXITCODE -ne 0) {
 if ($LASTEXITCODE -ne 0) {
     throw "Installed omnigent.exe failed its version smoke test."
 }
+
+Write-OmnigentBundleReceipt $InstallDir
+if (-not $NoPath) {
+    Add-UserPathEntry $binDir
+}
+Ensure-Psmux
 
 Write-Host ""
 Write-Host "Omnigent installed successfully."

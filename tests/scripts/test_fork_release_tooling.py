@@ -56,6 +56,26 @@ def test_pinned_bfd8_fixture_matches_immutable_git_source_symbols_and_decorators
         assert actual == (expected["testCount"], expected["testDecoratorsSha256"]), path
 
 
+def test_windows_status_fallback_gate_runs_after_psmux_installation() -> None:
+    workflow = yaml.load(WORKFLOW_PATH.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    steps = workflow["jobs"]["windows-native"]["steps"]
+    names = [step["name"] for step in steps]
+    gate_name = "Verify real Windows status fallback after psmux installation"
+    assert names.index("Install psmux") < names.index(gate_name)
+    gate = steps[names.index(gate_name)]
+    assert "continue-on-error" not in gate
+    assert "test_windows_claude_role_launch_uses_supported_status_fallback" in gate["run"]
+    assert "--reruns 0" in gate["run"] and "-n 0" in gate["run"]
+    assert "--junitxml=windows-status-fallback.xml" in gate["run"]
+    assert gate["shell"] == "pwsh"
+    assert "SelectNodes('//testcase').Count -ne 3" in gate["run"]
+    assert "SelectNodes('//skipped | //failure | //error').Count -ne 0" in gate["run"]
+    upload = steps[names.index("Upload real Windows status fallback evidence")]
+    assert upload["if"] == "always()"
+    assert upload["with"]["path"] == "windows-status-fallback.xml"
+    assert upload["with"]["if-no-files-found"] == "error"
+
+
 def test_candidate_retains_pinned_symbols_and_approved_platform_decorators() -> None:
     results = _audit.audit_repository(ROOT, "bfd8ab5624e34aa72c01fb451e11c2a0e1aae3ee")
     assert len(results) == 5
@@ -79,21 +99,35 @@ def test_workflow_policy_and_release_inputs_match_immutable_e1714() -> None:
         "Fork release tooling contracts",
         "Release input staging contracts",
         "Verify approved relay capability and reader safety",
+        "Verify real Windows status fallback after psmux installation",
+        "Upload real Windows status fallback evidence",
+        "Verify maintenance tooling and boundary contracts",
+        "Verify Windows bundle ownership contracts",
+        "Audit executed Windows startup contract identities",
     }
     changed_commands = {
         "Audit reconciled test symbols and platform marker owners",
         "Build optional native launcher candidate",
         "Assert bundled web UI, native asset and console entry points",
         "Assemble Windows bundle",
+        "Select the source-matched baseline implementation",
+        "Test upstream-style artifact installer and uninstaller",
     }
     expected_additions = {
         "terminal-preparation-contracts": [
             "Stage candidate release inputs",
             "Fork release tooling contracts",
+            "Verify maintenance tooling and boundary contracts",
+            "Verify Windows bundle ownership contracts",
             "Verify approved relay capability and reader safety",
         ],
         "focused-linux": ["Release input staging contracts"],
-        "windows-native": ["Release input staging contracts"],
+        "windows-native": [
+            "Release input staging contracts",
+            "Verify real Windows status fallback after psmux installation",
+            "Audit executed Windows startup contract identities",
+            "Upload real Windows status fallback evidence",
+        ],
         "build-windows-artifact": ["Stage candidate release inputs"],
         "build-windows-desktop-artifact": [],
     }
@@ -147,7 +181,8 @@ def test_workflow_policy_and_release_inputs_match_immutable_e1714() -> None:
                     )
                 assert expected == new_step.get(key), (job_name, name, key)
             if name not in changed_commands:
-                assert old_step.get("run") == new_step.get("run"), (job_name, name, "run")
+                expected_run = old_step.get("run")
+                assert expected_run == new_step.get("run"), (job_name, name, "run")
 
     release_fixture = json.loads(RELEASE_INPUT_FIXTURE.read_text(encoding="utf-8"))
     manifest = json.loads((CI / "release-inputs.json").read_text(encoding="utf-8"))
@@ -199,12 +234,72 @@ def test_workflow_policy_and_release_inputs_match_immutable_e1714() -> None:
     assert checkout_index < selection_index
     assert stage_index < candidate_selection_index
     assert '--stage "$RUNNER_TEMP/omnigent-release-inputs"' in candidate_steps[stage_index]["run"]
+    assert candidate_steps[stage_index]["run"] == (
+        "set -euo pipefail\n"
+        "node .github/scripts/ci/read-release-inputs.mjs --stage "
+        '"$RUNNER_TEMP/omnigent-release-inputs" --github-env "$GITHUB_ENV" '
+        '--ref "$GITHUB_REF" --candidate-sha "$GITHUB_SHA"\n'
+    )
+    assert candidate_steps[candidate_selection_index]["run"] == (
+        "set -euo pipefail\n"
+        'test "$RELEASE_CANDIDATE_SHA" = "$GITHUB_SHA"\n'
+        'test "$(git rev-parse HEAD)" = "$RELEASE_CANDIDATE_SHA"\n'
+        'baseline="$RELEASE_BASELINE_SHA"\n'
+        'case "$RELEASE_BASELINE_CHECK" in\n'
+        "  ancestor)\n"
+        '    git merge-base --is-ancestor "$baseline" "$RELEASE_CANDIDATE_SHA"\n'
+        "    ;;\n"
+        "  characterization-parent)\n"
+        '    test "$(git rev-parse "$baseline^")" = "$RELEASE_CHARACTERIZATION_PARENT_SHA"\n'
+        '    git diff --exit-code "$RELEASE_CHARACTERIZATION_PARENT_SHA" "$baseline" '
+        "-- omnigent pyproject.toml uv.lock\n"
+        "    ;;\n"
+        '  *) echo "Unsupported release baseline check" >&2; exit 1 ;;\n'
+        "esac\n"
+        'git switch --detach "$baseline"\n'
+        'test "$(git rev-parse HEAD)" = "$baseline"\n'
+        'echo "Baseline source: $baseline"\n'
+    )
     candidate_launcher_step = next(
         step
         for step in candidate_workflow["jobs"]["build-windows-artifact"]["steps"]
         if step.get("name") == "Build optional native launcher candidate"
     )
     assert "WINDOWS_LAUNCHER_TOOLSET_VERSION" in candidate_launcher_step["run"]
+
+
+def test_maintenance_gates_are_branch_scoped_and_cover_real_cli_entrypoints() -> None:
+    workflow = yaml.load(WORKFLOW_PATH.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    condition = "${{ github.ref == 'refs/heads/windows-parity/v0.20-isolation-p3-p5' }}"
+    steps = workflow["jobs"]["terminal-preparation-contracts"]["steps"]
+    gate = next(
+        step
+        for step in steps
+        if step.get("name") == "Verify maintenance tooling and boundary contracts"
+    )
+    assert gate["if"] == condition
+    assert gate["shell"] == "bash" and "continue-on-error" not in gate
+    for test_path in (
+        "tests/scripts/test_windows_delta_inventory.py",
+        "tests/scripts/test_windows_contracts.py",
+        "tests/e2e/test_windows_delta_inventory_e2e.py",
+        "tests/e2e/test_windows_contracts_e2e.py",
+        ".github/scripts/ci/release-profiles.test.mjs",
+    ):
+        assert test_path in gate["run"]
+    assert '--repository "$GITHUB_WORKSPACE"' in gate["run"]
+    native_steps = workflow["jobs"]["windows-native"]["steps"]
+    names = [step["name"] for step in native_steps]
+    identity_name = "Audit executed Windows startup contract identities"
+    assert names.index(
+        "Verify real Windows status fallback after psmux installation"
+    ) < names.index(identity_name)
+    identity_gate = native_steps[names.index(identity_name)]
+    assert identity_gate["if"] == condition
+    assert "continue-on-error" not in identity_gate
+    assert "git rev-parse HEAD" in identity_gate["run"]
+    assert "--source-sha $env:GITHUB_SHA" in identity_gate["run"]
+    assert "--junit windows-status-fallback.xml" in identity_gate["run"]
 
 
 def test_reconciliation_gate_is_separate_from_frozen_contract_selection() -> None:
@@ -220,6 +315,57 @@ def test_reconciliation_gate_is_separate_from_frozen_contract_selection() -> Non
     assert "test_windows_reader_uses_non_signalling_probe" in gate["run"]
     assert "--reruns 0" in gate["run"]
     assert "isolation-relay-capability.xml" in gate["run"]
+
+
+def test_bundle_ownership_gate_and_artifact_roundtrip_keep_safety_checks() -> None:
+    workflow = yaml.load(WORKFLOW_PATH.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    gate = next(
+        step
+        for step in workflow["jobs"]["terminal-preparation-contracts"]["steps"]
+        if step.get("name") == "Verify Windows bundle ownership contracts"
+    )
+    assert gate["if"] == (
+        "${{ matrix.os == 'windows-latest' && "
+        "github.ref == 'refs/heads/windows-parity/v0.20-isolation-p3-p5' }}"
+    )
+    assert "continue-on-error" not in gate
+    for path in (
+        "tests/scripts/test_install_windows_bundle_ps1.py",
+        "tests/scripts/test_windows_bundle_state_ps1.py",
+        "tests/scripts/test_windows_bundle_installer_caller.py",
+        "tests/scripts/test_uninstall_windows_bundle_ps1.py",
+    ):
+        assert path in gate["run"]
+    roundtrip = next(
+        step
+        for step in workflow["jobs"]["build-windows-artifact"]["steps"]
+        if step.get("name") == "Test upstream-style artifact installer and uninstaller"
+    )
+    command = roundtrip["run"]
+    assert roundtrip["shell"] == "pwsh" and "continue-on-error" not in roundtrip
+    assert command.count("-NoPath -SkipPsmux") == 2
+    assert command.count("Assert-UvEnvironmentRestored") == 6
+    for literal in (
+        '"UV_SYSTEM_CERTS", "UV_TOOL_DIR", "UV_TOOL_BIN_DIR"',
+        '[guid]::NewGuid().ToString("N")',
+        '".omnigent-bundle-receipt.json"',
+        '$receipt.product -ne "omnigent-windows-bundle"',
+        '"unrelated-sentinel.txt"',
+        "-not [IO.File]::Exists($omni)",
+        "-not [IO.File]::Exists($receiptPath)",
+        "[IO.File]::Delete($sentinel)",
+        "if (Test-Path $installDir)",
+    ):
+        assert literal in command
+    for smoke in (
+        "& $omni --version",
+        "& $omni --help",
+        "& $omni server --help",
+        "& $omni host --help",
+        "& $omnigent --version",
+    ):
+        assert smoke in command
+    assert "Remove-Item" not in command
 
 
 def test_bundle_body_fixture_matches_immutable_e1714_workflow() -> None:
@@ -431,11 +577,15 @@ def test_bundle_assembly_preserves_template_bytes_layout_and_wheel_checksums(
         "TESTING.md",
         "install.ps1",
         "uninstall.ps1",
+        "windows_bundle_state.ps1",
         "windows_safe_pytest.ps1",
         "SHA256SUMS.txt",
         "wheels",
     }
     assert {path.name for path in output.iterdir()} == expected_names
+    assert (output / "windows_bundle_state.ps1").read_bytes() == (
+        repository / "scripts/windows_bundle_state.ps1"
+    ).read_bytes()
     newline = "\r\n" if fixture["lineEnding"] == "CRLF" else "\n"
     expected_install = fixture["installCommand"].replace("\n", newline).encode("ascii")
     expected_uninstall = fixture["uninstallCommand"].replace("\n", newline).encode("ascii")

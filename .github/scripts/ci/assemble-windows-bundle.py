@@ -13,6 +13,7 @@ TEMPLATE_DIRECTORY = Path(__file__).with_name("templates") / "windows"
 BUNDLE_FILES = {
     "scripts/install_windows_bundle.ps1": "install.ps1",
     "scripts/uninstall_windows_bundle.ps1": "uninstall.ps1",
+    "scripts/windows_bundle_state.ps1": "windows_bundle_state.ps1",
     "scripts/windows_safe_pytest.ps1": "windows_safe_pytest.ps1",
     "docs/windows/README.md": "WINDOWS-README.md",
     "docs/windows/test-execution.md": "TESTING.md",

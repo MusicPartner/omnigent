@@ -8,9 +8,52 @@ The [post-v0.19 isolation plan](../docs/windows/ISOLATION-PLAN-0.19.md) prioriti
 contract tests/primitives and shared terminal preparation before further
 extraction. It is a plan, not permission to refactor or publish.
 
+## Current roadmap and implementation (2026-11-01)
+
+Use the [master Windows roadmap](../docs/windows/WINDOWS-ISOLATION-ROADMAP.md)
+for all original items 1–31, new maintenance work 32–37, dependencies and
+current progress. Packages A/B are validated locally; C item 15 is implemented
+locally. Final hooks and source-matched CI/bundle roundtrip remain pending.
+The published basis and live origin remain full
+`96ee061d690a26ef37f9d432a98231105fa68d9f`; no local follow-up has a new result
+SHA. The exact local test evidence and acceptance limits are in the
+[November closeout](../docs/windows/ISOLATION-CLOSEOUT-2026-11-01.md).
+
+Item 15 uses the shared `scripts/windows_bundle_state.ps1` helper from
+`install_windows_bundle.ps1` and `uninstall_windows_bundle.ps1`; the assembler
+includes it in new bundles. `scripts/install_oss.ps1` is unchanged and outside
+this fix. Nonempty receipt-free prefixes are refused, so review old installs
+manually or use a fresh prefix; there is no automatic legacy adoption. The
+receipt is an accidental-collision guard, not hostile-writer/race-proof
+security. A failed fresh install may leave an unreceipted partial prefix for
+manual review; uv's own partial changes are not transactionally rolled back.
+Do not attribute the helper or its safeguards to historical 96ee artifacts.
+The recommended disposable `-NoPath -SkipPsmux` manual roundtrip runs under a
+throwaway account/VM: uninstall still calls the User PATH setter with a
+filtered value, even if it is unchanged.
+
+The user authorized one coordinated B/C checkpoint push and source-matched
+Actions batch as existing round 2/5; this documentation update does not execute
+that round or renew the cap. The checkpoint plan excludes local #13 Electron
+files and the #8 safe-launcher test unless explicitly added. Current push plan
+excludes web files due to a pre-existing whole-web standard Prettier finding.
+The dated owner CSV and release ledgers remain historical evidence; current
+status belongs to the roadmap and owner register.
+
 ## Post-v0.20 maintenance (2026-10-31)
 
-Current validated maintenance is
+Latest validated/published package is
+`96ee061d690a26ef37f9d432a98231105fa68d9f` on the same isolation branch.
+All six dispatched workflows succeeded. The [November closeout](../docs/windows/ISOLATION-CLOSEOUT-2026-11-01.md)
+records exact results, artifact identity, the missing real-startup selection
+and its local correction, separate item 8 findings, and remaining acceptance.
+Budget is **1/5 remote rounds used, four left**; no new push/dispatch at closeout.
+The approved auth-only DATA_DIR fix and item 15 installer safeguards are local
+follow-up; daemon/cache ownership remains unchanged. The existing two-OS
+desktop steps reach the auth suite, not yet remotely validated. Earlier e1714
+and pre-item-15 status paragraphs below are preserved historical snapshots.
+
+Historical e1714 validated maintenance was
 `e1714c416d2608f7bfd5bf4ea93ee81b108d7311` on
 `windows-parity/v0.20-isolation-p3-p5`. All six source-labelled fork/lint/
 backend E2E/integration/UI/nonpublishing Docker results are indexed in the
@@ -48,7 +91,7 @@ No main automation, automatic maintenance push trigger, release publication or
 old release-branch edits were made. Maintenance Python/native acceptance has
 not passed merely because the preceding release passed.
 
-## Current automation policy (2026-10-30)
+## Historical integration automation snapshot (2026-10-30)
 
 The v0.20 integration branch's round-5 snapshot is
 `5bb6bfceda028cc4e6914493bc43470178f0bdcf`. Lint **41083128167** succeeded;

@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "python_leaves": [
+    {
+      "path": "omnigent/inner/pi_windows.py",
+      "forbidden_imports": ["omnigent.inner.pi_executor"]
+    },
+    {
+      "path": "omnigent/native/windows_cost_popup.py",
+      "forbidden_imports": ["omnigent.native.native_cost_popup"]
+    },
+    {
+      "path": "omnigent/inner/_windows_shutdown.py",
+      "forbidden_imports": ["omnigent.inner._proc"]
+    },
+    {
+      "path": "omnigent/harnesses/claude_native/windows_hooks.py",
+      "forbidden_imports": [
+        "omnigent.harnesses.claude_native.hook",
+        "omnigent.harnesses.claude_native.main"
+      ]
+    },
+    {
+      "path": "omnigent/runner/native/windows_env.py",
+      "forbidden_imports": ["omnigent.runner.app"]
+    },
+    {
+      "path": "omnigent/inner/windows_attachments.py",
+      "forbidden_imports": ["omnigent.inner.native_attachments"]
+    }
+  ],
+  "facade_symbols": [
+    {"path": "omnigent/inner/pi_executor.py", "name": "_pi_spawn_argv"},
+    {"path": "omnigent/native/native_cost_popup.py", "name": "_popup_command"}
+  ],
+  "frontend": {
+    "modules": [
+      "web/src/shell/hostPaths.ts",
+      "web/src/shell/workspaceBreadcrumbs.ts",
+      "web/src/shell/WorkspacePicker.tsx"
+    ],
+    "cycle_modules": [
+      "web/src/shell/hostPaths.ts",
+      "web/src/shell/workspaceBreadcrumbs.ts"
+    ],
+    "forbidden_imports": [
+      {
+        "importer": "web/src/shell/hostPaths.ts",
+        "target": "web/src/shell/WorkspacePicker.tsx"
+      },
+      {
+        "importer": "web/src/shell/workspaceBreadcrumbs.ts",
+        "target": "web/src/shell/WorkspacePicker.tsx"
+      }
+    ]
+  },
+  "groups": {
+    "windows-status-fallback": {
+      "required_cases": [
+        {
+          "node_id": "tests/terminals/test_windows_psmux.py::test_windows_claude_role_launch_uses_supported_status_fallback[None]",
+          "classname": "tests.terminals.test_windows_psmux",
+          "name": "test_windows_claude_role_launch_uses_supported_status_fallback[None]"
+        },
+        {
+          "node_id": "tests/terminals/test_windows_psmux.py::test_windows_claude_role_launch_uses_supported_status_fallback[claude_osc_status]",
+          "classname": "tests.terminals.test_windows_psmux",
+          "name": "test_windows_claude_role_launch_uses_supported_status_fallback[claude_osc_status]"
+        },
+        {
+          "node_id": "tests/terminals/test_windows_psmux.py::test_windows_claude_role_launch_uses_supported_status_fallback[-claude_osc_status]",
+          "classname": "tests.terminals.test_windows_psmux",
+          "name": "test_windows_claude_role_launch_uses_supported_status_fallback[-claude_osc_status]"
+        }
+      ]
+    }
+  }
+}

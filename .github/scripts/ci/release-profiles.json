@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "id": "v0.19-isolation-p1-p2",
+      "ref": "refs/heads/windows-parity/v0.19-isolation-p1-p2",
+      "previousStableSHA": "12b5f67d2529b43eab7366a7288fb89f7587e48b",
+      "targetStableSHA": "d43340fec4e7d2d767f319d715e84aa82f4d1bc8",
+      "baselineInput": "CHARACTERIZATION_SHA",
+      "verificationMode": "characterization-parent",
+      "characterizedParentInput": "VALIDATED_BASE_SHA"
+    },
+    {
+      "id": "v0.20-integration",
+      "ref": "refs/heads/windows-parity/v0.20-integration",
+      "previousStableSHA": "d43340fec4e7d2d767f319d715e84aa82f4d1bc8",
+      "targetStableSHA": "bfd8ab5624e34aa72c01fb451e11c2a0e1aae3ee",
+      "baselineInput": "RELEASE_SOURCE_SHA",
+      "verificationMode": "ancestor"
+    },
+    {
+      "id": "v0.20-isolation-p3-p5",
+      "ref": "refs/heads/windows-parity/v0.20-isolation-p3-p5",
+      "previousStableSHA": "d43340fec4e7d2d767f319d715e84aa82f4d1bc8",
+      "targetStableSHA": "bfd8ab5624e34aa72c01fb451e11c2a0e1aae3ee",
+      "baselineInput": "ISOLATION_SOURCE_SHA",
+      "verificationMode": "ancestor"
+    }
+  ]
+}

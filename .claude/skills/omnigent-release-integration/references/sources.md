@@ -1,10 +1,32 @@
 # Release and isolation evidence index
 
-Reviewed 2026-10-31. Local paths describe discovered evidence, not guaranteed
+Reviewed 2026-11-01. Local paths describe discovered evidence, not guaranteed
 availability on another machine. Do not commit raw private logs or reconstruct
 policy-excluded content. Use immutable code and results over stale summaries.
 
-## Current validated baseline
+## Current isolation basis and implementation
+
+Published isolation basis: `96ee061d690a26ef37f9d432a98231105fa68d9f`, branch
+`windows-parity/v0.20-isolation-p3-p5`, selected `omnigent-v020-isolation` worktree.
+The original extraction basis remains `e1714c416d2608f7bfd5bf4ea93ee81b108d7311`.
+Use the [master roadmap](../../../../docs/windows/WINDOWS-ISOLATION-ROADMAP.md)
+for the complete 1–37 inventory and implementation progress. Update its table
+and chat checklist after each major step; distinguish local, published and
+source-matched validation outcomes.
+
+The [November closeout](../../../../docs/windows/ISOLATION-CLOSEOUT-2026-11-01.md)
+records six successful workflows at 96ee: fork41219861480, lint41219863234,
+backend41219865415, integration41219867688, UI41219869956 and Docker41219871911
+(`publish=false`). These are recorded evidence, not a fresh live inspection.
+The real startup trio was skipped there for absent psmux. Its post-install gate
+and the auth-only DATA_DIR fix remain local; daemon/cache semantics unchanged.
+
+Local implementation was requested on 2026-11-01. Package A preflight and focused
+checks are recorded in the roadmap; no new commit/push/Actions. Counter remains
+1/5 remote rounds used. The following exhausted budgets and source tables are
+historical release evidence, not current authorization or isolation status.
+
+## Historical validated v0.20 integration baseline
 
 | Role | Full ref |
 | --- | --- |

@@ -19,7 +19,14 @@ def run_ps(snippet: str, env: dict[str, str] | None = None) -> subprocess.Comple
     """Parse the real installer, then execute only the selected code in a child."""
     assert PWSH is not None
     base = os.environ.copy()
-    for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "DATABRICKS_TOKEN", "UV_SYSTEM_CERTS"):
+    for name in (
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "DATABRICKS_TOKEN",
+        "UV_SYSTEM_CERTS",
+        "UV_TOOL_DIR",
+        "UV_TOOL_BIN_DIR",
+    ):
         base.pop(name, None)
     base.update(env or {})
     installer = str(INSTALLER).replace("'", "''")
@@ -47,7 +54,15 @@ if ($parseErrors.Count) {{ throw ($parseErrors | Out-String) }}
 def test_bundle_installer_rejects_options_as_install_paths(option: str) -> None:
     assert PWSH is not None
     result = subprocess.run(
-        [PWSH, "-NoProfile", "-NonInteractive", "-File", str(INSTALLER), "-InstallDir", option],
+        [
+            PWSH,
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            str(INSTALLER),
+            "-InstallDir",
+            option,
+        ],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -113,16 +128,31 @@ Add-UserPathEntry 'C:\New\bin'
     }
 
 
-@pytest.mark.parametrize("previous", [None, "true", "false"])
+@pytest.mark.parametrize(
+    ("previous_certificates", "previous_tool_dir", "previous_bin_dir"),
+    [
+        (None, None, None),
+        ("false", r"C:\Prior\tools", r"C:\Prior\bin"),
+        ("true", None, r"C:\Prior\bin"),
+    ],
+    ids=["all-absent", "all-present", "mixed-presence"],
+)
 @pytest.mark.parametrize("opt_out", [False, True], ids=["system-roots", "bundled-roots"])
 @pytest.mark.parametrize("outcome", ["success", "nonzero", "exception"])
 def test_bundle_installer_scopes_system_certificates_and_restores_environment(
-    tmp_path: Path, previous: str | None, opt_out: bool, outcome: str
+    tmp_path: Path,
+    previous_certificates: str | None,
+    previous_tool_dir: str | None,
+    previous_bin_dir: str | None,
+    opt_out: bool,
+    outcome: str,
 ) -> None:
     fake_uv = tmp_path / "fake-uv.ps1"
     observed = tmp_path / "observed.txt"
     fake_uv.write_text(
-        "$env:UV_SYSTEM_CERTS | Set-Content -LiteralPath $env:TEST_CERT_OUTPUT\n"
+        "@{certificates=$env:UV_SYSTEM_CERTS; tool_dir=$env:UV_TOOL_DIR; "
+        "bin_dir=$env:UV_TOOL_BIN_DIR} "
+        "| ConvertTo-Json -Compress | Set-Content -LiteralPath $env:TEST_CERT_OUTPUT\n"
         "if ($env:TEST_UV_OUTCOME -eq 'exception') { throw 'simulated uv failure' }\n"
         "$global:LASTEXITCODE = if ($env:TEST_UV_OUTCOME -eq 'nonzero') { 31 } else { 0 }\n",
         encoding="utf-8",
@@ -133,42 +163,73 @@ def test_bundle_installer_scopes_system_certificates_and_restores_environment(
         "TEST_UV_OUTCOME": outcome,
         "TEST_CERT_OPT_OUT": str(opt_out).lower(),
     }
-    if previous is not None:
-        env["UV_SYSTEM_CERTS"] = previous
+    if previous_certificates is not None:
+        env["UV_SYSTEM_CERTS"] = previous_certificates
+    if previous_tool_dir is not None:
+        env["UV_TOOL_DIR"] = previous_tool_dir
+    if previous_bin_dir is not None:
+        env["UV_TOOL_BIN_DIR"] = previous_bin_dir
     result = run_ps(
-        """
+        r"""
 $uv = $env:TEST_FAKE_UV
 $script:PythonVersion = '3.12'
+$toolDir = 'C:\Install\tools'
+$binDir = 'C:\Install\bin'
 $coreWheel = 'core.whl'
 $clientWheel = 'client.whl'
 $uiWheel = 'ui.whl'
 $NoSystemCertificates = $env:TEST_CERT_OPT_OUT -eq 'true'
-$assignment = $ast.Find({ param($node)
-    $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
-    $node.Left.Extent.Text -eq '$previousUvSystemCerts'
-}, $true)
 $install = $ast.Find({ param($node)
-    $node -is [System.Management.Automation.Language.TryStatementAst]
+    $node -is [System.Management.Automation.Language.TryStatementAst] -and
+    $node.Extent.Text -match '(?m)&\s+\$uv\s+tool\s+install'
 }, $true)
+$snapshotNodes = $ast.FindAll({ param($node)
+    $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+    $node.Left.Extent.Text -in @(
+        '$previousUvSystemCerts', '$previousUvToolDir', '$previousUvToolBinDir')
+}, $true)
+$snapshots = @()
+foreach ($name in @('$previousUvSystemCerts', '$previousUvToolDir', '$previousUvToolBinDir')) {
+    $snapshot = $snapshotNodes | Where-Object { $_.Left.Extent.Text -eq $name } |
+        Select-Object -First 1
+    if ($null -eq $snapshot) { throw "Missing environment snapshot: $name" }
+    $snapshots += $snapshot.Extent.Text
+}
 $check = $ast.Find({ param($node)
     $node -is [System.Management.Automation.Language.IfStatementAst] -and
     $node.Extent.Text.StartsWith('if ($uvInstallExitCode -ne 0)')
 }, $true)
 $failure = $null
 try {
-    Invoke-Expression ($assignment.Extent.Text + "`n" + $install.Extent.Text +
+    Invoke-Expression (($snapshots -join "`n") + "`n" + $install.Extent.Text +
         "`n" + $check.Extent.Text)
 } catch { $failure = $_.Exception.Message }
-@{ restored = $env:UV_SYSTEM_CERTS; present = (Test-Path Env:UV_SYSTEM_CERTS);
-   failure = $failure } | ConvertTo-Json -Compress
+@{
+    certificates = $env:UV_SYSTEM_CERTS
+    certificates_present = (Test-Path Env:UV_SYSTEM_CERTS)
+    tool_dir = $env:UV_TOOL_DIR
+    tool_dir_present = (Test-Path Env:UV_TOOL_DIR)
+    bin_dir = $env:UV_TOOL_BIN_DIR
+    bin_dir_present = (Test-Path Env:UV_TOOL_BIN_DIR)
+    failure = $failure
+} | ConvertTo-Json -Compress
 """,
         env=env,
     )
     assert result.returncode == 0, result.stderr
-    assert observed.read_text(encoding="utf-8-sig").strip() == ("false" if opt_out else "true")
+    observed_state = json.loads(observed.read_text(encoding="utf-8-sig"))
+    assert observed_state == {
+        "certificates": "false" if opt_out else "true",
+        "tool_dir": r"C:\Install\tools",
+        "bin_dir": r"C:\Install\bin",
+    }
     details = json.loads(result.stdout)
-    assert details["present"] is (previous is not None)
-    assert details["restored"] == previous
+    assert details["certificates_present"] is (previous_certificates is not None)
+    assert details["certificates"] == previous_certificates
+    assert details["tool_dir_present"] is (previous_tool_dir is not None)
+    assert details["tool_dir"] == previous_tool_dir
+    assert details["bin_dir_present"] is (previous_bin_dir is not None)
+    assert details["bin_dir"] == previous_bin_dir
     if outcome == "success":
         assert details["failure"] is None
     else:

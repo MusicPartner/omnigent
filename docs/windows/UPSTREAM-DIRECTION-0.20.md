@@ -1,5 +1,13 @@
 # Upstream direction after v0.20.0: Windows integration
 
+## Current maintenance pointer — 2026-11-01
+
+The [master isolation roadmap](WINDOWS-ISOLATION-ROADMAP.md) supersedes the
+current-source statements below. Published maintenance is full
+`96ee061d690a26ef37f9d432a98231105fa68d9f`; implementation follow-up is local.
+No upstream PR state was refreshed for this update. The pins and proposal
+decisions below remain dated direction evidence, not permission to adopt main.
+
 ## Maintenance decision update — 2026-10-31
 
 This section supersedes the historical candidate/state snapshots below. Final

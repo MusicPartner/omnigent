@@ -4,6 +4,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "windows_bundle_state.ps1")
+$bundleState = Get-OmnigentBundleState $InstallDir
+$InstallDir = $bundleState.Prefix
 $toolDir = Join-Path $InstallDir "tools"
 $binDir = Join-Path $InstallDir "bin"
 
@@ -20,22 +23,36 @@ function Remove-UserPathEntry([string]$Dir) {
     [Environment]::SetEnvironmentVariable("Path", ($kept -join ";"), "User")
 }
 
-Remove-UserPathEntry $binDir
-
+if (-not $bundleState.Present) {
+    Write-Host "Omnigent install directory was not present: $InstallDir"
+    return
+}
 $uv = Get-Command uv -ErrorAction SilentlyContinue
-if ($null -ne $uv -and (Test-Path $InstallDir)) {
-    $env:UV_TOOL_DIR = $toolDir
-    $env:UV_TOOL_BIN_DIR = $binDir
-    & $uv.Source tool uninstall omnigent 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "uv tool uninstall returned exit code $LASTEXITCODE; removing the isolated artifact directory directly."
+if ($null -ne $uv) {
+    $previousUvToolDir = $env:UV_TOOL_DIR
+    $previousUvToolBinDir = $env:UV_TOOL_BIN_DIR
+    try {
+        $env:UV_TOOL_DIR = $toolDir
+        $env:UV_TOOL_BIN_DIR = $binDir
+        & $uv.Source tool uninstall omnigent
+        if ($LASTEXITCODE -ne 0) {
+            throw "uv tool uninstall failed (exit code $LASTEXITCODE); preserving the receipt and PATH for recovery."
+        }
+    } finally {
+        if ($null -eq $previousUvToolDir) {
+            Remove-Item Env:\UV_TOOL_DIR -ErrorAction SilentlyContinue
+        } else {
+            $env:UV_TOOL_DIR = $previousUvToolDir
+        }
+        if ($null -eq $previousUvToolBinDir) {
+            Remove-Item Env:\UV_TOOL_BIN_DIR -ErrorAction SilentlyContinue
+        } else {
+            $env:UV_TOOL_BIN_DIR = $previousUvToolBinDir
+        }
     }
 }
 
-if (Test-Path $InstallDir) {
-    Remove-Item -Recurse -Force $InstallDir
-    Write-Host "Removed Omnigent from $InstallDir"
-} else {
-    Write-Host "Omnigent install directory was not present: $InstallDir"
-}
+Remove-OmnigentBundleInventory $bundleState
+Remove-UserPathEntry $binDir
+Write-Host "Removed Omnigent from $InstallDir"
 Write-Host "uv and psmux, if installed separately, were left unchanged."
